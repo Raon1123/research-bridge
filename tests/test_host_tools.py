@@ -160,9 +160,8 @@ def test_cli_yes_pending_reject_harness(env, capsys):
     assert cli.main(["approve", "--yes", a]) == 0
     assert env["ledger"].get(a)["status"] == "queued"
     capsys.readouterr()
-    for sub in ("push", "pull", "diff"):
-        assert cli.main(["harness", sub]) == 2
-    assert "not implemented yet" in capsys.readouterr().out
+    with pytest.raises(SystemExit):  # harness subcommands need arguments; covered in test_harness.py
+        cli.main(["harness", "push"])
 
 
 def test_send_message_roundtrip(env, tmp_path):

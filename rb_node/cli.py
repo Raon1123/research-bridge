@@ -6,7 +6,7 @@ import os
 import sys
 from typing import List, Optional
 
-SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive", "harness-send")
+SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive")
 
 
 def _not_implemented(name: str) -> int:
@@ -15,12 +15,19 @@ def _not_implemented(name: str) -> int:
 
 
 def _harness_receive() -> int:
-    # Forced command for the harness key. Task 10 implements both paths.
+    # Forced command for the harness key; harness-send is only reachable through it.
+    from .config import load_config
+    from .harness import harness_receive
     cmd = os.environ.get("SSH_ORIGINAL_COMMAND", "")
-    if cmd in ("", "harness-send"):
-        return _not_implemented("harness-receive")
-    sys.stderr.write("rb-node harness-receive: unknown command\n")
-    return 1
+    if cmd not in ("", "harness-push", "harness-send"):
+        sys.stderr.write("rb-node harness-receive: unknown command\n")
+        return 1
+    try:
+        cfg = load_config()
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("rb-node: %s\n" % exc)
+        return 1
+    return harness_receive(cfg, cmd, sys.stdin.buffer, sys.stdout.buffer)
 
 
 def _run_job(args: List[str]) -> int:

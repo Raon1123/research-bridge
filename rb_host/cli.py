@@ -57,8 +57,26 @@ def _pending(args: argparse.Namespace) -> int:
 
 
 def _harness(args: argparse.Namespace) -> int:
-    print("rb harness %s: not implemented yet" % args.action)
-    return 2
+    from . import harness
+    cfg = jobs.load_cfg()
+    try:
+        if args.action == "diff":
+            out = harness.diff(cfg, args.stamp)
+            sys.stdout.write(out if out else "no differences\n")
+            return 0
+        if not args.node:
+            print("error: --node is required")
+            return 1
+        if args.action == "push":
+            for line in harness.push(cfg, args.node, args.dry_run):
+                print(line)
+            return 0
+        path, n = harness.pull(cfg, args.node)
+        print("pulled %d files into %s" % (n, path))
+        return 0
+    except (harness.HarnessError, ValueError, TransportError) as exc:
+        print("error: %s" % exc)
+        return 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -72,9 +90,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     r = sub.add_parser("reject")
     r.add_argument("job_id")
     r.set_defaults(fn=_reject)
-    h = sub.add_parser("harness")
-    h.add_argument("action", choices=["push", "pull", "diff"])
-    h.add_argument("--node")
+    h = sub.add_parser("harness", help="manual harness channel (no apply command exists)")
+    hs = h.add_subparsers(dest="action", required=True)
+    hp = hs.add_parser("push", help="send the allowlisted laptop harness to node staging")
+    hp.add_argument("--node", required=True)
+    hp.add_argument("--dry-run", action="store_true", help="list files, send nothing")
+    hl = hs.add_parser("pull", help="fetch the node's allowlisted harness into laptop staging")
+    hl.add_argument("--node", required=True)
+    hd = hs.add_parser("diff", help="unified diff of a pulled staging dir against the live harness")
+    hd.add_argument("stamp")
     h.set_defaults(fn=_harness)
     args = ap.parse_args(argv)
     return args.fn(args)

@@ -30,6 +30,8 @@ class NodeConfig:
     max_file: int = 50 * 1024 * 1024
     mailbox_root: str = _home(DEFAULT_RB + "/mailbox")
     audit_path: str = _home(DEFAULT_RB + "/audit.jsonl")
+    harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
+    harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
 
 
 def config_path() -> Path:

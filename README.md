@@ -27,6 +27,26 @@ Tools: `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `que
     rb approve <job_id>        # show the job, ask y/N, then upload config and submit/cancel
     rb approve --yes <job_id>  # skip the prompt (explicit opt-in)
     rb reject <job_id>         # mark rejected; no node call
-    rb harness push|pull|diff  # not implemented yet (exit 2)
+    rb harness push --node N [--dry-run]   # laptop harness -> node harness-staging/<stamp>/
+    rb harness pull --node N               # node harness -> D:/raw/research-bridge/harness-staging/<stamp>/
+    rb harness diff <stamp>                # unified diff of a pulled stamp against ~/.claude
 
 Approving the same job twice is a no-op.
+
+## Harness channel (manual)
+
+Separate SSH key and alias (`rb-<node>-harness`, or `harness_alias` in the host node entry) whose
+forced command is `rb-node harness-receive`. It routes on `SSH_ORIGINAL_COMMAND`: `harness-send`
+(node tars its allowlisted subset), empty or `harness-push` (stage a received tar). Set
+`harness_root` (the node's `~/.claude`) in `node.json`; without it push and pull are refused
+(`no_harness_root`). Allowlist: `CLAUDE.md`, `settings.json`, `rtk-reference.md`, `commands/`,
+`agents/`, `hooks/`, `workflows/`. Tars are checked member by member (no absolute paths, `..`,
+links or devices) before anything is written. `settings.json` and other `.json` files with a
+populated credential-like key block the transfer.
+
+There is no apply command. After reading `rb harness diff <stamp>`, copy by hand, for example:
+
+    cp -r D:/raw/research-bridge/harness-staging/<stamp>/agents/. ~/.claude/agents/
+
+(On the node, staged pushes sit in `~/.research-bridge/harness-staging/<stamp>/`; copy them into
+`~/.claude` the same way.)
