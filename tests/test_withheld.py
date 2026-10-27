@@ -94,3 +94,24 @@ def test_invalid_regex_in_file_ignored(tmp_path):
 
 def test_fallback_not_empty():
     assert len(FALLBACK_PATTERNS) == 5
+
+
+def test_load_family_patterns(tmp_path):
+    src = tmp_path / "w.json"
+    src.write_text(json.dumps({
+        "exp_ids": ["EXP-013"],
+        "exp_id_patterns": ["EXP-013"],
+        "families": [
+            {"name": "fig", "patterns": ["fig1_mlp_z_iter_k3_s2"]},
+            {"name": "verdict", "patterns": ["falsified|refuted", ""]},
+        ],
+    }), encoding="utf-8")
+    w = Withheld.load(src)
+    bad = tmp_path / "a.md"
+    bad.write_text("line\nthis was refuted\n", encoding="utf-8")
+    good = tmp_path / "b.md"
+    good.write_text("plain text EXP-013 seed1", encoding="utf-8")
+    assert w.check_file(bad) == "deny_content"
+    assert w.check_file(good) == "ok"
+    assert w.name_hit("x/fig1_mlp_z_iter_k3_s2.png")
+    assert "" not in w.patterns

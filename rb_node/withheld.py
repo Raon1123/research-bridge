@@ -30,6 +30,10 @@ def _compile(patterns: List[str]) -> list:
     return out
 
 
+def _as_list(v: object) -> list:
+    return v if isinstance(v, list) else []
+
+
 class Withheld:
     def __init__(self, patterns: List[str]) -> None:
         # The fallback is always included, so an empty or broken source cannot disable it.
@@ -42,10 +46,17 @@ class Withheld:
         if source is not None:
             try:
                 data = json.loads(Path(source).read_text(encoding="utf-8"))
+                found: list = []
                 if isinstance(data, dict):
-                    data = data.get("patterns")
-                if isinstance(data, list):
-                    extra = [p for p in data if isinstance(p, str) and p]
+                    found.extend(_as_list(data.get("patterns")))
+                    fams = data.get("families")
+                    if isinstance(fams, list):
+                        for fam in fams:
+                            if isinstance(fam, dict):
+                                found.extend(_as_list(fam.get("patterns")))
+                else:
+                    found.extend(_as_list(data))
+                extra = [p for p in found if isinstance(p, str) and p]
             except (OSError, ValueError):
                 extra = []
         return cls(extra)
