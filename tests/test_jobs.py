@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from rb_node.mailbox import Mailbox
+from rb_node.run_job import run_job
+from test_remote import b64, begin_req, call, cfg  # noqa: F401  (cfg is a fixture)
+
+
+def _upload_config(cfg, job_id, payload=b"lr: 0.1\n", name="train.yaml"):
+    resp = call(cfg, begin_req("job-" + job_id, payload, name),
+                ("put_chunk", {"msg_id": "job-" + job_id, "name": name, "seq": 0,
+                               "data_b64": b64(payload)}))
+    assert all(r["ok"] for r in resp), resp
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _submit_args(job_id, sha, **kw):
+    a = {"job_id": job_id, "idempotency_key": "k-" + job_id, "config_name": "train.yaml",
+         "config_sha256": sha, "gpus": [0, 2], "gpu_hours": 1.5, "note": "n"}
+    a.update(kw)
+    return a
+
+
+def _jobs(cfg):
+    return sorted((Path(cfg.queue_dir) / "jobs").glob("*.job"))
+
+
+@pytest.fixture(autouse=True)
+def no_nvidia_smi(monkeypatch):
+    import rb_node.remote as remote
+    monkeypatch.setattr(remote.shutil, "which", lambda name: None)
+
+
+@pytest.fixture
+def tcfg(cfg):
+    cfg.job_template = ["uv", "run", "pretrain.py", "config={config}"]
+    return cfg
+
+
+def test_submit_writes_queue_job(tcfg):
+    sha = _upload_config(tcfg, "j1")
+    r = call(tcfg, ("job_submit", _submit_args("j1", sha)))[0]
+    assert r["ok"], r
+    files = _jobs(tcfg)
+    assert len(files) == 1 and r["result"]["queued"] == str(files[0])
+    assert files[0].name == "0001_j1.job"
+    body = files[0].read_text(encoding="utf-8")
+    assert "rb-node run-job --gpus 0,2 --gpu-hours 1.5 --job-id j1 -- uv run pretrain.py" in body
+    stored = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "train.yaml"
+    assert stored.read_bytes() == b"lr: 0.1\n"
+    assert "{config}" not in body
+    audit = Path(tcfg.audit_path).read_text(encoding="utf-8")
+    assert "lr: 0.1" not in audit
+
+
+def test_same_idempotency_key_one_queue_file(tcfg):
+    sha = _upload_config(tcfg, "j2")
+    a = _submit_args("j2", sha)
+    r1, r2 = call(tcfg, ("job_submit", a), ("job_submit", a))
+    assert r1["ok"] and r2["ok"] and r1["result"] == r2["result"]
+    assert len(_jobs(tcfg)) == 1
+    r3 = call(tcfg, ("job_submit", a))[0]  # separate process lifetime: key persisted
+    assert r3["result"] == r1["result"] and len(_jobs(tcfg)) == 1
+    idem = json.loads((Path(tcfg.mailbox_root) / "state" / "idempotency.json").read_text("utf-8"))
+    assert "k-j2" in idem
+
+
+@pytest.mark.parametrize("kw", [
+    {"gpu_hours": 0}, {"gpu_hours": -1}, {"gpu_hours": 169}, {"gpus": []}, {"gpus": ["0"]},
+    {"gpus": "0"}, {"config_name": "train.sh"}])
+def test_invalid_args(tcfg, kw):
+    sha = _upload_config(tcfg, "j3")
+    r = call(tcfg, ("job_submit", _submit_args("j3", sha, **kw)))[0]
+    assert not r["ok"] and r["error"]["code"] == "invalid", r
+    assert _jobs(tcfg) == []
+
+
+def test_gpu_index_checked_when_nvidia_smi_reports(tcfg, monkeypatch):
+    import rb_node.remote as remote
+    monkeypatch.setattr(remote.Node, "gpu_status", lambda self, a: {"gpus": [{"index": 0}, {"index": 1}]})
+    sha = _upload_config(tcfg, "j8")
+    bad = call(tcfg, ("job_submit", _submit_args("j8", sha, gpus=[0, 2])))[0]
+    assert not bad["ok"] and bad["error"]["code"] == "invalid"
+    good = call(tcfg, ("job_submit", _submit_args("j8", sha, gpus=[0, 1])))[0]
+    assert good["ok"]
+
+
+def test_no_job_template(cfg):
+    sha = _upload_config(cfg, "j4")
+    r = call(cfg, ("job_submit", _submit_args("j4", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "no_job_template"
+    assert _jobs(cfg) == []
+    assert not (Path(cfg.mailbox_root) / "state" / "idempotency.json").exists()
+
+
+def test_checksum_mismatch_writes_nothing(tcfg):
+    _upload_config(tcfg, "j5")
+    r = call(tcfg, ("job_submit", _submit_args("j5", "0" * 64)))[0]
+    assert not r["ok"] and r["error"]["code"] == "checksum"
+    assert _jobs(tcfg) == []
+
+
+def test_cancel_pending_removes_queue_file(tcfg):
+    sha = _upload_config(tcfg, "j6")
+    call(tcfg, ("job_submit", _submit_args("j6", sha)))
+    c = {"job_id": "j6", "idempotency_key": "c-j6"}
+    r = call(tcfg, ("job_cancel", c), ("job_cancel", c))
+    assert r[0]["ok"] and r[1]["ok"] and r[0]["result"] == r[1]["result"]
+    assert _jobs(tcfg) == []
+
+
+def test_cancel_running_writes_cancel_file(tcfg):
+    state = Path(tcfg.mailbox_root) / "state"
+    (state / "jobs").mkdir(parents=True, exist_ok=True)
+    (state / "jobs" / "j7.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
+    r = call(tcfg, ("job_cancel", {"job_id": "j7", "idempotency_key": "c-j7"}))[0]
+    assert r["ok"] and (state / "cancel" / "j7").is_file()
+
+
+def test_cancel_unknown(tcfg):
+    r = call(tcfg, ("job_cancel", {"job_id": "nope", "idempotency_key": "c-n"}))[0]
+    assert not r["ok"] and r["error"]["code"] == "not_found"
+
+
+# -- run_job ----------------------------------------------------------------
+def _state(tmp_path):
+    Mailbox(tmp_path / "mb")
+    return tmp_path / "mb" / "state"
+
+
+def _record(state, job_id):
+    return json.loads((state / "jobs" / (job_id + ".json")).read_text(encoding="utf-8"))
+
+
+def test_run_job_budget_exceeded(tmp_path):
+    state = _state(tmp_path)
+    t0 = time.time()
+    rc = run_job([0], 0.0005, "b1", [sys.executable, "-c", "import time; time.sleep(5)"],
+                 state, kill_grace=5)
+    assert time.time() - t0 < 4.5
+    rec = _record(state, "b1")
+    assert rec["status"] == "budget_exceeded" and rec["exit_code"] == rc
+    assert rec["started"] and rec["ended"]
+
+
+def test_run_job_done_and_failed(tmp_path):
+    state = _state(tmp_path)
+    assert run_job([0], 1, "d1", [sys.executable, "-c", "pass"], state) == 0
+    assert _record(state, "d1")["status"] == "done"
+    assert run_job([0], 1, "d2", [sys.executable, "-c", "raise SystemExit(3)"], state) == 3
+    rec = _record(state, "d2")
+    assert rec["status"] == "failed" and rec["exit_code"] == 3
+
+
+def test_run_job_cuda_visible_devices(tmp_path):
+    state = _state(tmp_path)
+    out = tmp_path / "env.txt"
+    code = "import os,sys; open(sys.argv[1],'w').write(os.environ['CUDA_VISIBLE_DEVICES'])"
+    assert run_job([0, 2], 1, "e1", [sys.executable, "-c", code, str(out)], state) == 0
+    assert out.read_text() == "0,2"
+
+
+def test_run_job_cancel_file(tmp_path):
+    state = _state(tmp_path)
+    (state / "cancel").mkdir(exist_ok=True)
+
+    def later():
+        time.sleep(0.5)
+        (state / "cancel" / "c1").write_text("cancel", encoding="utf-8")
+
+    threading.Thread(target=later).start()
+    run_job([0], 1, "c1", [sys.executable, "-c", "import time; time.sleep(20)"], state,
+            poll_interval=0.1, kill_grace=5)
+    assert _record(state, "c1")["status"] == "cancelled"
+    assert not (state / "cancel" / "c1").exists()
+
+
+def test_job_finished_event_in_undelivered(tmp_path):
+    state = _state(tmp_path)
+    run_job([0], 1, "ev1", [sys.executable, "-c", "pass"], state)
+    items = Mailbox(tmp_path / "mb").undelivered()
+    assert len(items) == 1 and items[0]["kind"] == "event"
+    assert json.loads(items[0]["body"]) == {"job_id": "ev1", "status": "done"}

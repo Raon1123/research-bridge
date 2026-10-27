@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List
 
-from . import __version__, spawn
+from . import __version__, jobs, spawn
 from .audit import Audit
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _read_json
@@ -49,6 +49,7 @@ class Node:
             "msg_commit": self.msg_commit, "poll": self.poll, "ack": self.ack,
             "get_file": self.get_file, "read_doc": self.read_doc,
             "queue_status": self.queue_status, "gpu_status": self.gpu_status,
+            "job_submit": self.job_submit, "job_cancel": self.job_cancel,
         }  # type: Dict[str, Callable[[dict], Any]]
 
     # -- messages ----------------------------------------------------------
@@ -303,6 +304,14 @@ class Node:
             except ValueError:
                 continue
         return {"gpus": gpus}
+
+    # -- jobs --------------------------------------------------------------
+    def job_submit(self, args: dict) -> dict:
+        known = {g["index"] for g in self.gpu_status({}).get("gpus", [])}
+        return jobs.submit(self.cfg, self.mb, args, known or None)
+
+    def job_cancel(self, args: dict) -> dict:
+        return jobs.cancel(self.cfg, self.mb, args)
 
     # -- dispatch ----------------------------------------------------------
     def handle(self, msg: dict) -> dict:

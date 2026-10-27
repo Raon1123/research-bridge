@@ -23,7 +23,39 @@ def _harness_receive() -> int:
     return 1
 
 
+def _run_job(args: List[str]) -> int:
+    from pathlib import Path
+    from .config import load_config
+    from .run_job import run_job
+    if "--" not in args:
+        sys.stderr.write("rb-node run-job: missing -- before command
+")
+        return 2
+    i = args.index("--")
+    p = argparse.ArgumentParser(prog="rb-node run-job")
+    p.add_argument("--gpus", required=True)
+    p.add_argument("--gpu-hours", type=float, required=True)
+    p.add_argument("--job-id", required=True)
+    ns = p.parse_args(args[:i])
+    argv = args[i + 1:]
+    try:
+        gpus = [int(g) for g in ns.gpus.split(",")]
+        cfg = load_config()
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("rb-node run-job: %s
+" % exc)
+        return 2
+    if not argv or not gpus or ns.gpu_hours <= 0:
+        sys.stderr.write("rb-node run-job: invalid arguments
+")
+        return 2
+    return run_job(gpus, ns.gpu_hours, ns.job_id, argv, Path(cfg.mailbox_root) / "state")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "run-job":
+        return _run_job(args[1:])
     parser = argparse.ArgumentParser(prog="rb-node")
     parser.add_argument("command", choices=SUBCOMMANDS)
     ns, _rest = parser.parse_known_args(argv)
