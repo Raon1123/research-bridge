@@ -188,4 +188,19 @@ def test_job_finished_event_in_undelivered(tmp_path):
     run_job([0], 1, "ev1", [sys.executable, "-c", "pass"], state)
     items = Mailbox(tmp_path / "mb").undelivered()
     assert len(items) == 1 and items[0]["kind"] == "event"
-    assert json.loads(items[0]["body"]) == {"job_id": "ev1", "status": "done"}
+    assert json.loads(items[0]["body"]) == {
+        "event": "job_finished", "job_id": "ev1", "status": "done"}
+
+
+def test_cli_run_job(tmp_path, monkeypatch):
+    from rb_node import cli
+    mb = tmp_path / "mb"
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"mailbox_root": str(mb)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    rc = cli.main(["run-job", "--gpus", "0", "--gpu-hours", "1", "--job-id", "cli1", "--",
+                   sys.executable, "-c", "pass"])
+    assert rc == 0
+    items = Mailbox(mb).undelivered()
+    assert len(items) == 1
+    assert json.loads(items[0]["body"])["event"] == "job_finished"

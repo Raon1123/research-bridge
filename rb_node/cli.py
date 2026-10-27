@@ -28,8 +28,7 @@ def _run_job(args: List[str]) -> int:
     from .config import load_config
     from .run_job import run_job
     if "--" not in args:
-        sys.stderr.write("rb-node run-job: missing -- before command
-")
+        sys.stderr.write("rb-node run-job: missing -- before command\n")
         return 2
     i = args.index("--")
     p = argparse.ArgumentParser(prog="rb-node run-job")
@@ -42,12 +41,10 @@ def _run_job(args: List[str]) -> int:
         gpus = [int(g) for g in ns.gpus.split(",")]
         cfg = load_config()
     except (OSError, ValueError) as exc:
-        sys.stderr.write("rb-node run-job: %s
-" % exc)
+        sys.stderr.write("rb-node run-job: %s\n" % exc)
         return 2
     if not argv or not gpus or ns.gpu_hours <= 0:
-        sys.stderr.write("rb-node run-job: invalid arguments
-")
+        sys.stderr.write("rb-node run-job: invalid arguments\n")
         return 2
     return run_job(gpus, ns.gpu_hours, ns.job_id, argv, Path(cfg.mailbox_root) / "state")
 

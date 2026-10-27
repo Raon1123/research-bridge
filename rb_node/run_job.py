@@ -91,6 +91,6 @@ def run_job(gpus: List[int], gpu_hours: float, job_id: str, argv: List[str], sta
                              ended=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                              seconds=round(time.time() - start, 3)))
     Mailbox(state_dir.parent).post_out(
-        "event", json.dumps({"job_id": job_id, "status": status}),
+        "event", json.dumps({"event": "job_finished", "job_id": job_id, "status": status}),
         [], None)
     return rc
