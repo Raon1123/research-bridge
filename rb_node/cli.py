@@ -66,6 +66,32 @@ def main(argv: Optional[List[str]] = None) -> int:
             sys.stderr.write("rb-node: %s\n" % exc)
             return 1
         return serve(cfg, sys.stdin.buffer, sys.stdout.buffer)
+    if ns.command == "serve-local":
+        from .config import load_config
+        from .local import serve_local
+        try:
+            cfg = load_config()
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("rb-node: %s\n" % exc)
+            return 1
+        for stream in (sys.stdin, sys.stdout):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, ValueError):
+                pass
+        return serve_local(cfg, sys.stdin, sys.stdout)
+    if ns.command == "respond":
+        from .config import load_config
+        from .spawn import respond
+        if len(_rest) != 1:
+            sys.stderr.write("usage: rb-node respond <msg_id>\n")
+            return 2
+        try:
+            cfg = load_config()
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("rb-node: %s\n" % exc)
+            return 1
+        return respond(cfg, _rest[0])
     if ns.command == "harness-receive":
         return _harness_receive()
     return _not_implemented(ns.command)

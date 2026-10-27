@@ -13,6 +13,12 @@ from rb_node.protocol import CHUNK, encode
 from rb_node.remote import serve
 
 
+@pytest.fixture(autouse=True)
+def _no_real_responder(monkeypatch):
+    import rb_node.spawn as spawn
+    monkeypatch.setattr(spawn, "trigger", lambda c, m: None)
+
+
 @pytest.fixture
 def cfg(tmp_path):
     trm = tmp_path / "trm"
