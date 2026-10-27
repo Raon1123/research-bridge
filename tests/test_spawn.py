@@ -135,7 +135,7 @@ def test_stale_lock_is_taken_over(env):
     state.mkdir(parents=True)
     lock = state / "responder.lock"
     lock.write_text("1", encoding="utf-8")
-    old = time.time() - spawn.LOCK_STALE - 10
+    old = time.time() - spawn._lock_stale() - 10
     os.utime(str(lock), (old, old))
     assert spawn._acquire(state) is not None
 
@@ -146,3 +146,18 @@ def test_respond_when_lock_held_leaves_new(env):
     assert spawn.respond(env, "m1") == 0
     assert status(env, "m1") == "new"
     spawn._release(lock)
+
+
+def test_lock_stale_threshold_tracks_responder_timeout(env, monkeypatch):
+    monkeypatch.setattr(spawn, "RESPONDER_TIMEOUT", 1)
+    assert spawn._lock_stale() > spawn.RESPONDER_TIMEOUT
+    state = Path(env.mailbox_root) / "state"
+    state.mkdir(parents=True)
+    lock = state / "responder.lock"
+    lock.write_text("1", encoding="utf-8")
+    t = time.time() - (spawn.RESPONDER_TIMEOUT + 10)
+    os.utime(str(lock), (t, t))
+    assert spawn._acquire(state) is None  # still held: a run may be alive
+    t = time.time() - (spawn._lock_stale() + 10)
+    os.utime(str(lock), (t, t))
+    assert spawn._acquire(state) is not None

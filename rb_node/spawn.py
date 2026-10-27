@@ -16,7 +16,7 @@ from .config import NodeConfig
 from .mailbox import Mailbox
 
 RESPONDER_TIMEOUT = 1800  # wall seconds; monkeypatched in tests
-LOCK_STALE = 1800  # a lock file older than this is taken over
+LOCK_MARGIN = 300  # stale threshold = RESPONDER_TIMEOUT + this, so a full-length run keeps its lock
 MAX_TURNS = "40"
 ALLOWED_TOOLS = "mcp__rb__*,Read,Grep,Glob"
 
@@ -28,6 +28,10 @@ PROMPT = (
     "only, and answer with the reply tool (msg_id {msg_id}). Put any files you want to send "
     "under the message work directory and list them in reply attachments."
 )
+
+
+def _lock_stale() -> float:
+    return RESPONDER_TIMEOUT + LOCK_MARGIN
 
 
 # -- lock: O_EXCL file with an age check (portable; no fcntl) ---------------------
@@ -46,7 +50,7 @@ def _acquire(state_dir: Path) -> Optional[Path]:
                 age = time.time() - path.stat().st_mtime
             except OSError:
                 continue  # vanished between the two calls; retry
-            if age <= LOCK_STALE:
+            if age <= _lock_stale():
                 return None
             try:
                 path.unlink()  # stale: take over
@@ -76,7 +80,7 @@ def trigger(cfg: NodeConfig, msg_id: str) -> None:
     state = Path(cfg.mailbox_root) / "state"
     path = _lock_path(state)
     try:
-        if time.time() - path.stat().st_mtime <= LOCK_STALE:
+        if time.time() - path.stat().st_mtime <= _lock_stale():
             return  # a responder is running; it picks this message up afterwards
     except OSError:
         pass
