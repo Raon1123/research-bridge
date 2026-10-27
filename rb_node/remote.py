@@ -182,14 +182,14 @@ class Node:
             raise ProtocolError("not_found", "no such document")
         return p
 
-    def _bytes_for(self, p: Path, scan: bool) -> bytes:
-        """File bytes as they may leave the node: text masked; docs (scan) must pass check_file."""
+    def _bytes_for(self, p: Path) -> bytes:
+        """File bytes as they may leave the node: text masked; everything else must pass check_file."""
         if p.stat().st_size > self.cfg.max_file:
             raise ProtocolError("too_large", "file exceeds %d bytes" % self.cfg.max_file)
         if p.suffix.lower() in MASK_EXT:
             text, _n = self.withheld.mask_text(p.read_bytes().decode("utf-8", "replace"))
             return text.encode("utf-8")
-        if scan and self.withheld.check_file(p) != "ok":
+        if self.withheld.check_file(p) != "ok":
             raise PolicyError("withheld")
         return p.read_bytes()
 
@@ -211,7 +211,7 @@ class Node:
                 raise ProtocolError("not_found", "no such file")
         else:
             raise ProtocolError("bad_args", "kind must be out or doc")
-        data = self._bytes_for(p, scan=(kind == "doc"))
+        data = self._bytes_for(p)
         if seq < 0 or (seq > 0 and seq * CHUNK >= len(data)):
             raise ProtocolError("bad_seq", "seq out of range")
         chunk = data[seq * CHUNK:(seq + 1) * CHUNK]

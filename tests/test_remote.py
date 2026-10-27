@@ -173,11 +173,11 @@ def test_get_file_doc_masked_with_sha(cfg):
 
 def test_get_file_out_chunks(cfg):
     from rb_node.mailbox import Mailbox
-    big = Path(cfg.trm_root).parent / "o.bin"
+    big = Path(cfg.trm_root).parent / "o.png"
     payload = b"z" * (CHUNK + 5)
     big.write_bytes(payload)
     oid = Mailbox(Path(cfg.mailbox_root)).post_out("reply", "hi", [big], None)
-    ref = oid + "/o.bin"
+    ref = oid + "/o.png"
     r = call(cfg, ("get_file", {"kind": "out", "ref": ref, "seq": 0}),
              ("get_file", {"kind": "out", "ref": ref, "seq": 1}),
              ("get_file", {"kind": "out", "ref": oid + "/../../x", "seq": 0}))
@@ -237,3 +237,16 @@ def test_load_config_env(tmp_path, monkeypatch):
     monkeypatch.setenv("RB_NODE_CONFIG", str(tmp_path / "missing.json"))
     with pytest.raises(FileNotFoundError):
         load_config()
+
+
+def test_get_file_out_scanned_like_docs(cfg):
+    from rb_node.mailbox import Mailbox
+    bad = Path(cfg.trm_root).parent / "leak.tex"
+    bad.write_text("result pp_ltf_x here", encoding="utf-8")
+    ok_tex = Path(cfg.trm_root).parent / "fine.tex"
+    ok_tex.write_text("nothing here", encoding="utf-8")
+    oid = Mailbox(Path(cfg.mailbox_root)).post_out("reply", "hi", [bad, ok_tex], None)
+    r = call(cfg, ("get_file", {"kind": "out", "ref": oid + "/leak.tex", "seq": 0}),
+             ("get_file", {"kind": "out", "ref": oid + "/fine.tex", "seq": 0}))
+    assert r[0]["error"]["code"] == "denied"
+    assert r[1]["ok"]
