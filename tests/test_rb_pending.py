@@ -63,3 +63,15 @@ def test_render_escapes(tmp_path):
                 "config_name": "<script>x</script>", "gpus": [0], "gpu_hours": 1, "note": "a&b"})
     html = rb_pending.render_pending(led)
     assert "<script>x" not in html and "&lt;script&gt;" in html and "a&amp;b" in html
+
+
+def test_get_non_localhost_is_403(monkeypatch):
+    monkeypatch.setattr(rb_pending, "_ctx", lambda: (_ for _ in ()).throw(AssertionError))
+    st, body = rb_pending.handle_get("<LAPTOP_WIFI_IP>")
+    assert st == 403 and rb_pending.CSRF_TOKEN not in body
+
+
+def test_get_localhost_renders(tmp_path, monkeypatch):
+    monkeypatch.setattr(rb_pending, "_ctx", lambda: (_ledger(tmp_path), None))
+    st, body = rb_pending.handle_get("127.0.0.1")
+    assert st == 200 and "cfg.yaml" in body
