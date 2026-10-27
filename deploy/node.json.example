@@ -1,0 +1,22 @@
+{
+  "trm_root": "/home/<NODE_USER>/project/trm",
+  "read_roots": [
+    "lab/registry/",
+    "lab/experiments/",
+    "lab/reports/",
+    "reports/figures/",
+    "/home/<NODE_USER>/.research-bridge/mailbox/out/"
+  ],
+  "write_roots": [
+    "/home/<NODE_USER>/.research-bridge/mailbox/in/",
+    "/home/<NODE_USER>/project/trm/scripts/queue/jobs"
+  ],
+  "queue_dir": "/home/<NODE_USER>/project/trm/scripts/queue",
+  "withheld_source": "/home/<NODE_USER>/project/trm/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml",
+  "claude_bin": "/home/<NODE_USER>/.local/bin/claude",
+  "job_template": [],
+  "max_file": 52428800,
+  "mailbox_root": "/home/<NODE_USER>/.research-bridge/mailbox",
+  "audit_path": "/home/<NODE_USER>/.research-bridge/audit.jsonl",
+  "harness_root": ""
+}

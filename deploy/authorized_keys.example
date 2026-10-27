@@ -1,0 +1,4 @@
+# Append to ~/.ssh/authorized_keys on node1. Replace <LAPTOP_SUBNET> and <PUBKEY>.
+# <LAPTOP_SUBNET> candidates: <LAPTOP_WIFI_SUBNET> (Wi-Fi) or <LAPTOP_ETH_SUBNET> / <LAPTOP_ETH_SUBNET> (Ethernet).
+restrict,from="<LAPTOP_SUBNET>",command="/home/<NODE_USER>/.local/bin/rb-node serve-remote" ssh-ed25519 <PUBKEY> research-bridge-laptop
+restrict,from="<LAPTOP_SUBNET>",command="/home/<NODE_USER>/.local/bin/rb-node harness-receive" ssh-ed25519 <PUBKEY> research-bridge-harness
