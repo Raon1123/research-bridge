@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-bridge"
+version = "0.1.0"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.optional-dependencies]
+host = ["mcp>=1.27,<2"]
+
+[project.scripts]
+rb-node = "rb_node.cli:main"
+rb = "rb_host.cli:main"
+rb-host-mcp = "rb_host.server:main"
+
+[tool.setuptools]
+packages = ["rb_node", "rb_host"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
