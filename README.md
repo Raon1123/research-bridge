@@ -11,6 +11,15 @@ Host config is JSON at `D:/raw/research-bridge/host.json` (override with `RB_HOS
 
     {"nodes": {"node1": {"alias": "node1"}}}
 
+## Private values (not in git)
+
+Server addresses, ports, node names, user names and laptop IPs are replaced in tracked files by
+placeholders (`node1`, `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`, `<LAPTOP_USER>`,
+`<LAPTOP_ETH_SUBNET>` ...). Real values live in the gitignored `private/` directory:
+`private/placeholders.md` (placeholder -> real value) and `private/local.json` (copy of
+`local.example.json`; `laptop_home` and `node_home` feed the harness path mapping, overridable
+with `RB_LAPTOP_HOME` / `RB_NODE_HOME`). Do not commit real values; put them in `private/`.
+
 ## Register the MCP server
 
 Add to user-scope `~/.claude.json` under `mcpServers`:

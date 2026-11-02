@@ -27,12 +27,27 @@ TIMEOUT = 300
 # ---------------------------------------------------------------------------
 # Vendored from portablize_harness.py (source: 90_Claude/60_Tools/sync/portablize_harness.py)
 # ---------------------------------------------------------------------------
+def _local_homes() -> Tuple[str, str]:
+    """(laptop home, node home). Real values stay out of git: they come from
+    RB_LAPTOP_HOME / RB_NODE_HOME, else private/local.json (gitignored, keys laptop_home and
+    node_home), else the laptop's own home and /home/<laptop login name>."""
+    data: Dict[str, str] = {}
+    local = Path(__file__).resolve().parent.parent / "private" / "local.json"
+    if local.is_file():
+        data = json.loads(local.read_text(encoding="utf-8"))
+    lap = os.environ.get("RB_LAPTOP_HOME") or data.get("laptop_home") or Path.home().as_posix()
+    srv = os.environ.get("RB_NODE_HOME") or data.get("node_home") or "/home/" + Path.home().name
+    return lap.replace(chr(92), "/").rstrip("/"), srv.rstrip("/")
+
+
+LAPTOP_HOME, NODE_HOME = _local_homes()
+NODE_USER = NODE_HOME.rsplit("/", 1)[-1]
 MAPPING = [
     ("<MASTER_BIB>", "D:/raw/bibtex/references.bib", "<VAULT_TEX_ROOT>/_shared/references.bib"),
-    ("<VAULT_PRIMARY_90CLAUDE>", "D:/raw/vault-primary/90_Claude", "/home/<NODE_USER>/raw/vault-primary/90_Claude"),
-    ("<VAULT_TEX_ROOT>", "D:/raw/vault-tex", "/home/<NODE_USER>/raw/vault-tex"),
-    ("<RAW_ROOT>", "D:/raw", "/home/<NODE_USER>/raw"),
-    ("<HOME>", "C:/Users/<LAPTOP_USER>", "/home/<NODE_USER>"),
+    ("<VAULT_PRIMARY_90CLAUDE>", "D:/raw/vault-primary/90_Claude", NODE_HOME + "/raw/vault-primary/90_Claude"),
+    ("<VAULT_TEX_ROOT>", "D:/raw/vault-tex", NODE_HOME + "/raw/vault-tex"),
+    ("<RAW_ROOT>", "D:/raw", NODE_HOME + "/raw"),
+    ("<HOME>", LAPTOP_HOME, NODE_HOME),
 ]
 SKIP_REVIEW = re.compile(r"REVIEW:")
 SKIP_PS = re.compile(r"\.ps1|powershell\s+-", re.I)
@@ -40,11 +55,11 @@ SKIP_UV = re.compile(r"uv\s+run\s+python")
 SKIP_PROHIBIT = re.compile(r"NEVER|금지|절대|쓰지\s*마|do\s+not\s+write|read-?only|CRITICAL-never", re.I)
 ICLOUD = re.compile(r"D:/iCloud", re.I)
 INTERP = re.compile(r"C:/Python\d+/python\.exe|D:/raw/envs/[^/ ]+/Scripts/python\.exe", re.I)
-PATH_RE = re.compile(r"D:/raw|D:/iCloud|C:/Users/<LAPTOP_USER>|C:/Python\d+", re.I)
+PATH_RE = re.compile(r"D:/raw|D:/iCloud|" + re.escape(LAPTOP_HOME) + r"|C:/Python\d+", re.I)
 FLIP_OPEN = re.compile(r"MACHINE DEFAULTS")
 FLIP_CLOSE = re.compile(r"^\s*(?://|#)\s*[-─]{10,}\s*$")
 TABLE_ROW = re.compile(r"^\s*\|.*\|")
-SERVER_PATH = re.compile(r"/home/<NODE_USER>|/mnt/")
+SERVER_PATH = re.compile(re.escape(NODE_HOME) + r"|/mnt/")
 PLACEHOLDER = re.compile(r"<[A-Z][A-Z0-9_]*>")
 _STOP = re.escape(chr(34) + chr(39) + chr(96) + ',;:)]}<>|')
 TOKEN_TAIL = '[^' + chr(92) + 's' + _STOP + ']*'
@@ -87,11 +102,11 @@ BIB_CAVEAT = ("\n`<MASTER_BIB>` is **not** under `<VAULT_TEX_ROOT>` on the lapto
               "resolve it\nindependently.\n\n")
 NAS_BACKED = {
     "<VAULT_PRIMARY_90CLAUDE>": ("VAULT_PRIMARY_90CLAUDE",
-                                 ["/home/<NODE_USER>/raw/vault-primary/90_Claude",
-                                  "/mnt/<nas>/<NODE_USER>/vault-primary/90_Claude"]),
+                                 [NODE_HOME + "/raw/vault-primary/90_Claude",
+                                  "/mnt/<nas>/%s/vault-primary/90_Claude" % NODE_USER]),
     "<VAULT_TEX_ROOT>": ("VAULT_TEX_ROOT",
-                         ["/home/<NODE_USER>/raw/vault-tex", "/home/<NODE_USER>/project/vault-tex",
-                          "/mnt/<nas>/<NODE_USER>/vault-tex"]),
+                         [NODE_HOME + "/raw/vault-tex", NODE_HOME + "/project/vault-tex",
+                          "/mnt/<nas>/%s/vault-tex" % NODE_USER]),
 }
 
 

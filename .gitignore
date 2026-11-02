@@ -3,3 +3,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .venv/
+
+# Real server address, user names, laptop IPs (anonymized in tracked files)
+private/

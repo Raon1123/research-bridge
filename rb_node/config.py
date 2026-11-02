@@ -7,12 +7,14 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import List, Optional
 
-DEFAULT_TRM = "/home/<NODE_USER>/project/trm"
 DEFAULT_RB = "~/.research-bridge"
 
 
 def _home(p: str) -> str:
     return os.path.expanduser(p)
+
+
+DEFAULT_TRM = _home("~/project/trm")
 
 
 @dataclass
@@ -25,12 +27,11 @@ class NodeConfig:
         _home(DEFAULT_RB + "/mailbox/in/"), DEFAULT_TRM + "/scripts/queue/jobs"])
     queue_dir: str = DEFAULT_TRM + "/scripts/queue"
     withheld_source: Optional[str] = DEFAULT_TRM + "/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml"
-    claude_bin: str = "/home/<NODE_USER>/.local/bin/claude"
+    claude_bin: str = field(default_factory=lambda: _home("~/.local/bin/claude"))
     job_template: List[str] = field(default_factory=list)  # argv with {config} placeholder
     max_file: int = 50 * 1024 * 1024
     mailbox_root: str = _home(DEFAULT_RB + "/mailbox")
     audit_path: str = _home(DEFAULT_RB + "/audit.jsonl")
-    harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
     harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
 
 

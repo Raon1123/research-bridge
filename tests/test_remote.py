@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -238,7 +239,7 @@ def test_load_config_env(tmp_path, monkeypatch):
     p.write_text(json.dumps({"trm_root": "/x", "queue_dir": "/q"}), encoding="utf-8")
     monkeypatch.setenv("RB_NODE_CONFIG", str(p))
     c = load_config()
-    assert c.trm_root == "/x" and c.claude_bin == "/home/<NODE_USER>/.local/bin/claude"
+    assert c.trm_root == "/x" and c.claude_bin == os.path.expanduser("~/.local/bin/claude")
     assert c.job_template == [] and c.max_file == 50 * 1024 * 1024
     monkeypatch.setenv("RB_NODE_CONFIG", str(tmp_path / "missing.json"))
     with pytest.raises(FileNotFoundError):

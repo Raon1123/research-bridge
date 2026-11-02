@@ -120,7 +120,7 @@ def test_collect_portablizes_markdown(env):
     d = dict(hh.collect(env["home"]))
     text = d["agents/a.md"].decode()
     assert "see <RAW_ROOT>/papers/x here" in text and "D:/raw/papers" not in text
-    assert "## Path resolution" in text and "/home/<NODE_USER>/raw" in text
+    assert "## Path resolution" in text and hh.NODE_HOME + "/raw" in text
     assert d["hooks/h.py"] == (env["home"] / "hooks" / "h.py").read_bytes()  # code untouched
 
 
