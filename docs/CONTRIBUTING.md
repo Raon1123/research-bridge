@@ -32,7 +32,7 @@ Issues are enabled on this repository. Use them for:
 - a defect, or a postmortem item that needs work (template "Defect");
 - a provisioning or live-run step the user has to run (template "Provisioning step").
 
-Labels (proposed; to be created by the user or with their go-ahead):
+Labels (created on GitHub 2026-11-02, alongside GitHub's default labels):
 
 | Label | Meaning |
 |---|---|
