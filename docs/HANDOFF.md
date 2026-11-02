@@ -46,7 +46,9 @@ Main was fast-forwarded to `f9503cf` on 2026-11-02 (the first merge to `824f1f8`
 
 ## Follow-ups (not blocking)
 
-- Run the final whole-branch review (see State).
+- Run the final whole-branch review (see State). Record its findings in `docs/postmortems/` (template and rules in `docs/postmortems/README.md`).
+- Complete the draft postmortem `docs/postmortems/2026-10-27-sdd-build.md` (items from the ledger only; `<to fill>` fields and an audit remain). Write a postmortem after the B3 live run.
+- Changes to the protocol, ledger fields or keys start from `docs/design/TEMPLATE.md`; candidates are listed in `docs/design/README.md`.
 - `render.py` in the vault session-calendar builds the main screen from transcripts and does not read `cache/agents/*.json`, so bridge edges will not show on the main screen until it does. `bridge_edges.merge` writes into that cache only for sessions whose cache file already exists.
 - `verify.py --server` reported one failure ("sessions whose utterances are not in time order", 1 session) after the Task 12 refresh. No baseline was taken before the change. It is inferred to be pre-existing because the bridge step is a no-op without a ledger. Confirm by running `verify.py` with the bridge step disabled.
 - Ledger records do not carry `to_session` or attachment byte totals, so bridge edges always show `<node>:responder` and `bytes` 0. Add the fields on the host side if wanted.
