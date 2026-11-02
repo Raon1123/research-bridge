@@ -1,0 +1,11 @@
+--- a/session-calendar/template.html
++++ b/session-calendar/template.html
+@@ -733,7 +733,7 @@
+ function agDraw(root, G, extraTop){
+   if (!document.getElementById('agCss')){ const st = document.createElement('style'); st.id = 'agCss'; st.textContent = AG_CSS; document.head.appendChild(st); }
+   const KIND = {spawn:{n:'생성',c:'--s3'}, return:{n:'결과 반환',c:'--muted',d:1}, notify:{n:'알림·보고(agent-message)',c:'--s1',d:1},
+-    send:{n:'SendMessage',c:'--s2'}, 'session-msg':{n:'다른 세션 메시지',c:'--s8'}, 'teammate-msg':{n:'팀원 메시지',c:'--s7'}};
++    send:{n:'SendMessage',c:'--s2'}, 'session-msg':{n:'다른 세션 메시지',c:'--s8'}, 'teammate-msg':{n:'팀원 메시지',c:'--s7'}, bridge:{n:'research-bridge',c:'--s5'}};
+   const LC = {main:['--ink2',1], agent:['--s3',.85], workflow:['--s7',.9], 'workflow-agent':['--s7',.5], external:['--s8',.85]};
+   const cs = getComputedStyle(root), col = v => cs.getPropertyValue(v).trim() || '#888';
+   const e8 = x => String(x ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

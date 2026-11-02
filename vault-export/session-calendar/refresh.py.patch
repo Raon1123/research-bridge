@@ -1,0 +1,15 @@
+--- a/session-calendar/refresh.py
++++ b/session-calendar/refresh.py
+@@ -87,6 +87,12 @@
+                 return 0 if quiet else r.returncode
+             if quiet and r.stdout:
+                 last = next((ln for ln in r.stdout.splitlines() if ln.startswith("status:")), last)
++            if script == "link.py":    # research-bridge 연결(실패해도 계속: 한 줄만 남긴다)
++                try:
++                    import bridge_edges
++                    bridge_edges.merge(bridge_edges.build_edges(bridge_edges.LEDGER))
++                except Exception as exc:
++                    print(f"[{stamp}] refresh: bridge_edges 건너뜀 ({type(exc).__name__})")
+         if quiet:
+             print(f"[{stamp}] refresh ok {time.time() - t0:.1f}s · {last}")
+         return 0

@@ -1,0 +1,1 @@
+Task 13 Step 1: wrote docs/provisioning.md, deploy/node.json.example, deploy/authorized_keys.example. JSON parses and has all 11 NodeConfig keys. job_template [] and harness_root "". Placeholders: <LAPTOP_SUBNET>, <PUBKEY>. Concern: MCP snippet assumes `python -m rb_host.server` and venv path; verify.

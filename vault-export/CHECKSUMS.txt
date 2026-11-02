@@ -1,0 +1,10 @@
+# sha256 of the live vault files at export time (2026-11-02)
+# original = file before the research-bridge edit; current = file as edited
+original  717c22ed17cc5f59c59f8208d3b095debcebf97abd5ea27cdfb2e250e641ad7a  server.py
+original  c2284b557184dce22853a54e2fac6cabd862237ba7315add47d0334160002994  refresh.py
+original  dc0aa42b565ab3d7a83baa2511466c11a5077afa5c7e8d66613ca8ed9da3c4f2  template.html
+current   31f12aa82b95da47a801f6c8bc89806d37e81019651b9e8a6c60fd9aeaa195f8  dashboard/server.py
+current   c86da995adf123aa28a9ba506b2125b4014072c0cbd22e20f98585b6269a3b04  dashboard/rb_pending.py
+current   f5177134ff622bb0718a047688f41e045d70e7643c10d2c024a7063cc9c801af  session-calendar/refresh.py
+current   e9d9d8ff047a8eec4c2f0b7ff7988e6f0f7f2d1d61796798ced4d83f31f93839  session-calendar/bridge_edges.py
+current   4201955787d268a6c05217a1d63f529f881c1fb78bddf777348f7e5dbfc6ace1  session-calendar/template.html
