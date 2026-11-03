@@ -88,6 +88,32 @@ def _harness(args: argparse.Namespace) -> int:
         return 1
 
 
+def _board(args: argparse.Namespace) -> int:
+    import json
+    from . import board
+    from .config import HostConfig
+    try:
+        cfg = jobs.load_cfg()
+    except FileNotFoundError:
+        if args.action == "refresh":
+            print("error: no host.json; see docs/manual/hub-setup.md")
+            return 1
+        cfg = HostConfig()  # show: laptop sources only, as the 8765 page does
+    if args.action == "refresh":
+        try:
+            results = board.refresh(cfg, args.node, args.source or None)
+        except ValueError as exc:
+            print("error: %s" % exc)
+            return 1
+        for r in results:
+            print("%s %s" % (r["source"], "ok" if r["ok"] else "error %s" % r["error"]))
+        return 0
+    b = board.load(cfg)
+    sys.stdout.write(json.dumps(b, ensure_ascii=False, indent=1) + "\n" if args.json
+                     else board.render_text(b))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="rb")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -109,6 +135,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     hd = hs.add_parser("diff", help="unified diff of a pulled staging dir against the live harness")
     hd.add_argument("stamp")
     h.set_defaults(fn=_harness)
+    b = sub.add_parser("board", help="unified board cache (read only; approval stays on rb approve)")
+    bs = b.add_subparsers(dest="action", required=True)
+    br = bs.add_parser("refresh", help="fetch node sources through the bridge into the board cache")
+    br.add_argument("--node")
+    br.add_argument("--source", action="append", choices=["queue", "gpu", "state", "events",
+                                                          "kanban"])
+    bw = bs.add_parser("show", help="print the board from the cache; opens no connection")
+    bw.add_argument("--json", action="store_true")
+    b.set_defaults(fn=_board)
     args = ap.parse_args(argv)
     return args.fn(args)
 

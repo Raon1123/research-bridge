@@ -19,7 +19,7 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`. Plan (Tas
 | Path | Role |
 |---|---|
 | `rb_node/` | Node side. Standard library only, Python >= 3.8, `from __future__ import annotations` in every module. Runs on node1. |
-| `rb_host/` | Laptop side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI. Python 3.14, needs `mcp>=1.27,<2` (extra `host`). |
+| `rb_host/` | Laptop side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI, unified board cache (`board.py`, `rb board`). Python 3.14, needs `mcp>=1.27,<2` (extra `host`). |
 | `tests/` | pytest. Node and host tests run against a local subprocess node, never against node1. |
 | `deploy/` | `node.json.example`, `authorized_keys.example` (placeholders only). |
 | `vault-export/` | Snapshot and patches of the files this project edited in the vault. See `vault-export/README.md`. |
@@ -42,7 +42,7 @@ The main checkout has **no `.venv` yet**. Create it here:
 
 Prefix shell commands with `rtk`. `rtk pytest` hides output on this machine; use `rtk proxy .venv/Scripts/python -m pytest -q`.
 
-Last recorded results (2026-10-27, in the worktree venv): 151 passed excluding `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`, which passed separately (9 and 4). Re-run to confirm; the vault dashboard directory must exist for `test_rb_pending.py`.
+Last recorded results (2026-11-03, in a worktree venv): 183 passed, all files together. Earlier (2026-10-27): 151 passed excluding `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`, which passed separately (9 and 4). Re-run to confirm; the vault dashboard directory must exist for `test_rb_pending.py`.
 
 ## Hard rules
 

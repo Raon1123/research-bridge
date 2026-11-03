@@ -75,6 +75,18 @@ Host rb-<node>-harness
 {"nodes": {"<node>": {"alias": "rb-<node>", "harness_alias": "rb-<node>-harness"}}}
 ```
 
+선택 항목, 통합 보드용(`rb board refresh|show`, 8765 `/board`): node별 경로는 node의 `trm_root` 기준 상대 경로이며 node `node.json`의 `read_roots` 안에 있어야 한다. 논문 칸반과 우선순위 보드의 laptop 경로는 아래가 기본값이다.
+
+```json
+{"nodes": {"<node>": {"alias": "rb-<node>",
+                       "board": {"state": "<path>/STATE.md", "events": "<path>/events.json",
+                                 "kanban": "<path>/<kanban>.json"}}},
+ "board": {"portfolio": "D:/raw/vault-primary/90_Claude/10_Analysis/11_research-program/80_portfolio/portfolio.json",
+           "priorities": "D:/raw/priorities/live.json"}}
+```
+
+node 경로를 비워 두면 보드에 `no_path`로 표시된다. node는 `.jsonl` 파일을 거부하므로(`deny_unscannable`) events 소스에는 `.json` 내보내기가 필요하다(설계 `docs/design/2026-11-02-unified-board.md` §15 질문 6).
+
 `harness_alias`의 기본값은 `rb-<node>-harness`이다. 여기에 등록된 alias만 사용하며, hub는 tool 인자로 받은 호스트 이름에는 접속하지 않는다. `host.json`이 없으면 `rb approve`와 대시보드의 승인 버튼은 오류를 반환한다.
 
 ## 6. Claude 세션용 MCP 서버 등록 (사용자가 실행)
