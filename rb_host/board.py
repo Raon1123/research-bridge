@@ -207,7 +207,9 @@ def _fetch(cfg: HostConfig, node: str, name: str, wh: Withheld) -> Dict[str, Any
     res = server.fetch_file(node, path)
     if "error" in res:
         return {"error": str(res["error"]), "payload": b""}
-    data = Path(res["path"]).read_bytes()
+    fetched = Path(res["path"])
+    data = fetched.read_bytes()
+    fetched.unlink()  # only the reduced fields stay on the laptop (design §4)
     text = data.decode("utf-8", "replace")
     try:
         items = reduce_events(text, wh) if name == "events" else reduce_kanban(text, wh)

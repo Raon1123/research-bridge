@@ -1,10 +1,10 @@
 # Unified research board (autoresearch + research-bridge) — design
 
-Date: 2026-11-02 · Status: building (steps 3–5 done 2026-11-03; steps 1, 2, 6 wait on the user) · Author: research-bridge session "Design/postmortem templates" · Code: `rb_host/` (new `board` module and `rb board` CLI), `vault-export/dashboard/` (8765 route patch), `deploy/node.json.example` (read roots) · Data: `D:/raw/research-bridge/board/` (laptop cache)
+Date: 2026-11-02 · Status: draft (steps 3–5 implemented 2026-11-03, not merged; not yet user-approved) · Author: research-bridge session "Design/postmortem templates" · Code: `rb_host/` (new `board` module and `rb board` CLI), `vault-export/dashboard/` (8765 route patch), `deploy/node.json.example` (read roots) · Data: `D:/raw/research-bridge/board/` (laptop cache)
 
 Status history:
 - 2026-11-02 draft
-- 2026-11-03 building: `rb_host/board.py`, `rb board refresh|show`, `vault-export/dashboard/rb_board.py` + `server.py.board.patch`, tests (§10). Open questions answered with their defaults in code, not by the user (§13).
+- 2026-11-03 still draft; steps 3–5 implemented on branch `claude/mvp-scope-review-01fb0e`: `rb_host/board.py`, `rb board refresh|show`, `vault-export/dashboard/rb_board.py` + `server.py.board.patch`, tests (§10). Open questions answered with their defaults in code, not by the user (§13).
 
 ## 1. Intent
 
@@ -154,6 +154,7 @@ No new ledger record kinds. The session browser is unchanged.
 | 3 | Each node source opens its own SSH session (five per refresh). Per-source timeout is the SSH `ConnectTimeout` only; no per-call read timeout. | A hung node call blocks `rb board refresh`; the page is unaffected because it never connects. | `rb_host/board.py` `refresh` |
 | 4 | Waiting-on-user list: pending jobs, then incoming replies with no outgoing message whose `reply_to` is their id, then priorities `now` tier items with `actor` user and status open, then one line per paper with open `user_action` tasks (the full task list stays on `/portfolio`). Node events need no answer. | Long list if many papers carry user tasks; at most one line per paper. | `rb_host/board.py` `load` |
 | 5 | Laptop sources (ledger, portfolio, priorities) are read at page load, not cached; node sources are read from the cache only. | None for correctness; a large `portfolio.json` is parsed per page load (about 0.5 MB). | `rb_host/board.py` `load` |
+| 7 | `events` and `kanban` arrive through `fetch_file`, which stores the whole masked file under `data_root/fetched/`; the board deletes that copy right after reducing it, so only the reduced fields stay on the laptop. | None; a later `fetch_file` of the same path by a session writes it again on purpose. | `rb_host/board.py` `_fetch`; `test_withheld_event_dropped` scans the whole data root |
 | 6 | `rb board show` without `host.json` shows the laptop sources only (as the 8765 page does); `refresh` without it is an error. | — | `rb_host/cli.py` |
 
 ## 14. Left to the builder

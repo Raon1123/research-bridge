@@ -42,7 +42,7 @@ The main checkout has **no `.venv` yet**. Create it here:
 
 Prefix shell commands with `rtk`. `rtk pytest` hides output on this machine; use `rtk proxy .venv/Scripts/python -m pytest -q`.
 
-Last recorded results (2026-10-27, in the worktree venv): 151 passed excluding `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`, which passed separately (9 and 4). Re-run to confirm; the vault dashboard directory must exist for `test_rb_pending.py`.
+Last recorded results (2026-11-03, in a worktree venv): 183 passed, all files together. Earlier (2026-10-27): 151 passed excluding `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`, which passed separately (9 and 4). Re-run to confirm; the vault dashboard directory must exist for `test_rb_pending.py`.
 
 ## Hard rules
 

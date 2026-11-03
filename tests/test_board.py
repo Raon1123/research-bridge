@@ -210,7 +210,9 @@ def test_withheld_event_dropped(env):
     assert ev == [{"ts": "2026-11-02T09:00:00Z", "stage": "S5", "kind": "monitor", "track": "ARG"}]
     st = s["n1:state"]["items"][0]
     assert "note" not in st  # STATE.md line hit by a fallback pattern: blanked on node and laptop
-    for f in (env["root"] / "board").iterdir():
+    for f in env["root"].rglob("*"):  # the whole data root, fetched/ included
+        if not f.is_file():
+            continue
         text = f.read_text(encoding="utf-8")
         assert "pp_seedext" not in text and "H108N" not in text and "free text" not in text
 
