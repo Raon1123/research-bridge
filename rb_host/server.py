@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import re
 import uuid
 from pathlib import Path
@@ -16,7 +17,7 @@ from rb_node.withheld import Withheld
 from . import jobs
 from .client import NodeClient, RemoteError, TransportError
 from .jobs import ledger_for, load_cfg
-from .store import _safe_name, store_incoming
+from .store import _remote_name, _safe_name, store_incoming
 
 mcp = FastMCP("research-bridge")
 _DOC_ID = re.compile(r"^(H|EXP)-\d+$")
@@ -156,12 +157,14 @@ def fetch_file(node: str, path: str) -> dict:
     cfg = load_cfg()
     cfg.alias(node)
     dest = Path(cfg.data_root) / "fetched" / node / _safe_name(path)
+    # downloaded under the node's extension (check_file needs it), renamed after the check (SEC-02)
+    stage = dest.parent / ("fetch-" + _remote_name(path).replace(":", "_"))
 
     def work(c: NodeClient) -> dict:
         try:
-            sha = c.get_file("doc", path, dest)
+            sha = c.get_file("doc", path, stage)
         except (RemoteError, TransportError):
-            part = dest.with_suffix(dest.suffix + ".part")
+            part = stage.with_suffix(stage.suffix + ".part")
             if part.exists():
                 part.unlink()
             raise
@@ -170,10 +173,11 @@ def fetch_file(node: str, path: str) -> dict:
     res = _run(node, work)
     if "error" in res:
         return res
-    verdict = Withheld.load(Path(cfg.withheld_patterns_file)).check_file(dest)
+    verdict = Withheld.load(Path(cfg.withheld_patterns_file)).check_file(stage)
     if verdict != "ok":
-        dest.unlink()
+        stage.unlink()
         return {"error": "withheld"}
+    os.replace(str(stage), str(dest))
     return {"path": str(dest), "sha256": res["sha256"]}
 
 

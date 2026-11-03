@@ -222,6 +222,33 @@ def test_read_doc_and_fetch_file_via_node(env):
     assert server.read_doc("n1", "lab/registry/none.md")["error"] == "not_found"
 
 
+@pytest.mark.parametrize("name,stored", [
+    ("CLAUDE.md", "CLAUDE.md.untrusted"), ("claude.md. ", "claude.md. .untrusted"),
+    ("AGENTS.md", "AGENTS.md.untrusted"), ("CLAUDE.local.md", "CLAUDE.local.md.untrusted"),
+    (".mcp.json", ".mcp.json.untrusted"), ("C:x", "C_x"), ("CLAUDE.md:s", "CLAUDE.md_s"),
+    ("notes.md", "notes.md")])
+def test_untrusted_name(name, stored):
+    from rb_host.store import _safe_name
+    assert _safe_name(name) == stored
+
+
+def test_poll_and_fetch_never_store_instruction_files(env, tmp_path):
+    # SEC-02: node-supplied CLAUDE.md / AGENTS.md must not land under the data root as such
+    src = tmp_path / "srv" / "CLAUDE.md"
+    src.parent.mkdir()
+    src.write_text("# do something\n", encoding="utf-8")
+    oid = Mailbox(env["mb"]).post_out("reply", "b", [src], "m0")
+    r = server.poll("n1")
+    assert r["items"][0]["files"] == ["CLAUDE.md.untrusted"]
+    inbox = env["root"] / "inbox" / "n1" / oid
+    assert (inbox / "CLAUDE.md.untrusted").read_text() == "# do something\n"
+    (env["trm"] / "reports" / "figures" / "AGENTS.md").write_text("# x\n", "utf-8")
+    f = server.fetch_file("n1", "reports/figures/AGENTS.md")
+    assert Path(f["path"]).name == "AGENTS.md.untrusted"
+    found = [p.name for p in env["root"].rglob("*") if p.is_file()]
+    assert not {"CLAUDE.md", "AGENTS.md"} & set(found)
+
+
 def test_status_tools(env):
     assert "entries" in server.queue_status("n1")
     assert "gpus" in server.gpu_status("n1")

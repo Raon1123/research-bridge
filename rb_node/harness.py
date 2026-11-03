@@ -16,7 +16,7 @@ import sys
 import tarfile
 import time
 from pathlib import Path
-from typing import BinaryIO, List, Tuple
+from typing import BinaryIO, Callable, List, Optional, Tuple
 
 from .audit import Audit
 from .config import NodeConfig
@@ -155,8 +155,12 @@ def validate_tar(data: bytes) -> List[tarfile.TarInfo]:
     return files
 
 
-def extract_tar(data: bytes, dest_parent: Path, stamp: str) -> Tuple[Path, int]:
-    """Validate everything, then write into dest_parent/<stamp>/. Nothing is written on rejection."""
+def extract_tar(data: bytes, dest_parent: Path, stamp: str,
+                rename: Optional[Callable[[str], str]] = None) -> Tuple[Path, int]:
+    """Validate everything, then write into dest_parent/<stamp>/. Nothing is written on rejection.
+
+    rename maps each member's last path component to the stored name (the laptop passes one).
+    """
     files = validate_tar(data)
     tf = tarfile.open(fileobj=io.BytesIO(data), mode="r:")
     dest_parent = Path(dest_parent)
@@ -168,7 +172,11 @@ def extract_tar(data: bytes, dest_parent: Path, stamp: str) -> Tuple[Path, int]:
     try:
         policy = PathPolicy(tmp, [], [str(tmp)])
         for m in files:
-            target = policy.resolve_write(m.name)
+            name = m.name
+            if rename is not None:
+                head, _, last = name.rpartition("/")
+                name = (head + "/" if head else "") + rename(last)
+            target = policy.resolve_write(name)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(tf.extractfile(m).read())  # type: ignore[union-attr]
         final = dest_parent / stamp
