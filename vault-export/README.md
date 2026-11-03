@@ -8,7 +8,7 @@ Vault tools root: `D:/raw/vault-primary/90_Claude/60_Tools/`. The vault is not a
 
 | Export | Live file | Change |
 |---|---|---|
-| `dashboard/rb_pending.py` | `dashboard/rb_pending.py` | **New.** Approval page and POST handler for the 8765 dashboard. Loopback (127.0.0.1) only for GET and POST; per-process CSRF token. Imports `rb_host` from `RB_REPO = "D:/raw/Codes/research-bridge"`; without `host.json` it uses an empty config. |
+| `dashboard/rb_pending.py` | `dashboard/rb_pending.py` | **New.** Approval page and POST handler for the 8765 dashboard. Loopback (127.0.0.1) only for GET and POST; per-process CSRF token. Since 2026-11-03 (SEC-01) the Approve form has a passphrase field that is passed to `jobs.approve`; **the live copy predates this and must be replaced** (see below). Imports `rb_host` from `RB_REPO = "D:/raw/Codes/research-bridge"`; without `host.json` it uses an empty config. |
 | `dashboard/server.py.patch` | `dashboard/server.py` | Adds `GET /rb/pending`, `POST /rb/approve`, `POST /rb/reject`, routed to `rb_pending`. |
 | `session-calendar/bridge_edges.py` | `session-calendar/bridge_edges.py` | **New.** Builds metadata-only edges from `D:/raw/research-bridge/ledger.jsonl` and merges them into `cache/agents/<sid>.json` when that file exists. Never writes a message body. |
 | `session-calendar/refresh.py.patch` | `session-calendar/refresh.py` | One fail-soft step after `link.py` that calls `bridge_edges`. |
@@ -52,6 +52,16 @@ Then restart the dashboard to load the new routes:
     rm dashboard/rb_pending.py session-calendar/bridge_edges.py
 
 then restart the dashboard.
+
+## Update rb_pending.py for node-side approval (user, 2026-11-03)
+
+`jobs.approve` now requires the approval passphrase. The old live `rb_pending.py` calls it without one, so its Approve button fails with "operation failed" (nothing is sent to the node) until the file is replaced:
+
+    cd D:/raw/vault-primary/90_Claude/60_Tools
+    cp D:/raw/Codes/research-bridge/vault-export/dashboard/rb_pending.py dashboard/
+    cd dashboard && cmd /c _restart.bat
+
+`server.py` needs no change: the form fields, including `passphrase`, already reach `handle_post`. `tests/test_rb_pending.py` now imports the copy in this directory, not the vault copy.
 
 ## Known limits
 

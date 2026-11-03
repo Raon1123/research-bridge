@@ -47,6 +47,7 @@ def cfg(tmp_path):
         withheld_source=None,
         mailbox_root=str(mb),
         audit_path=str(tmp_path / "rb" / "audit.jsonl"),
+        approval_path=str(tmp_path / "rb" / "approve.json"),
     )
 
 

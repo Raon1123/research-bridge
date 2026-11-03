@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 from typing import List, Optional
 
@@ -21,6 +22,9 @@ def _approve(args: argparse.Namespace) -> int:
     if rec["status"] in jobs.DONE.values():
         print("already %s" % rec["status"])
         return 0
+    if rec["status"] not in ("pending_approval", "approved"):
+        print("job is %s, cannot approve" % rec["status"])
+        return 1
     if not args.yes:
         sys.stdout.write("Approve? [y/N] ")
         sys.stdout.flush()
@@ -28,8 +32,13 @@ def _approve(args: argparse.Namespace) -> int:
         if ans not in ("y", "yes"):
             print("not approved")
             return 1
+    # always typed by the user, also with --yes; there is no flag, file or variable for it
+    passphrase = getpass.getpass("Approval passphrase: ")
+    if not passphrase:
+        print("not approved")
+        return 1
     try:
-        out = jobs.approve(led, cfg, args.job_id)
+        out = jobs.approve(led, cfg, args.job_id, passphrase)
     except (ValueError, RemoteError, TransportError) as exc:
         print("error: %s" % exc)
         return 1

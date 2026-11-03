@@ -11,9 +11,11 @@ import pytest
 from rb_host import cli, jobs, server
 from rb_host.client import NodeClient, TransportError
 from rb_host.ledger import Ledger
+from rb_node import approval
 from rb_node.mailbox import Mailbox
 
 SERVE = [sys.executable, "-m", "rb_node.cli", "serve-remote"]
+PW = "test passphrase"
 EXPECTED_TOOLS = {"nodes", "send_message", "poll", "thread", "read_doc", "fetch_file",
                   "queue_status", "gpu_status", "submit_job", "cancel_job"}
 
@@ -36,7 +38,12 @@ def env(tmp_path, monkeypatch):
         "mailbox_root": str(mb),
         "audit_path": str(tmp_path / "rb" / "audit.jsonl"),
         "job_template": ["echo", "{config}"],
+        "approval_path": str(tmp_path / "rb" / "approve.json"),
     }
+    # a fast KDF for tests; the laptop's lower bound is lowered to match
+    approval.write_record(Path(conf["approval_path"]), approval.make_record(PW, iterations=1000)[0])
+    monkeypatch.setattr(approval, "MIN_ITERATIONS", 1)
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": PW)
     nodecfg = tmp_path / "node.json"
     nodecfg.write_text(json.dumps(conf), encoding="utf-8")
     wp = tmp_path / "withheld.json"
@@ -106,12 +113,12 @@ def _jobs_dir(env):
 def test_approve_queues_and_is_idempotent(env):
     jid = _submit(env)
     cfg = server.load_cfg()
-    out = jobs.approve(env["ledger"], cfg, jid)
+    out = jobs.approve(env["ledger"], cfg, jid, PW)
     assert out["status"] == "queued"
     assert len(list(_jobs_dir(env).glob("*.job"))) == 1
     assert env["ledger"].get(jid)["status"] == "queued"
     n_calls = len(env["calls"])
-    out2 = jobs.approve(env["ledger"], cfg, jid)
+    out2 = jobs.approve(env["ledger"], cfg, jid, PW)
     assert out2 == out and len(env["calls"]) == n_calls
     assert len(list(_jobs_dir(env).glob("*.job"))) == 1
 
@@ -119,9 +126,9 @@ def test_approve_queues_and_is_idempotent(env):
 def test_cancel_approve(env):
     jid = _submit(env)
     cfg = server.load_cfg()
-    jobs.approve(env["ledger"], cfg, jid)
+    jobs.approve(env["ledger"], cfg, jid, PW)
     c = server.cancel_job("n1", jid, "kc")["job_id"]
-    out = jobs.approve(env["ledger"], cfg, c)
+    out = jobs.approve(env["ledger"], cfg, c, PW)
     assert out["status"] == "cancelled_requested"
     assert not list(_jobs_dir(env).glob("*.job"))
 
@@ -131,8 +138,43 @@ def test_reject_no_node_call(env):
     out = jobs.reject(env["ledger"], jid)
     assert out["status"] == "rejected" and env["calls"] == []
     with pytest.raises(ValueError):
-        jobs.approve(env["ledger"], server.load_cfg(), jid)
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
     assert env["calls"] == []
+
+
+def test_wrong_passphrase_refused_and_ledger_back_to_pending(env):
+    jid = _submit(env)
+    with pytest.raises(jobs.RemoteError) as e:
+        jobs.approve(env["ledger"], server.load_cfg(), jid, "not the passphrase")
+    assert e.value.code == "not_authorized"
+    assert env["ledger"].get(jid)["status"] == "pending_approval"
+    assert not list(_jobs_dir(env).glob("*.job"))
+    assert "not the passphrase" not in (env["root"] / "ledger.jsonl").read_text()
+    with pytest.raises(ValueError):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, "")
+
+
+def test_weak_node_params_refused(env, monkeypatch):
+    monkeypatch.setattr(approval, "MIN_ITERATIONS", 100000)  # the node's 1000 is below it
+    jid = _submit(env)
+    with pytest.raises(ValueError):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def test_bridge_key_alone_cannot_queue(env):
+    # SEC-01: a laptop process that talks to the node directly, skipping the ledger
+    import hashlib
+    cfgf = env["tmp"] / "x.yaml"
+    cfgf.write_text("a: 1\n", encoding="utf-8")
+    with jobs.connect(server.load_cfg(), "n1") as c:
+        c.put_file("job-direct", cfgf)
+        with pytest.raises(jobs.RemoteError) as e:
+            c.call("job_submit", job_id="direct", config_name="x.yaml",
+                   config_sha256=hashlib.sha256(cfgf.read_bytes()).hexdigest(), gpus=[0],
+                   gpu_hours=1, idempotency_key="kd")
+    assert e.value.code == "not_authorized"
+    assert not list(_jobs_dir(env).glob("*.job"))
 
 
 def test_cli_approve_prompt(env, monkeypatch, capsys):
