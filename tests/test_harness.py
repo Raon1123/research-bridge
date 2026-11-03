@@ -285,6 +285,20 @@ def test_diff_against_live(fake, capsys):
     assert "only-server.md" in out  # new file shown against /dev/null
 
 
+def test_pull_stores_claude_md_untrusted_and_diff_maps_back(fake, capsys):
+    # SEC-02: staging is under the laptop data root, where a session could load CLAUDE.md
+    (fake["nroot"] / "CLAUDE.md").write_text("# server rules\n", encoding="utf-8")
+    assert cli.main(["harness", "pull", "--node", "node1"]) == 0
+    st = next((fake["data"] / "harness-staging").iterdir())
+    assert not (st / "CLAUDE.md").exists()
+    assert (st / "CLAUDE.md.untrusted").read_text() == "# server rules\n"
+    capsys.readouterr()
+    assert cli.main(["harness", "diff", st.name]) == 0
+    out = capsys.readouterr().out
+    assert "--- live/CLAUDE.md" in out and "+++ staged/CLAUDE.md" in out
+    assert "-# rules" in out and "+# server rules" in out
+
+
 def test_diff_bad_stamp_and_missing(fake, capsys):
     assert cli.main(["harness", "diff", "../x"]) == 1
     assert cli.main(["harness", "diff", "20260101T000000Z"]) == 1

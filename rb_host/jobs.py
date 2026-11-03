@@ -8,11 +8,14 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from .client import NodeClient
+from rb_node import approval
+
+from .client import NodeClient, RemoteError
 from .config import HostConfig, load_host_config
 from .ledger import Ledger
 
 DONE = {"submit": "queued", "cancel": "cancelled_requested"}
+REFUSED = ("not_authorized", "approval_wait", "no_verifier")  # node refused the approval
 
 
 def load_cfg() -> HostConfig:
@@ -99,7 +102,25 @@ def _job(ledger: Ledger, job_id: str) -> dict:
     return rec
 
 
-def approve(ledger: Ledger, cfg: HostConfig, job_id: str) -> dict:
+def approval_key(c: NodeClient, passphrase: str) -> str:
+    """Derive the node's approval key from the typed passphrase (SEC-01). Never stored."""
+    p = c.call("approve_params")
+    try:
+        salt, iters = str(p["salt"]), p["iterations"]
+        ok = (isinstance(iters, int) and not isinstance(iters, bool) and len(salt) <= 128
+              and approval.MIN_ITERATIONS <= iters <= approval.MAX_ITERATIONS)
+        if not ok:
+            raise ValueError
+        return approval.derive(passphrase, salt, iters)
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("node approval parameters are not acceptable")
+
+
+def approve(ledger: Ledger, cfg: HostConfig, job_id: str, passphrase: str) -> dict:
+    """Send an approved job to the node. passphrase comes from the user (getpass or the
+    8765 form), never from a file, an environment variable or an MCP tool."""
+    if not passphrase:
+        raise ValueError("approval passphrase required")
     rec = _job(ledger, job_id)
     if rec["status"] in DONE.values():
         return rec  # second approve is a no-op
@@ -110,16 +131,24 @@ def approve(ledger: Ledger, cfg: HostConfig, job_id: str) -> dict:
         if not cp.is_file() or _sha(cp) != rec["config_sha256"]:
             raise ValueError("config file changed since submit; submit again")
     ledger.update(job_id, status="approved", approved_at=now())
-    with connect(cfg, rec["node"]) as c:
-        if rec["op"] == "submit":
-            cp = Path(rec["config_path"])
-            c.put_file("job-" + job_id, cp)
-            result = c.call("job_submit", job_id=job_id, config_name=cp.name,
-                            config_sha256=rec["config_sha256"], gpus=rec["gpus"],
-                            gpu_hours=rec["gpu_hours"], idempotency_key=rec["idempotency_key"])
-        else:
-            result = c.call("job_cancel", job_id=rec["target_job_id"],
-                            idempotency_key=rec["idempotency_key"])
+    try:
+        with connect(cfg, rec["node"]) as c:
+            key = approval_key(c, passphrase)
+            if rec["op"] == "submit":
+                cp = Path(rec["config_path"])
+                c.put_file("job-" + job_id, cp)
+                result = c.call("job_submit", job_id=job_id, config_name=cp.name,
+                                config_sha256=rec["config_sha256"], gpus=rec["gpus"],
+                                gpu_hours=rec["gpu_hours"],
+                                idempotency_key=rec["idempotency_key"], approval_key=key)
+            else:
+                result = c.call("job_cancel", job_id=rec["target_job_id"],
+                                idempotency_key=rec["idempotency_key"], approval_key=key)
+    except (RemoteError, ValueError) as exc:
+        if isinstance(exc, ValueError) or exc.code in REFUSED:
+            # the node did not accept this approval: the ledger must not say approved
+            ledger.update(job_id, status="pending_approval", approved_at=None)
+        raise
     return ledger.update(job_id, status=DONE[rec["op"]], result=result)
 
 

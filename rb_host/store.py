@@ -14,9 +14,28 @@ from .client import RemoteError
 from .config import HostConfig
 
 
-def _safe_name(name: str) -> str:
+# Names a laptop Claude session may load as instructions (SEC-02). Node-supplied files with
+# these names, or any dot-name, are stored with UNTRUSTED appended so nothing loads them.
+INSTRUCTION_NAMES = frozenset(["claude.md", "claude.local.md", "agents.md"])
+UNTRUSTED = ".untrusted"
+
+
+def untrusted_name(base: str) -> str:
+    """Local name for one node-supplied path component (SEC-02, PM-06)."""
+    base = base.replace(":", "_")  # drive letters (C:x) and NTFS alternate streams
+    if base.rstrip(" .").lower() in INSTRUCTION_NAMES or base.startswith("."):
+        return base + UNTRUSTED  # Windows drops trailing dots and spaces, so check without them
+    return base
+
+
+def _remote_name(name: str) -> str:
     base = str(name).replace("\\", "/").rsplit("/", 1)[-1]
     return base if base not in ("", ".", "..") else "unnamed"
+
+
+def _safe_name(name: str) -> str:
+    """Local file name for a node-supplied name: basename only, never an instruction file."""
+    return untrusted_name(_remote_name(name))
 
 
 def _sha(path: Path) -> str:
@@ -35,7 +54,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     """
     wh = Withheld.load(Path(cfg.withheld_patterns_file))
     msg_id = str(item["id"])
-    if "/" in msg_id or "\\" in msg_id or msg_id in ("", ".", ".."):
+    if "/" in msg_id or "\\" in msg_id or ":" in msg_id or msg_id.startswith(".") or not msg_id:
         raise ValueError("unsafe message id")
     root = Path(cfg.data_root)
     inbox = root / "inbox" / node / msg_id
@@ -45,12 +64,14 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     inbox.mkdir(parents=True, exist_ok=True)
     files = []  # type: list
     for idx, att in enumerate(item.get("attachments", [])):
-        name = _safe_name(att.get("name", ""))
+        remote = _remote_name(att.get("name", ""))
+        name = untrusted_name(remote)
         entry = {"index": idx, "name": name, "status": "ok"}  # type: Dict[str, Any]
-        name_bad = wh.name_hit(name) or wh.name_hit(str(att.get("original", "")))
-        stage = stage_dir / name
+        name_bad = wh.name_hit(remote) or wh.name_hit(str(att.get("original", "")))
+        # keep the node's extension for check_file; the index prefix keeps it from being CLAUDE.md
+        stage = stage_dir / ("%d-%s" % (idx, remote.replace(":", "_")))
         try:
-            client.get_file("out", "%s/%s" % (msg_id, name), stage)
+            client.get_file("out", "%s/%s" % (msg_id, remote), stage)
         except RemoteError as exc:
             entry.update(status="quarantined", reason="node_denied" if exc.code == "denied"
                          else "fetch_" + exc.code)

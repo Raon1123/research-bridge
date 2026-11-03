@@ -1,8 +1,12 @@
-"""Tests for the 8765 dashboard approval endpoint module (lives in the vault dashboard dir)."""
+"""Tests for the 8765 dashboard approval endpoint module. Imports the copy in this repo's
+vault-export/dashboard/ (the vault copy is applied by the user, see vault-export/README.md)."""
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "D:/raw/vault-primary/90_Claude/60_Tools/dashboard")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vault-export" / "dashboard"))
 import rb_pending  # noqa: E402
+
+from rb_host.client import RemoteError  # noqa: E402
 
 from rb_host.ledger import Ledger  # noqa: E402
 
@@ -35,12 +39,33 @@ def test_bad_token_is_403(monkeypatch):
 
 def test_valid_calls_approve_and_reject(monkeypatch):
     calls = []
-    monkeypatch.setattr(rb_pending.jobs, "approve", lambda led, cfg, jid: calls.append(("a", jid)) or {})
+    monkeypatch.setattr(rb_pending.jobs, "approve",
+                        lambda led, cfg, jid, pw: calls.append(("a", jid, pw)) or {})
     monkeypatch.setattr(rb_pending.jobs, "reject", lambda led, jid: calls.append(("r", jid)) or {})
     monkeypatch.setattr(rb_pending, "_ctx", lambda: (None, None))
-    assert rb_pending.handle_post("127.0.0.1", {"csrf": "t", "job_id": "j1"}, "t", "approve")[0] == 200
+    form = {"csrf": "t", "job_id": "j1", "passphrase": "pw"}
+    assert rb_pending.handle_post("127.0.0.1", form, "t", "approve")[0] == 200
     assert rb_pending.handle_post("127.0.0.1", {"csrf": "t", "job_id": "j2"}, "t", "reject")[0] == 200
-    assert calls == [("a", "j1"), ("r", "j2")]
+    assert calls == [("a", "j1", "pw"), ("r", "j2")]
+
+
+def test_approve_needs_passphrase_and_maps_refusal(monkeypatch):
+    # SEC-01: the CSRF token alone (readable by a rebinding page, PM-03) cannot approve
+    monkeypatch.setattr(rb_pending, "_ctx", lambda: (None, None))
+    monkeypatch.setattr(rb_pending.jobs, "approve", lambda *a: (_ for _ in ()).throw(AssertionError))
+    assert rb_pending.handle_post("127.0.0.1", {"csrf": "t", "job_id": "j1"}, "t", "approve")[0] == 400
+
+    def refused(*a):
+        raise RemoteError("not_authorized", "approval key not accepted")
+    monkeypatch.setattr(rb_pending.jobs, "approve", refused)
+    form = {"csrf": "t", "job_id": "j1", "passphrase": "wrong-secret"}
+    st, body = rb_pending.handle_post("127.0.0.1", form, "t", "approve")
+    assert st == 403 and "wrong-secret" not in body
+
+
+def test_render_has_password_field_only_on_approve(tmp_path):
+    html = rb_pending.render_pending(_ledger(tmp_path))
+    assert html.count('type="password"') == 1 and 'autocomplete="off"' in html
 
 
 def test_bad_action_is_400(monkeypatch):
@@ -53,7 +78,8 @@ def test_jobs_exception_is_500_generic(monkeypatch):
         raise RuntimeError("secret internals")
     monkeypatch.setattr(rb_pending.jobs, "approve", boom)
     monkeypatch.setattr(rb_pending, "_ctx", lambda: (None, None))
-    st, body = rb_pending.handle_post("127.0.0.1", {"csrf": "t", "job_id": "j1"}, "t", "approve")
+    form = {"csrf": "t", "job_id": "j1", "passphrase": "pw"}
+    st, body = rb_pending.handle_post("127.0.0.1", form, "t", "approve")
     assert st == 500 and "secret" not in body
 
 

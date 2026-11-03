@@ -8,6 +8,7 @@ import shlex
 from pathlib import Path
 from typing import Any, List, Optional, Set
 
+from . import approval
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _mkdir, _read_json, _write_json
 from .protocol import ProtocolError
@@ -126,6 +127,8 @@ def _finalize_config(cfg: NodeConfig, mb: Mailbox, job_id: str, config_name: str
 def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[int]]) -> dict:
     state = mb.root / "state"
     key = _key(args)
+    # SEC-01: before any lookup or write, so a refused call leaves nothing behind
+    approval.check(Path(cfg.approval_path), state, args)
     prior = _idem_lookup(state, key, "job_submit")
     if prior is not None:
         return prior
@@ -159,6 +162,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
 def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
     state = mb.root / "state"
     key = _key(args)
+    approval.check(Path(cfg.approval_path), state, args)
     prior = _idem_lookup(state, key, "job_cancel")
     if prior is not None:
         return prior

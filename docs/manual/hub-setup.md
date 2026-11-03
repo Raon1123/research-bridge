@@ -94,10 +94,10 @@ A new Claude session then has exactly ten tools: `nodes`, `send_message`, `poll`
 Approval happens only outside Claude:
 
     rb pending                 # list jobs waiting for approval
-    rb approve <job_id>        # shows the job, asks y/N, then uploads the config and submits
+    rb approve <job_id>        # shows the job, asks y/N and the approval passphrase, then uploads and submits
     rb reject <job_id>         # marks it rejected; no node call
 
-or on `http://127.0.0.1:8765/rb/pending` (loopback only, per-process CSRF token). Approving twice is a no-op. Install the dashboard route from `vault-export/` (see `vault-export/README.md`) and restart the 8765 dashboard; both need the user's go-ahead.
+or on `http://127.0.0.1:8765/rb/pending` (loopback only, per-process CSRF token, approval passphrase field). The passphrase is the one set on the node with `rb-node approve-key set` (node manual §4). It is typed each time: `--yes` skips only the y/N question, and there is no flag, file or environment variable for the passphrase, so a Claude session cannot approve without the passphrase (residual risks: `docs/design/2026-11-03-node-side-approval.md` §7). A wrong passphrase leaves the job `pending_approval`. Approving twice is a no-op. Install the dashboard route from `vault-export/` (see `vault-export/README.md`) and restart the 8765 dashboard; both need the user's go-ahead.
 
 ## 8. Harness channel (manual, optional)
 
