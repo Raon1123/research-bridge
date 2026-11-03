@@ -50,6 +50,8 @@ Main was fast-forwarded to `f9503cf` on 2026-11-02 (the first merge to `824f1f8`
 - A3: append the two lines of `deploy/authorized_keys.example` to node1's `~/.ssh/authorized_keys` with `from="<LAPTOP_ETH_SUBNET>"` and the `.pub` contents.
 - Create `.venv` here (commands in `AGENTS.md`) and register the MCP server in `~/.claude.json` pointing at **this** directory's `.venv/Scripts/python.exe -m rb_host.server`. The snippet in `docs/provisioning.md` §B3 already uses that path.
 - Create `D:/raw/research-bridge/host.json`: `{"nodes": {"node1": {"alias": "rb-node1", "harness_alias": "rb-node1-harness"}}}`. Without it `rb approve` and the dashboard approve button return an error.
+- After B1, on node1's own terminal (not through the bridge): `rb-node approve-key set` (`docs/manual/node-setup.md` §4). Choose a passphrase of at least 12 characters. Until this is done the node refuses every `job_submit` and `job_cancel` (`not_authorized`), so B3 cannot queue its test job (SEC-01, PR 27, `docs/design/2026-11-03-node-side-approval.md`).
+- Replace the vault `dashboard/rb_pending.py` with `vault-export/dashboard/rb_pending.py` and restart 8765 (`vault-export/README.md`). Until then the dashboard Approve button fails with "operation failed" and sends nothing; `rb approve` works without this step.
 
 **Session, after the user confirms each command:**
 

@@ -17,7 +17,7 @@ Vault tools root: `D:/raw/vault-primary/90_Claude/60_Tools/`. The vault is not a
 | `dashboard/server.py.board.patch` | `dashboard/server.py` | **Not applied yet.** Adds `GET /board` routed to `rb_board`. Made against the *current* `server.py` (with `/rb/pending`), not the original. |
 | `CHECKSUMS.txt` | — | sha256 of the original and edited files at export time (2026-11-02). |
 
-Tests for the two new modules are in the repo: `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`. Both insert the vault path into `sys.path`, so they need the vault files in place. `tests/test_rb_board.py` imports `rb_board` from this directory instead, so it runs before the patch is applied.
+Tests are in the repo. `tests/test_rb_pending.py` and `tests/test_rb_board.py` import `rb_pending` and `rb_board` from this directory, so they test the exported copies and run before anything is applied. `tests/test_bridge_edges.py` inserts the vault path into `sys.path`, so it needs the vault file in place.
 
 ## Check that the vault still matches the export
 
