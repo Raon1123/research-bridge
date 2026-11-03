@@ -10,7 +10,7 @@ research-bridge is one SSH-key-authenticated channel between the laptop (**host*
 - masked reading of server hypothesis (H-xxx) and experiment (EXP-xxx) documents;
 - job submission with a budget (GPU ids and GPU-hours chosen by the user), approved in two steps;
 - a manual, staging-only harness sync channel;
-- display of all of it in the 8765 dashboard and the session browser (vault side).
+- display of all of it in the 8765 dashboard and the session browser (vault side). The dashboard runs now at `http://127.0.0.1:8765`; its location, routes and live status: `docs/session-dashboard.md`.
 
 Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`. Plan (Tasks 0–13): `docs/superpowers/plans/2026-10-27-research-bridge.md`. Server facts: `docs/server-facts.md`. Provisioning steps: `docs/provisioning.md`.
 
