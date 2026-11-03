@@ -46,6 +46,8 @@ Main was fast-forwarded to `f9503cf` on 2026-11-02 (the first merge to `824f1f8`
 
 ## Follow-ups (not blocking)
 
+Every item below and in §Pending decisions / §Steps still to do is also a GitHub issue; tracking issue: Raon1123/research-bridge#21. Setup instructions per role: `docs/manual/` (English, with Korean translations).
+
 - Run the final whole-branch review (see State). Record its findings in `docs/postmortems/` (template and rules in `docs/postmortems/README.md`).
 - Complete the draft postmortem `docs/postmortems/2026-10-27-sdd-build.md` (items from the ledger only; `<to fill>` fields and an audit remain). Write a postmortem after the B3 live run.
 - Changes to the protocol, ledger fields or keys start from `docs/design/TEMPLATE.md`; candidates are listed in `docs/design/README.md`.
@@ -56,7 +58,6 @@ Main was fast-forwarded to `f9503cf` on 2026-11-02 (the first merge to `824f1f8`
 - Ledger records do not carry `to_session` or attachment byte totals, so bridge edges always show `<node>:responder` and `bytes` 0. Add the fields on the host side if wanted.
 - `reply_to` is stored in the host ledger only; the node's `msg_begin` has no such field, so a server session cannot see which earlier message a new one answers.
 - `GET /rb/pending` is loopback-only; the other 8765 routes remain reachable from the LAN as before.
-- `rb_node/config.py` declares `harness_root` twice in `NodeConfig` (harmless duplicate line); remove one.
 - `docs/history/sdd-2026-10-27/task-11-report.md` describes the first round of Task 11 only; the loopback fix is in the ledger.
 - Git reports LF to CRLF conversion warnings on this machine. Copying `rb_node/` to node1 should use LF files (check out with `core.autocrlf=input` or convert before `scp`).
 - Node queue numbering is not locked against two concurrent submitters (single submitter assumed).

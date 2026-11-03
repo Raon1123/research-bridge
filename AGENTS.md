@@ -26,6 +26,7 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`. Plan (Tas
 | `docs/history/sdd-2026-10-27/` | Controller ledger, task briefs and implementer reports from the first build. Provenance only. |
 | `docs/design/` | Design documents: `README.md` (when to write one, status lifecycle, index), `TEMPLATE.md`. |
 | `docs/postmortems/` | Postmortems: `README.md` (when to write one, severity S0–S3, item rules), `TEMPLATE.md`, and one file per period. |
+| `docs/manual/` | Setup manuals for the two roles: hub (`hub-setup.md`) and node (`node-setup.md`), each with a Korean translation (`*.ko.md`; English is the reference). |
 | `docs/CONTRIBUTING.md` | Branch, issue and commit conventions, and what may never be published from this public repository. |
 | `.github/` | Issue templates (design proposal, defect, provisioning step) and the PR template. |
 
