@@ -14,7 +14,7 @@ This document covers the final whole-branch review requested in GitHub issue 10 
 ## How this was made
 
 1. Sources: the code at `7df8fd8` (`rb_node/`, `rb_host/`, `vault-export/dashboard/`, `deploy/`), `AGENTS.md` hard rules 1–9, `docs/HANDOFF.md`, the design `docs/superpowers/specs/2026-10-27-research-bridge-design.md`, the board design `docs/design/2026-11-02-unified-board.md`. The live vault dashboard `90_Claude/60_Tools/dashboard/server.py` and its launcher `start_dashboard.vbs` were read only to check how the 8765 server binds and whether it reads the `Host` header. Nothing in the vault was edited.
-2. Who read what: one session on Claude Opus 5.5 read all code in the range itself. No subagents were used. A second reviewer model (advisor) read the transcript once before this document was written and proposed checks 5–13 of its list, which were then verified against the code or the local `claude --help` text.
+2. Who read what: one session on Claude Opus 5.5 read all code in the range itself. No subagents were used. A second reviewer model (advisor) read the transcript once before this document was written and proposed eight further checks, each verified against the code or the local `claude --help` text.
 3. Tests: 183 passed (`pytest -q`, 34 s) in a fresh virtual environment on a `git archive` extraction of `7df8fd8` (see DEV-1). Short probe scripts (Python, run on the laptop against the same extraction) confirmed PM-01, PM-05, PM-06 and PM-18. Their outputs are quoted in the items.
 4. Audit: none yet.
 5. Gaps in the record: nothing was run on node1. Items that depend on node1 state (Claude Code version and settings on node1, files present in the read roots) are marked **inferred**. The `rb_host/harness.py` text transform (vendored portablization) was read only for its transport and staging paths, not line by line.
@@ -62,7 +62,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Fix: none in this review. Direction: mask `body` in `post_out` or in `Node.poll` with the node's `Withheld`, report the hit count, and keep the laptop re-check.
 - Fix verified: not verified
 - Prevention: a node test that posts a reply containing each fallback pattern and asserts `poll` returns it blanked.
-- Evidence: `rb_node/remote.py:167-168` 「return {"items": self.mb.undelivered()}」; `rb_host/server.py:125` 「Bodies are already masked.」; probe output 「poll body: result for H108N here」.
+- Evidence: `rb_node/remote.py:167-168` 「return {"items": self.mb.undelivered()}」; `rb_host/server.py:125` 「Bodies are already masked.」; probe output (synthetic probe string, not a node message) 「poll body: result for H108N here」.
 
 ### PM-02 — Responder tool limit does not remove tools
 
@@ -92,7 +92,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 
 - Severity: S1
 - When: introduced in Tasks 8 and 11; found 2026-11-03.
-- What happened: hard rule 1 holds as written: no MCP tool approves. But both approval paths are reachable by the same laptop session that called `submit_job`, if it has a shell: `rb approve <id> --yes` (or `echo y | rb approve <id>`), or two `curl` calls to `127.0.0.1:8765` (GET the page for the token, POST `/rb/approve`). Whether this happens depends only on that session's Claude Code permission settings; this machine runs sessions in auto mode.
+- What happened: hard rule 1 holds as written: no MCP tool approves. But both approval paths are reachable by the same laptop session that called `submit_job`, if it has a shell: `rb approve <id> --yes` (or `echo y | rb approve <id>`), or two `curl` calls to `127.0.0.1:8765` (GET the page for the token, POST `/rb/approve`). Whether this happens depends only on that session's Claude Code permission mode and rules.
 - Cause (inferred): the threat model treats "not MCP" as "the user". Nothing ties approval to an action only the user can take.
 - How it surfaced: this review.
 - Fix: none. Direction: add deny rules for `rb approve`, `rb reject` and `127.0.0.1:8765/rb/` requests to the laptop Claude Code settings; make `rb approve` refuse when standard input is not an interactive terminal and drop `--yes`, or require a code the page shows only to the user.
@@ -142,6 +142,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - When: Task 4; found 2026-11-03.
 - What happened: hard rule 3 says tex files are denied when they match. `get_file` (and so `fetch_file`) follows that through `check_file`. `read_doc` with a path accepts `.tex`, blanks hit lines and returns the rest. The same file is therefore denied through one tool and returned through the other.
 - Cause (inferred): `read_doc` reuses the text mask for every text type it accepts.
+- How it surfaced: this review.
 - Fix: none. Direction: decide which rule is wanted, then make both paths and `AGENTS.md` agree.
 - Fix verified: not verified
 - Prevention: a test that reads the same withheld `.tex` through both ops and expects the same outcome.
@@ -153,8 +154,10 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - When: Task 8; found 2026-11-03.
 - What happened: `store_incoming` returns the masked body to the MCP caller and writes only `provenance.json` and attachments. The ledger line has no body and `thread` returns ledger lines only. The item is acked on the node in the same call, so the body exists on the laptop only in the reply to whichever session polled; if that reply is lost (client timeout, crash) it cannot be read again. The design says bodies are stored in `inbox/` files.
 - Cause (recorded): design spec line 122 「Bodies stored in `inbox/`/`outbox/` files, not in the ledger line.」; not implemented.
+- How it surfaced: this review.
 - Fix: none. Direction: write the masked body to `inbox/<node>/<msg_id>/body.txt` before the ack.
 - Fix verified: not verified
+- Prevention: a host test that polls a reply and then reads its body back from `inbox/`.
 - Evidence: `rb_host/store.py:80` 「(inbox / "provenance.json").write_text(json.dumps(prov, ensure_ascii=False, indent=2),」.
 
 ### PM-10 — The laptop download loop has no size cap
@@ -162,8 +165,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: Task 8; found 2026-11-03.
 - What happened: `NodeClient.get_file` writes chunks until the node says `eof`. The 50 MB limit of hard rule 5 is enforced only by the node. A faulty node can fill the laptop disk.
+- Cause (inferred, from the code): the node was trusted to enforce the cap.
+- How it surfaced: this review.
 - Fix: none. Direction: stop and delete the `.part` file once it passes `MAX_FILE`.
 - Fix verified: not verified
+- Prevention: a client test with a fake node that never sends `eof`.
 - Evidence: `rb_host/client.py:166-174` 「res = self.call("get_file", kind=kind, ref=ref, seq=seq)」.
 
 ### PM-11 — Ledger has no lock; two approval paths can race
@@ -172,8 +178,10 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - When: Tasks 8 and 11; found 2026-11-03.
 - What happened: `Ledger.append` reads every line and then appends, with no file lock. `rb approve` and the 8765 POST both check `status` and then call the node. Two approvals of one job at the same moment both pass the check. A double queue is prevented only by the node: the idempotency key returns the first result, and the config file has already been moved, so a second `job_submit` without a stored key fails with `no_part`. The MCP server, the CLI and the dashboard write the same file.
 - Cause (inferred).
+- How it surfaced: this review.
 - Fix: none. Direction: an exclusive lock file around append/update and around the status check plus `approved` write in `approve`.
 - Fix verified: not verified
+- Prevention: a test that runs two `approve` calls in threads and expects one node call.
 - Evidence: `rb_host/jobs.py:104-112` 「if rec["status"] not in ("pending_approval", "approved"):」.
 
 ### PM-12 — GPU index validation is skipped when `nvidia-smi` is missing
@@ -181,8 +189,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: Task 5; found 2026-11-03.
 - What happened: `job_submit` passes `known or None`; when `nvidia-smi` is absent or fails, `known` is empty and `validate_budget` skips the unknown-index check, so any non-negative index is queued.
+- Cause (inferred, from the code): an empty GPU list was mapped to "no check" so tests without `nvidia-smi` pass.
+- How it surfaced: this review.
 - Fix: none. Direction: refuse submission (`gpu_status_unavailable`) when the GPU list cannot be read.
 - Fix verified: not verified
+- Prevention: a node test with `nvidia-smi` absent that expects refusal.
 - Evidence: `rb_node/remote.py:310-311` 「known = {g["index"] for g in self.gpu_status({}).get("gpus", [])}」 / 「return jobs.submit(self.cfg, self.mb, args, known or None)」.
 
 ### PM-13 — `send_message` uploads any laptop file
@@ -190,8 +201,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: Task 8; found 2026-11-03.
 - What happened: attachments are any path the MCP caller names. A laptop session that follows instructions from a message body (or any prompt injection) can send private laptop files, such as SSH keys or `host.json`, to the node without a prompt. The direction is laptop to node, so rules 2 and 3 are not broken, but there is no laptop-side read root.
+- Cause (inferred): the design lists attachments as laptop paths with a size cap only (spec line 75).
+- How it surfaced: this review.
 - Fix: none. Direction: a design proposal for a laptop attachment allowlist (`docs/design/TEMPLATE.md`).
 - Fix verified: n/a
+- Prevention: a design rule that every laptop path an MCP tool reads lies under a configured root.
 - Evidence: `rb_host/server.py:76-79` 「files = [Path(a) for a in attachments]」.
 
 ### PM-14 — Responder work directory does not exist and cannot be written
@@ -199,8 +213,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: Task 6; found 2026-11-03.
 - What happened: the prompt tells the responder to "Put any files you want to send under the message work directory". `reply` accepts absolute paths only under `mailbox/out/_work/<msg_id>`, which no code creates, and the responder has no write tool. Reply attachments are therefore limited to files already under a read root.
+- Cause (inferred, from `local.py` and `spawn.py`): the work directory was planned with the reply tool but its creation and a confined write tool were not added.
+- How it surfaced: this review.
 - Fix: none. Direction: either create the work directory and allow a write tool confined to it, or remove the sentence from the prompt.
 - Fix verified: not verified
+- Prevention: a spawn test that checks every directory named in the prompt exists before the responder starts.
 - Evidence: `rb_node/spawn.py:28-29` 「Put any files you want to send "」 / 「"under the message work directory and list them in reply attachments."」; `rb_node/local.py:89` 「work = self.mb.root / "out" / "_work" / (_check_id(msg_id) if isinstance(msg_id, str) else "_")」.
 
 ### PM-15 — `get_file` re-reads the whole file for each chunk
@@ -208,8 +225,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: Task 4; found 2026-11-03.
 - What happened: each `get_file` call reads, masks and hashes the full file, then returns one 1 MiB slice. A 50 MB file takes 50 calls, each reading 50 MB. If the file changes between calls the final hash does not match and the transfer fails on the laptop.
+- Cause (inferred, from the code): `get_file` is stateless per call, so masking is redone per chunk.
+- How it surfaced: this review.
 - Fix: none. Direction: build the outgoing bytes once into a node-side spool file per (ref, mtime) and serve slices from it.
 - Fix verified: not verified
+- Prevention: a test that counts file reads for a three-chunk transfer.
 - Evidence: `rb_node/remote.py:215` 「data = self._bytes_for(p)」.
 
 ### PM-16 — Board refresh shares the fetched-file path and reloads `host.json`
@@ -217,8 +237,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: 2026-11-03 (`0451f4c`, `7df8fd8`); found 2026-11-03.
 - What happened: `_fetch` calls `server.fetch_file`, which stores the copy at `fetched/<node>/<basename>`, and then deletes it. A file with the same base name that a session fetched earlier through MCP is overwritten and then deleted. The `server.*` functions also call `load_cfg()` again, so `refresh(cfg, ...)` uses the passed `cfg` for patterns and cache paths but `host.json` (or `RB_HOST_CONFIG`) for nodes and data root. Each source opens its own SSH connection.
+- Cause (inferred, from `board.py`): the board reuses the MCP tool functions, which load their own config and own output path.
+- How it surfaced: this review.
 - Fix: none. Direction: a board-private fetch helper that takes `cfg` and writes under `board/tmp/`.
 - Fix verified: not verified
+- Prevention: a board test with a pre-existing `fetched/<node>/<name>` file that expects it untouched.
 - Evidence: `rb_host/board.py:207` 「res = server.fetch_file(node, path)」; `rb_host/server.py:158` 「dest = Path(cfg.data_root) / "fetched" / node / _safe_name(path)」.
 
 ### PM-17 — 8765 approval page omits path and hash; approval blocks the server
@@ -226,8 +249,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S2
 - When: Task 11; found 2026-11-03.
 - What happened: the page shows `config_name` only; `rb approve` shows `config_path` too. A config named `config.yaml` anywhere on the laptop looks the same on the page. `handle_post` runs the full upload and `job_submit` SSH round trip inside the request handler of the vault's `HTTPServer`, which serves one request at a time, so the whole dashboard waits for it.
+- Cause (inferred): the page was built from the ledger's display fields; the vault server was not changed to threaded serving.
+- How it surfaced: this review.
 - Fix: none. Direction: show `config_path` and the first 12 characters of `config_sha256`; run approval in a worker thread or return 202 and poll.
 - Fix verified: not verified
+- Prevention: a `test_rb_pending.py` assertion that the page contains `config_path`.
 - Evidence: `vault-export/dashboard/rb_pending.py:51` 「% (_e(jid), _e(r.get("node", "")), _e(r.get("config_name", "")), _e(gpus),」; vault `dashboard/server.py:1344` 「server = HTTPServer((args.host, args.port), Handler)」.
 
 ### PM-18 — Withheld patterns are case-sensitive
@@ -235,17 +261,23 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S3
 - When: Task 3; found 2026-11-03.
 - What happened: patterns compile without `re.IGNORECASE`. Probe: lower-case and upper-case variants of two fallback patterns were not masked. Whether such variants occur in node documents is not known.
+- Cause (inferred): patterns were copied as given from the session-calendar source.
+- How it surfaced: this review.
 - Fix: n/a until the user confirms whether identifiers appear in other cases.
 - Fix verified: n/a
+- Prevention: a withheld test per pattern with case variants, once the user decides.
 - Evidence: `rb_node/withheld.py:27` 「out.append(re.compile(p))」; probe output 「case: 0 0」.
 
 ### PM-19 — `/board` depends on `mcp` in the dashboard Python
 
 - Severity: S3
 - When: `0451f4c`; found 2026-11-03.
-- What happened: `rb_board.py` imports `rb_host.board`, which imports `rb_host.server`, which imports `mcp` at module level. The dashboard runs under `C:\Python314\python.exe`; `mcp` is importable there today from the user site-packages, so the page works, but nothing records the dependency. `rb_pending.py` does not need `mcp`.
+- What happened: `rb_board.py` imports `rb_host.board`, which imports `rb_host.server`, which imports `mcp` at module level. The dashboard runs under the system Python, not the project virtual environment; `mcp` is importable there today, so the page works, but nothing records the dependency. `rb_pending.py` does not need `mcp`.
+- Cause (inferred): `board.py` reuses `server.py` functions and imports the module at top level.
+- How it surfaced: this review.
 - Fix: n/a. Direction: import `server` inside `_fetch`, or note the dependency in `vault-export/README.md`.
 - Fix verified: n/a
+- Prevention: a test that imports `rb_board` with `mcp` hidden from `sys.modules`.
 - Evidence: `rb_host/board.py:20` 「from . import server」.
 
 ### PM-20 — `fetch_file` deletes failed files instead of quarantining them
@@ -253,8 +285,11 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Severity: S3
 - When: Task 8; found 2026-11-03.
 - What happened: `AGENTS.md` hard rule 3 says the laptop "moves failures to `quarantine/`". `store_incoming` does; `fetch_file` deletes the file. Deleting is the safer outcome; the rule text is what is wrong.
+- Cause (inferred): rule 3 was written from `store_incoming` only.
+- How it surfaced: this review.
 - Fix: n/a. Direction: change the sentence to name both behaviours.
 - Fix verified: n/a
+- Prevention: none needed beyond the corrected sentence.
 - Evidence: `rb_host/server.py:174-176` 「if verdict != "ok":」 / 「dest.unlink()」.
 
 ## 3. Deviations from user instructions
