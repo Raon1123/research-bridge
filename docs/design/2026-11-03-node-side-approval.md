@@ -70,6 +70,7 @@ The MCP tool set is unchanged.
 - **Residual risk, out of scope:**
   - A laptop process running as the user can modify `rb_host` or the 8765 page to capture the passphrase the next time it is typed. Defending against that needs a separate OS account or hardware confirmation.
   - On the node, a process under the node account, including the responder if PM-02 is not fixed, can write a `.job` file straight into the queue directory or replace `approve.json`. The bridge key cannot do either: no bridge op writes outside `mailbox/in`, and there is no op for the verifier.
+- **8765 logs:** the vault `server.py` passes every form field to `handle_post`, and its `log_message` writes only the request line to stderr, not the POST body. So the passphrase is not logged (checked 2026-11-03 against the live file, read only).
 - **PM-03 (DNS rebinding on 8765):** a rebinding page can still read the CSRF token, but it cannot approve without the passphrase. That is a partial mitigation; the `Host` header check is still needed.
 
 ## 8. Data and ledger
@@ -94,6 +95,7 @@ The MCP tool set is unchanged.
 | G3 | `test_approve_params_public_only`, `test_weak_node_params_refused` | unit test | passes |
 | G4 | `test_approve_queues_and_is_idempotent`, `test_cli_approve_prompt`, `tests/test_rb_pending.py::test_valid_calls_approve_and_reject` | unit test | passes |
 | G5 | `test_wrong_passphrase_refused_and_ledger_back_to_pending` | unit test | passes |
+| Console enrolment | `test_cli_approve_key_set_and_clear` (short, mismatch, set, clear; no passphrase in the file) | unit test | passes |
 | Wait, not lock | `test_wrong_keys_start_a_wait_then_reset` | unit test | passes |
 | Live run on node1 | `approve-key set`, then one approve with a wrong and a right passphrase | live check | not run (needs node1, user) |
 

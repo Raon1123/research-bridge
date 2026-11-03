@@ -184,6 +184,27 @@ def test_approve_params_public_only(tcfg):
     assert approval.derive("test passphrase", r["result"]["salt"], 1000) == KEY
 
 
+def test_cli_approve_key_set_and_clear(tmp_path, monkeypatch, capsys):
+    from rb_node import cli
+    path = tmp_path / "approve.json"
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"approval_path": str(path)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    answers = iter(["short", "a long passphrase", "a different one!", "a long passphrase",
+                    "a long passphrase"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
+    assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # too short
+    assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # mismatch
+    assert cli.main(["approve-key", "set"]) == 0
+    text = path.read_text(encoding="utf-8")
+    rec = json.loads(text)
+    assert set(rec) == {"salt", "iterations", "verifier"} and "passphrase" not in text
+    key = approval.derive("a long passphrase", rec["salt"], rec["iterations"])
+    approval.check(path, tmp_path / "state", {"approval_key": key})
+    assert cli.main(["approve-key", "bogus"]) == 2
+    assert cli.main(["approve-key", "clear"]) == 0 and not path.exists()
+
+
 def test_wrong_keys_start_a_wait_then_reset(tcfg):
     state = Path(tcfg.mailbox_root) / "state"
     path = Path(tcfg.approval_path)
