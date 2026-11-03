@@ -73,6 +73,18 @@ Host rb-<node>-harness
 {"nodes": {"<node>": {"alias": "rb-<node>", "harness_alias": "rb-<node>-harness"}}}
 ```
 
+Optional, for the unified board (`rb board refresh|show`, 8765 `/board`): node paths per node, relative to the node's `trm_root` and inside a `read_roots` entry of the node's `node.json`; laptop paths for the paper kanban and priorities board (defaults shown):
+
+```json
+{"nodes": {"<node>": {"alias": "rb-<node>",
+                       "board": {"state": "<path>/STATE.md", "events": "<path>/events.json",
+                                 "kanban": "<path>/<kanban>.json"}}},
+ "board": {"portfolio": "D:/raw/vault-primary/90_Claude/10_Analysis/11_research-program/80_portfolio/portfolio.json",
+           "priorities": "D:/raw/priorities/live.json"}}
+```
+
+A node path left out shows as `no_path` on the board. A `.jsonl` file is refused by the node (`deny_unscannable`), so the events source needs a `.json` export (design `docs/design/2026-11-02-unified-board.md` §15 question 6).
+
 `harness_alias` defaults to `rb-<node>-harness`. Only aliases listed here are used; the hub never connects to a host name given in a tool argument. Without `host.json`, `rb approve` and the dashboard approve button return an error.
 
 ## 6. Register the MCP server for Claude sessions (user runs)

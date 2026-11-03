@@ -13,9 +13,11 @@ Vault tools root: `D:/raw/vault-primary/90_Claude/60_Tools/`. The vault is not a
 | `session-calendar/bridge_edges.py` | `session-calendar/bridge_edges.py` | **New.** Builds metadata-only edges from `D:/raw/research-bridge/ledger.jsonl` and merges them into `cache/agents/<sid>.json` when that file exists. Never writes a message body. |
 | `session-calendar/refresh.py.patch` | `session-calendar/refresh.py` | One fail-soft step after `link.py` that calls `bridge_edges`. |
 | `session-calendar/template.html.patch` | `session-calendar/template.html` | One label for the new `bridge` edge kind. |
+| `dashboard/rb_board.py` | `dashboard/rb_board.py` | **New, not applied yet (2026-11-03).** `GET /board`, the unified board page. Loopback only, GET only, no approval form; reads the `rb board refresh` cache and the laptop sources through `rb_host.board.load`, never opens SSH. |
+| `dashboard/server.py.board.patch` | `dashboard/server.py` | **Not applied yet.** Adds `GET /board` routed to `rb_board`. Made against the *current* `server.py` (with `/rb/pending`), not the original. |
 | `CHECKSUMS.txt` | — | sha256 of the original and edited files at export time (2026-11-02). |
 
-Tests for the two new modules are in the repo: `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`. Both insert the vault path into `sys.path`, so they need the vault files in place.
+Tests for the two new modules are in the repo: `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`. Both insert the vault path into `sys.path`, so they need the vault files in place. `tests/test_rb_board.py` imports `rb_board` from this directory instead, so it runs before the patch is applied.
 
 ## Check that the vault still matches the export
 
@@ -42,6 +44,18 @@ The patch paths are `a/dashboard/server.py` and `a/session-calendar/...`, so run
 Then restart the dashboard to load the new routes:
 
     cd dashboard && cmd /c _restart.bat
+
+## Apply the /board page (user, 2026-11-03 export)
+
+Check that `dashboard/server.py` still has the `current` hash in `CHECKSUMS.txt`, then:
+
+    cd D:/raw/vault-primary/90_Claude/60_Tools
+    patch -p1 --dry-run < D:/raw/Codes/research-bridge/vault-export/dashboard/server.py.board.patch
+    patch -p1 < D:/raw/Codes/research-bridge/vault-export/dashboard/server.py.board.patch
+    cp D:/raw/Codes/research-bridge/vault-export/dashboard/rb_board.py dashboard/
+    cd dashboard && cmd /c _restart.bat
+
+The result has the `board-target` hash. Live check: `curl` on `http://127.0.0.1:8765/board` returns 200, the LAN address returns 403. `rb_board.py` imports `rb_host` from `D:/raw/Codes/research-bridge`, so that checkout must contain `rb_host/board.py` (merge this branch first). Roll back with `patch -R -p1 < .../server.py.board.patch` and `rm dashboard/rb_board.py`.
 
 ## Roll back
 

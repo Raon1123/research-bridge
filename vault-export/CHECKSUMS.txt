@@ -8,3 +8,5 @@ current   c86da995adf123aa28a9ba506b2125b4014072c0cbd22e20f98585b6269a3b04  dash
 current   f5177134ff622bb0718a047688f41e045d70e7643c10d2c024a7063cc9c801af  session-calendar/refresh.py
 current   e9d9d8ff047a8eec4c2f0b7ff7988e6f0f7f2d1d61796798ced4d83f31f93839  session-calendar/bridge_edges.py
 current   4201955787d268a6c05217a1d63f529f881c1fb78bddf777348f7e5dbfc6ace1  session-calendar/template.html
+# /board patch (2026-11-03, not applied yet): base = the current dashboard/server.py above
+board-target  37f632929459469dd33239da2fdccab27a4fd811eb6a9b73c4844f6ec1f3bf93  dashboard/server.py

@@ -19,7 +19,7 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`. Plan (Tas
 | Path | Role |
 |---|---|
 | `rb_node/` | Node side. Standard library only, Python >= 3.8, `from __future__ import annotations` in every module. Runs on node1. |
-| `rb_host/` | Laptop side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI. Python 3.14, needs `mcp>=1.27,<2` (extra `host`). |
+| `rb_host/` | Laptop side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI, unified board cache (`board.py`, `rb board`). Python 3.14, needs `mcp>=1.27,<2` (extra `host`). |
 | `tests/` | pytest. Node and host tests run against a local subprocess node, never against node1. |
 | `deploy/` | `node.json.example`, `authorized_keys.example` (placeholders only). |
 | `vault-export/` | Snapshot and patches of the files this project edited in the vault. See `vault-export/README.md`. |
