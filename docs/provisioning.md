@@ -2,6 +2,8 @@
 
 Node: node1, <NODE_HOST> port <NODE_PORT>, user <NODE_USER>, python3 3.12.3. Written by the controller; the controller runs nothing on node1 until the user confirms each step. Facts: `docs/server-facts.md`.
 
+This file is the node1-specific run sheet. The general, role-by-role instructions (any hub, any node) are in `docs/manual/hub-setup.md` and `docs/manual/node-setup.md`, with Korean translations. Each step here is also a GitHub issue (tracking: Raon1123/research-bridge#21).
+
 ## Decisions the user must make first
 
 1. **Laptop subnet for `from=`.** Which interface reaches node1: Wi-Fi <LAPTOP_WIFI_SUBNET>, or Ethernet <LAPTOP_ETH_SUBNET> or <LAPTOP_ETH_SUBNET>? Check with `route print` or a test `ssh node1`. This replaces `<LAPTOP_SUBNET>` in `deploy/authorized_keys.example`.
