@@ -3,6 +3,27 @@
 Laptop-to-node bridge for Claude sessions: an MCP server (`rb-host-mcp`) and an approval CLI (`rb`).
 The node side (`rb-node`) is stdlib-only and is reached over SSH.
 
+## What it looks like
+
+Screenshots from `scripts/demo_dashboard.py`. They show the two pages the 8765 dashboard serves, using made-up data: a throwaway local node, two jobs and fake GPUs. No real node, ledger or vault file is involved.
+
+**Unified board** (`/board`). This page only shows data. The "waiting on you" list comes first, then one table per source:
+
+- `rb:ledger`: the laptop ledger, read live;
+- `<node>:queue|gpu|state|events|kanban`: the node, from the cache that `rb board refresh` writes;
+- `vault:portfolio|priorities`: the vault files, read live.
+
+![Unified board](docs/images/board.png)
+
+**Pending approval** (`/rb/pending`). Each Approve button needs the approval passphrase, and the node itself checks it. A wrong passphrase gets "approval refused by the node" and the job stays pending. In the screenshot, the first demo job was approved with the right passphrase: it now shows as `queued` in the ledger and as a `jobs` entry in the node queue on the board above. Reject needs no passphrase and makes no node call.
+
+![Pending approval](docs/images/rb-pending.png)
+
+Run the demo yourself. It needs the unified board (`rb_host/board.py`) and node-side approval (`rb_node/approval.py`):
+
+    python scripts/demo_dashboard.py            # then open http://127.0.0.1:8799/board
+                                                 # approval passphrase: demo passphrase
+
 ## Install (laptop)
 
     pip install -e .[host]
@@ -33,8 +54,8 @@ Tools: `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `que
 ## rb CLI
 
     rb pending                 # list jobs waiting for approval
-    rb approve <job_id>        # show the job, ask y/N, then upload config and submit/cancel
-    rb approve --yes <job_id>  # skip the prompt (explicit opt-in)
+    rb approve <job_id>        # show the job, ask y/N and the approval passphrase, then upload config and submit/cancel
+    rb approve --yes <job_id>  # skip the y/N question; the passphrase is always asked
     rb reject <job_id>         # mark rejected; no node call
     rb harness push --node N [--dry-run]   # laptop harness -> node harness-staging/<stamp>/
     rb harness pull --node N               # node harness -> D:/raw/research-bridge/harness-staging/<stamp>/
