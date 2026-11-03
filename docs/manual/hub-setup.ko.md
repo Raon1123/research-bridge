@@ -75,6 +75,18 @@ Host rb-<node>-harness
 {"nodes": {"<node>": {"alias": "rb-<node>", "harness_alias": "rb-<node>-harness"}}}
 ```
 
+선택 항목, 통합 보드용(`rb board refresh|show`, 8765 `/board`): node별 경로는 node의 `trm_root` 기준 상대 경로이며 node `node.json`의 `read_roots` 안에 있어야 한다. 논문 칸반과 우선순위 보드의 laptop 경로는 아래가 기본값이다.
+
+```json
+{"nodes": {"<node>": {"alias": "rb-<node>",
+                       "board": {"state": "<path>/STATE.md", "events": "<path>/events.json",
+                                 "kanban": "<path>/<kanban>.json"}}},
+ "board": {"portfolio": "D:/raw/vault-primary/90_Claude/10_Analysis/11_research-program/80_portfolio/portfolio.json",
+           "priorities": "D:/raw/priorities/live.json"}}
+```
+
+node 경로를 비워 두면 보드에 `no_path`로 표시된다. node는 `.jsonl` 파일을 거부하므로(`deny_unscannable`) events 소스에는 `.json` 내보내기가 필요하다(설계 `docs/design/2026-11-02-unified-board.md` §15 질문 6).
+
 `harness_alias`의 기본값은 `rb-<node>-harness`이다. 여기에 등록된 alias만 사용하며, hub는 tool 인자로 받은 호스트 이름에는 접속하지 않는다. `host.json`이 없으면 `rb approve`와 대시보드의 승인 버튼은 오류를 반환한다.
 
 ## 6. Claude 세션용 MCP 서버 등록 (사용자가 실행)
@@ -96,10 +108,10 @@ Host rb-<node>-harness
 승인은 Claude 밖에서만 이루어진다.
 
     rb pending                 # list jobs waiting for approval
-    rb approve <job_id>        # shows the job, asks y/N, then uploads the config and submits
+    rb approve <job_id>        # shows the job, asks y/N and the approval passphrase, then uploads and submits
     rb reject <job_id>         # marks it rejected; no node call
 
-또는 `http://127.0.0.1:8765/rb/pending`(loopback 전용, 프로세스별 CSRF 토큰)에서 승인한다. 같은 job을 두 번 승인해도 아무 일도 일어나지 않는다. 대시보드 route는 `vault-export/`에서 설치하고(`vault-export/README.md` 참고) 8765 대시보드를 재시작한다. 두 작업 모두 사용자의 승인(go-ahead)이 필요하다.
+또는 `http://127.0.0.1:8765/rb/pending`(loopback 전용, 프로세스별 CSRF 토큰, 승인 passphrase 입력란)에서 승인한다. passphrase는 노드에서 `rb-node approve-key set`으로 정한 것이다(노드 매뉴얼 §4). 매번 직접 입력한다. `--yes`는 y/N 질문만 건너뛰며, passphrase를 넘기는 옵션·파일·환경 변수는 없다. 따라서 Claude 세션은 passphrase 없이는 승인할 수 없다(남는 위험: `docs/design/2026-11-03-node-side-approval.md` §7). passphrase가 틀리면 job은 `pending_approval`로 남는다. 같은 job을 두 번 승인해도 아무 일도 일어나지 않는다. 대시보드 route는 `vault-export/`에서 설치하고(`vault-export/README.md` 참고) 8765 대시보드를 재시작한다. 두 작업 모두 사용자의 승인(go-ahead)이 필요하다.
 
 ## 8. Harness 채널 (수동, 선택)
 

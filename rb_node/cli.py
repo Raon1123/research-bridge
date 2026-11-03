@@ -6,7 +6,8 @@ import os
 import sys
 from typing import List, Optional
 
-SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive")
+SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive",
+               "approve-key")
 
 
 def _not_implemented(name: str) -> int:
@@ -28,6 +29,39 @@ def _harness_receive() -> int:
         sys.stderr.write("rb-node: %s\n" % exc)
         return 1
     return harness_receive(cfg, cmd, sys.stdin.buffer, sys.stdout.buffer)
+
+
+def _approve_key(rest: List[str]) -> int:
+    """Set or clear the job approval verifier. Node console only: no bridge op reaches this."""
+    import getpass
+    from pathlib import Path
+    from . import approval
+    from .config import load_config
+    if rest not in (["set"], ["clear"]):
+        sys.stderr.write("usage: rb-node approve-key set|clear\n")
+        return 2
+    try:
+        cfg = load_config()
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("rb-node: %s\n" % exc)
+        return 1
+    path = Path(cfg.approval_path)
+    if rest == ["clear"]:
+        if path.exists():
+            path.unlink()
+        print("approval verifier removed; job_submit and job_cancel are refused")
+        return 0
+    pw = getpass.getpass("New approval passphrase: ")
+    if len(pw) < approval.MIN_PASSPHRASE:
+        sys.stderr.write("passphrase must have at least %d characters\n" % approval.MIN_PASSPHRASE)
+        return 1
+    if getpass.getpass("Repeat: ") != pw:
+        sys.stderr.write("passphrases differ\n")
+        return 1
+    rec, _key = approval.make_record(pw)
+    approval.write_record(path, rec)
+    print("approval verifier written to %s" % path)
+    return 0
 
 
 def _run_job(args: List[str]) -> int:
@@ -101,6 +135,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return respond(cfg, _rest[0])
     if ns.command == "harness-receive":
         return _harness_receive()
+    if ns.command == "approve-key":
+        return _approve_key(_rest)
     return _not_implemented(ns.command)
 
 

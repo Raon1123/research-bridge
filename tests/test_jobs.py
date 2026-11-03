@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from rb_node import approval
 from rb_node.mailbox import Mailbox
 from rb_node.run_job import run_job
 from test_remote import b64, begin_req, call, cfg  # noqa: F401  (cfg is a fixture)
@@ -22,11 +23,19 @@ def _upload_config(cfg, job_id, payload=b"lr: 0.1\n", name="train.yaml"):
     return hashlib.sha256(payload).hexdigest()
 
 
+RECORD, KEY = approval.make_record("test passphrase", iterations=1000, salt_hex="00" * 16)
+
+
 def _submit_args(job_id, sha, **kw):
     a = {"job_id": job_id, "idempotency_key": "k-" + job_id, "config_name": "train.yaml",
-         "config_sha256": sha, "gpus": [0, 2], "gpu_hours": 1.5, "note": "n"}
+         "config_sha256": sha, "gpus": [0, 2], "gpu_hours": 1.5, "note": "n",
+         "approval_key": KEY}
     a.update(kw)
     return a
+
+
+def _cancel_args(job_id, key):
+    return {"job_id": job_id, "idempotency_key": key, "approval_key": KEY}
 
 
 def _jobs(cfg):
@@ -42,6 +51,7 @@ def no_nvidia_smi(monkeypatch):
 @pytest.fixture
 def tcfg(cfg):
     cfg.job_template = ["uv", "run", "pretrain.py", "config={config}"]
+    approval.write_record(Path(cfg.approval_path), RECORD)
     return cfg
 
 
@@ -94,6 +104,7 @@ def test_gpu_index_checked_when_nvidia_smi_reports(tcfg, monkeypatch):
 
 
 def test_no_job_template(cfg):
+    approval.write_record(Path(cfg.approval_path), RECORD)
     sha = _upload_config(cfg, "j4")
     r = call(cfg, ("job_submit", _submit_args("j4", sha)))[0]
     assert not r["ok"] and r["error"]["code"] == "no_job_template"
@@ -111,7 +122,7 @@ def test_checksum_mismatch_writes_nothing(tcfg):
 def test_cancel_pending_removes_queue_file(tcfg):
     sha = _upload_config(tcfg, "j6")
     call(tcfg, ("job_submit", _submit_args("j6", sha)))
-    c = {"job_id": "j6", "idempotency_key": "c-j6"}
+    c = _cancel_args("j6", "c-j6")
     r = call(tcfg, ("job_cancel", c), ("job_cancel", c))
     assert r[0]["ok"] and r[1]["ok"] and r[0]["result"] == r[1]["result"]
     assert _jobs(tcfg) == []
@@ -121,13 +132,91 @@ def test_cancel_running_writes_cancel_file(tcfg):
     state = Path(tcfg.mailbox_root) / "state"
     (state / "jobs").mkdir(parents=True, exist_ok=True)
     (state / "jobs" / "j7.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
-    r = call(tcfg, ("job_cancel", {"job_id": "j7", "idempotency_key": "c-j7"}))[0]
+    r = call(tcfg, ("job_cancel", _cancel_args("j7", "c-j7")))[0]
     assert r["ok"] and (state / "cancel" / "j7").is_file()
 
 
 def test_cancel_unknown(tcfg):
-    r = call(tcfg, ("job_cancel", {"job_id": "nope", "idempotency_key": "c-n"}))[0]
+    r = call(tcfg, ("job_cancel", _cancel_args("nope", "c-n")))[0]
     assert not r["ok"] and r["error"]["code"] == "not_found"
+
+
+# -- approval (SEC-01) --------------------------------------------------------
+def _nothing_written(cfg, job_id):
+    state = Path(cfg.mailbox_root) / "state"
+    return (_jobs(cfg) == [] and not (state / "idempotency.json").exists()
+            and not (state / "configs" / job_id).exists())
+
+
+@pytest.mark.parametrize("key", [None, "", "0" * 64, KEY.upper(), KEY[:-2], 5])
+def test_submit_without_valid_approval_key_writes_nothing(tcfg, key):
+    sha = _upload_config(tcfg, "s1")
+    a = _submit_args("s1", sha)
+    if key is None:
+        del a["approval_key"]
+    else:
+        a["approval_key"] = key
+    r = call(tcfg, ("job_submit", a))[0]
+    assert not r["ok"] and r["error"]["code"] == "not_authorized", r
+    assert _nothing_written(tcfg, "s1")
+    assert KEY not in Path(tcfg.audit_path).read_text(encoding="utf-8")
+
+
+def test_no_verifier_refuses_submit_and_cancel(cfg):
+    cfg.job_template = ["echo", "{config}"]
+    sha = _upload_config(cfg, "s2")
+    r = call(cfg, ("job_submit", _submit_args("s2", sha)),
+             ("job_cancel", _cancel_args("s2", "c-s2")), ("approve_params", {}))
+    assert [x["error"]["code"] for x in r] == ["not_authorized", "not_authorized", "no_verifier"]
+    assert _nothing_written(cfg, "s2")
+
+
+def test_cancel_without_key_refused(tcfg):
+    sha = _upload_config(tcfg, "s3")
+    call(tcfg, ("job_submit", _submit_args("s3", sha)))
+    r = call(tcfg, ("job_cancel", {"job_id": "s3", "idempotency_key": "c-s3"}))[0]
+    assert r["error"]["code"] == "not_authorized" and len(_jobs(tcfg)) == 1
+
+
+def test_approve_params_public_only(tcfg):
+    r = call(tcfg, ("approve_params", {}))[0]
+    assert r["result"] == {"salt": RECORD["salt"], "iterations": 1000}
+    assert approval.derive("test passphrase", r["result"]["salt"], 1000) == KEY
+
+
+def test_cli_approve_key_set_and_clear(tmp_path, monkeypatch, capsys):
+    from rb_node import cli
+    path = tmp_path / "approve.json"
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"approval_path": str(path)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    answers = iter(["short", "a long passphrase", "a different one!", "a long passphrase",
+                    "a long passphrase"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
+    assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # too short
+    assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # mismatch
+    assert cli.main(["approve-key", "set"]) == 0
+    text = path.read_text(encoding="utf-8")
+    rec = json.loads(text)
+    assert set(rec) == {"salt", "iterations", "verifier"} and "passphrase" not in text
+    key = approval.derive("a long passphrase", rec["salt"], rec["iterations"])
+    approval.check(path, tmp_path / "state", {"approval_key": key})
+    assert cli.main(["approve-key", "bogus"]) == 2
+    assert cli.main(["approve-key", "clear"]) == 0 and not path.exists()
+
+
+def test_wrong_keys_start_a_wait_then_reset(tcfg):
+    state = Path(tcfg.mailbox_root) / "state"
+    path = Path(tcfg.approval_path)
+    for _ in range(approval.FREE_FAILURES):
+        with pytest.raises(approval.ProtocolError) as e:
+            approval.check(path, state, {"approval_key": "0" * 64}, now=1000.0)
+        assert e.value.code == "not_authorized"
+    with pytest.raises(approval.ProtocolError) as e:  # right key, but inside the wait
+        approval.check(path, state, {"approval_key": KEY}, now=1001.0)
+    assert e.value.code == "approval_wait"
+    approval.check(path, state, {"approval_key": KEY}, now=1000.0 + approval.BASE_WAIT + 1)
+    assert not (state / "approve_fail.json").exists()
 
 
 # -- run_job ----------------------------------------------------------------

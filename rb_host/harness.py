@@ -19,6 +19,7 @@ from rb_node.harness import (HarnessError, build_tar, check_json, collect as _co
 
 from .client import default_argv
 from .config import HostConfig
+from .store import UNTRUSTED, untrusted_name
 
 STAMP_RE = re.compile(r"^\d{8}T\d{6}Z(-\d+)?$")
 TIMEOUT = 300
@@ -267,7 +268,8 @@ def staging_root(cfg: HostConfig) -> Path:
 def pull(cfg: HostConfig, node: str) -> Tuple[Path, int]:
     argv, env = transport(cfg, node, "harness-send")
     tar = _run(argv, env, b"")
-    return extract_tar(tar, staging_root(cfg), utc_stamp())
+    # staging sits under the laptop data root, so CLAUDE.md is stored as CLAUDE.md.untrusted (SEC-02)
+    return extract_tar(tar, staging_root(cfg), utc_stamp(), rename=untrusted_name)
 
 
 def diff(cfg: HostConfig, stamp: str) -> str:
@@ -280,6 +282,8 @@ def diff(cfg: HostConfig, stamp: str) -> str:
     chunks = []  # type: List[str]
     for p in sorted(x for x in base.rglob("*") if x.is_file()):
         rel = p.relative_to(base).as_posix()
+        if rel.endswith(UNTRUSTED):
+            rel = rel[:-len(UNTRUSTED)]
         live = home / rel
         new = p.read_bytes()
         old = live.read_bytes() if live.is_file() else None

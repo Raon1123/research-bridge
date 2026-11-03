@@ -47,10 +47,17 @@ PYTHONPATH="$HOME/.local/share/research-bridge" exec python3 -m rb_node.cli "$@"
 | `max_file` | 첨부 파일 크기 상한(바이트, 기본값 50 MB). |
 | `mailbox_root`, `audit_path` | `~/.research-bridge/` 아래에 둔다. |
 | `harness_root` | 노드의 `~/.claude`. 비어 있으면 harness push와 pull이 거부된다(`no_harness_root`). |
+| `approval_path` | job 승인 verifier. 기본값은 `~/.research-bridge/approve.json`. `read_roots`와 `write_roots` 밖에 둔다. 없으면 `job_submit`과 `job_cancel`이 거부된다(`not_authorized`). |
 
 `RB_NODE_CONFIG`로 경로를 덮어쓸 수 있다(테스트에서 사용).
 
 withheld 처리는 항상 켜져 있다. `withheld_source`가 없어도 `AGENTS.md` hard rule 3에 나열된 fallback 패턴이 적용된다. 텍스트 문서는 일치한 줄이 비워지고, 일치하는 pdf, tex, 이미지는 거부되며, 알 수 없는 확장자도 거부된다.
+
+### 승인 passphrase (사용자가 노드 콘솔에서 실행)
+
+    rb-node approve-key set      # passphrase(12자 이상)를 두 번 묻는다
+
+verifier(salt, 반복 횟수, 유도한 키의 sha256, 권한 600)를 `approval_path`에 쓴다. passphrase 자체는 어디에도 저장하지 않는다. bridge를 거치지 말고 노드의 터미널에서 실행한다. bridge 키의 forced command로는 이 명령에 닿을 수 없다. `rb-node approve-key clear`는 verifier를 지우며, 그 뒤에는 어떤 job도 넣거나 취소할 수 없다. 설정하기 전에는 모든 승인이 `not_authorized`로 실패한다. 틀린 키가 다섯 번 들어오면 노드는 다음 시도까지 30초를 기다리게 하고, 이 대기는 두 배씩 늘어 최대 1시간이 된다. 맞는 키가 들어오면 횟수가 초기화된다.
 
 ## 5. `~/.ssh/authorized_keys` (사용자가 실행)
 

@@ -6,7 +6,7 @@ import os
 import time
 from pathlib import Path
 
-_DROP = ("body", "content", "data")
+_DROP = ("body", "content", "data", "approval_key")
 
 
 class Audit:

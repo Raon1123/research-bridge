@@ -18,5 +18,6 @@
   "max_file": 52428800,
   "mailbox_root": "/home/<NODE_USER>/.research-bridge/mailbox",
   "audit_path": "/home/<NODE_USER>/.research-bridge/audit.jsonl",
+  "approval_path": "/home/<NODE_USER>/.research-bridge/approve.json",
   "harness_root": ""
 }

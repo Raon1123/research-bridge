@@ -1,6 +1,8 @@
 """8765 approval page for research-bridge pending jobs (ledger job metadata only).
 
-Approval happens only here (loopback + CSRF token) or via `rb approve`; never an MCP tool.
+Approval happens only here (loopback + CSRF token + the approval passphrase, which the node
+checks) or via `rb approve`; never an MCP tool. The passphrase is passed through, never stored
+or echoed.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ if RB_REPO not in sys.path:
     sys.path.insert(0, RB_REPO)
 
 from rb_host import jobs  # noqa: E402
+from rb_host.client import RemoteError  # noqa: E402
 from rb_host.config import HostConfig  # noqa: E402
 
 CSRF_TOKEN = secrets.token_urlsafe(32)
@@ -32,11 +35,13 @@ def _e(v) -> str:
 
 
 def _form(action: str, label: str, job_id: str) -> str:
+    pw = ('<input type="password" name="passphrase" autocomplete="off" '
+          'placeholder="approval passphrase" required>' if action == "approve" else "")
     return ('<form method="post" action="/rb/%s" style="display:inline">'
             '<input type="hidden" name="csrf" value="%s">'
-            '<input type="hidden" name="job_id" value="%s">'
+            '<input type="hidden" name="job_id" value="%s">%s'
             '<button type="submit">%s</button></form>'
-            % (action, _e(CSRF_TOKEN), _e(job_id), label))
+            % (action, _e(CSRF_TOKEN), _e(job_id), pw, label))
 
 
 def render_pending(ledger) -> str:
@@ -70,12 +75,19 @@ def handle_post(client_ip, form, token, action):
     job_id = form.get("job_id")
     if not isinstance(job_id, str) or not job_id:
         return 400, "bad request"
+    passphrase = form.get("passphrase")
+    if action == "approve" and (not isinstance(passphrase, str) or not passphrase):
+        return 400, "approval passphrase required"
     try:
         ledger, cfg = _ctx()
         if action == "approve":
-            jobs.approve(ledger, cfg, job_id)
+            jobs.approve(ledger, cfg, job_id, passphrase)
         else:
             jobs.reject(ledger, job_id)
+    except RemoteError as exc:
+        if exc.code in jobs.REFUSED:
+            return 403, "approval refused by the node"
+        return 500, "operation failed"
     except Exception:
         return 500, "operation failed"
     return 200, "%s ok" % action

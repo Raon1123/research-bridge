@@ -45,10 +45,17 @@ Start from `deploy/node.json.example`. Paths come only from this file; the hub c
 | `max_file` | Attachment cap in bytes (default 50 MB). |
 | `mailbox_root`, `audit_path` | Under `~/.research-bridge/`. |
 | `harness_root` | The node's `~/.claude`. Empty means harness push and pull are refused (`no_harness_root`). |
+| `approval_path` | Job approval verifier, default `~/.research-bridge/approve.json`. Keep it outside `read_roots` and `write_roots`. Missing means `job_submit` and `job_cancel` are refused (`not_authorized`). |
 
 `RB_NODE_CONFIG` overrides the path (tests use it).
 
 Withheld handling is always on: the fallback patterns listed in `AGENTS.md` hard rule 3 apply even if `withheld_source` is missing. Text documents have hit lines blanked; pdf, tex and images that match are denied; unknown extensions are denied.
+
+### Approval passphrase (user runs, on the node console)
+
+    rb-node approve-key set      # asks for a passphrase (at least 12 characters) twice
+
+This writes the verifier (salt, iteration count, sha256 of the derived key; mode 600) to `approval_path`. The passphrase itself is not stored anywhere. Run it in a terminal on the node, not through the bridge: the bridge key's forced command cannot reach it. `rb-node approve-key clear` removes the verifier, after which no job can be queued or cancelled. Until it is set, every approval fails with `not_authorized`. After five wrong keys the node waits 30 s before the next try, doubling up to 1 h; a right key resets the count.
 
 ## 5. `~/.ssh/authorized_keys` (user runs)
 
