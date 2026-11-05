@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 from typing import List, Optional
 
@@ -13,8 +14,21 @@ from .client import RemoteError, TransportError
 def _interactive() -> bool:
     """True only when a person is at a terminal. Tests replace this; no flag or variable does."""
     try:
-        return sys.stdin.isatty() and sys.stdout.isatty()
-    except (AttributeError, ValueError):
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return False
+        if os.name == "nt":
+            # os.isatty() is also True for the NUL device; only a real console answers
+            # GetConsoleMode.
+            import ctypes
+            import msvcrt
+            mode = ctypes.c_uint32()
+            for stream in (sys.stdin, sys.stdout):
+                handle = msvcrt.get_osfhandle(stream.fileno())
+                if not ctypes.windll.kernel32.GetConsoleMode(ctypes.c_void_p(handle),
+                                                             ctypes.byref(mode)):
+                    return False
+        return True
+    except (AttributeError, ValueError, OSError):
         return False
 
 

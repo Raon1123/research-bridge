@@ -442,3 +442,61 @@ def test_ledger_lock_serialises_updates_and_recovers_from_stale_lock(tmp_path):
     finally:
         lmod.LOCK_TIMEOUT_S = saved
         lock.unlink()
+
+
+def test_nul_device_is_not_a_terminal_pm04():
+    # on Windows os.isatty() is True for NUL; `rb approve < NUL > NUL` must still be refused
+    import os
+    import subprocess
+    code = ("import sys; from rb_host import cli; "
+            "print('INTERACTIVE=%s' % cli._interactive(), file=sys.stderr); "
+            "sys.exit(cli.main(['approve', 'x']))")
+    with open(os.devnull, "r") as din, open(os.devnull, "w") as dout:
+        r = subprocess.run([sys.executable, "-c", code], stdin=din, stdout=dout,
+                           stderr=subprocess.PIPE, text=True, timeout=60)
+    assert "INTERACTIVE=False" in r.stderr, r.stderr
+    assert r.returncode == 1
+
+
+def test_stale_lock_takeover_leaves_one_holder(tmp_path):
+    # contender A saw the lock as stale, but B replaced it before A acted: A must not break B's lock
+    import os
+    import time
+    from rb_host import ledger as lmod
+    a, b = Ledger(tmp_path / "l.jsonl"), Ledger(tmp_path / "l.jsonl")
+    lock = tmp_path / "l.jsonl.lock"
+    lock.write_text("dead")
+    old = time.time() - lmod.LOCK_STALE_S - 5
+    os.utime(str(lock), (old, old))
+    b._take_over_stale(str(lock))  # B wins the takeover ...
+    assert not lock.exists()
+    with b.locked():  # ... and then holds a fresh lock
+        token = lock.read_text()
+        a._take_over_stale(str(lock))  # A acts on its old "stale" observation
+        assert lock.exists() and lock.read_text() == token  # B's lock stands
+        saved = lmod.LOCK_TIMEOUT_S
+        lmod.LOCK_TIMEOUT_S = 0.2
+        try:
+            with pytest.raises(TimeoutError):  # and A (another process) still cannot get in
+                a._acquire_file()
+        finally:
+            lmod.LOCK_TIMEOUT_S = saved
+    assert not lock.exists()
+    assert not [p for p in tmp_path.iterdir() if ".stale-" in p.name]
+
+
+def test_release_removes_only_own_lock(tmp_path):
+    led = Ledger(tmp_path / "l.jsonl")
+    lock = tmp_path / "l.jsonl.lock"
+    with led.locked():
+        lock.write_text("someone-else")  # as if our lock had been taken over
+    assert lock.read_text() == "someone-else"
+
+
+def test_nested_lock_across_ledger_objects(tmp_path):
+    a, b = Ledger(tmp_path / "l.jsonl"), Ledger(tmp_path / "l.jsonl")
+    with a.locked():
+        with b.locked():
+            b.append({"kind": "job", "id": "n"})
+        a.update("n", x=1)
+    assert a.get("n")["x"] == 1 and not (tmp_path / "l.jsonl.lock").exists()

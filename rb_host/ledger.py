@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional
@@ -12,64 +13,98 @@ from typing import Dict, Iterator, List, Optional
 LOCK_STALE_S = 30.0    # a lock file older than this belongs to a crashed process
 LOCK_TIMEOUT_S = 10.0  # how long to wait for the lock before giving up
 _THREAD_LOCKS = {}  # type: Dict[str, threading.RLock]
+_HELD = {}  # type: Dict[str, list]  # lock key -> [depth, token]; guarded by the thread lock
 _THREAD_LOCKS_GUARD = threading.Lock()
 
 
+def _key(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
 def _thread_lock(path: Path) -> threading.RLock:
-    key = os.path.normcase(os.path.abspath(str(path)))
     with _THREAD_LOCKS_GUARD:
-        return _THREAD_LOCKS.setdefault(key, threading.RLock())
+        return _THREAD_LOCKS.setdefault(_key(path), threading.RLock())
 
 
 class Ledger:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self._depth = {}  # type: Dict[int, int]  # thread id -> lock nesting depth
 
     @contextmanager
     def locked(self) -> Iterator[None]:
-        """Exclusive lock for read-modify-write on this ledger (PM-11). Re-entrant in a thread;
-        across processes it is an O_EXCL lock file `<ledger>.lock` with a stale timeout, which
-        works on Windows and POSIX. Hold it only for ledger work, never across a network call."""
-        tl = _thread_lock(self.path)
-        with tl:
-            tid = threading.get_ident()
-            depth = self._depth.get(tid, 0)
-            if depth == 0:
-                self._acquire_file()
-            self._depth[tid] = depth + 1
+        """Exclusive lock for read-modify-write on this ledger (PM-11). Re-entrant in a thread
+        (depth is kept per ledger path, so separate Ledger objects for one file nest correctly);
+        across processes it is an O_EXCL lock file `<ledger>.lock` holding a unique token, with a
+        stale timeout; works on Windows and POSIX. Hold it only for ledger work, never across a
+        network call."""
+        with _thread_lock(self.path):
+            held = _HELD.get(_key(self.path))
+            if held is None:
+                held = _HELD[_key(self.path)] = [0, self._acquire_file()]
+            held[0] += 1
             try:
                 yield
             finally:
-                self._depth[tid] = depth
-                if depth == 0:
-                    del self._depth[tid]
-                    try:
-                        os.unlink(self._lock_path())
-                    except OSError:
-                        pass
+                held[0] -= 1
+                if held[0] == 0:
+                    del _HELD[_key(self.path)]
+                    self._release_file(held[1])
 
     def _lock_path(self) -> str:
         return str(self.path) + ".lock"
 
-    def _acquire_file(self) -> None:
+    def _release_file(self, token: str) -> None:
+        """Remove the lock file only if it still holds our token (never someone else's lock)."""
+        lp = self._lock_path()
+        try:
+            with open(lp, "r", encoding="ascii") as fh:
+                mine = fh.read() == token
+            if mine:
+                os.unlink(lp)
+        except OSError:
+            pass
+
+    def _take_over_stale(self, lp: str) -> None:
+        """Move a lock file that looked stale out of the way. The rename succeeds for only one
+        contender. The file that was moved is re-checked: if it turns out to be fresh (another
+        contender already replaced the stale lock), it is put back."""
+        moved = "%s.stale-%s" % (lp, uuid.uuid4().hex)
+        try:
+            os.replace(lp, moved)
+        except OSError:
+            return  # someone else took it over first
+        try:
+            if time.time() - os.stat(moved).st_mtime <= LOCK_STALE_S:
+                try:
+                    os.link(moved, lp)  # fails if lp exists again; then that lock stands
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        try:
+            os.unlink(moved)
+        except OSError:
+            pass
+
+    def _acquire_file(self) -> str:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lp = self._lock_path()
+        token = "%d-%s" % (os.getpid(), uuid.uuid4().hex)
         deadline = time.monotonic() + LOCK_TIMEOUT_S
         while True:
             try:
                 fd = os.open(lp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, str(os.getpid()).encode("ascii"))
+                os.write(fd, token.encode("ascii"))
                 os.close(fd)
-                return
+                return token
             except FileExistsError:
                 pass
             try:
                 if time.time() - os.stat(lp).st_mtime > LOCK_STALE_S:
-                    os.unlink(lp)
+                    self._take_over_stale(lp)
                     continue
             except OSError:
-                continue  # vanished or locked by a racer; try again
+                continue  # vanished meanwhile; try again
             if time.monotonic() > deadline:
                 raise TimeoutError("ledger is locked: %s" % lp)
             time.sleep(0.01)
