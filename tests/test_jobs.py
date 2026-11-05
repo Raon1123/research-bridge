@@ -43,8 +43,17 @@ def _jobs(cfg):
 
 
 @pytest.fixture(autouse=True)
+def fake_gpus(monkeypatch):
+    """PM-12: submission needs a readable GPU list, so default to four fake GPUs."""
+    import rb_node.remote as remote
+    monkeypatch.setattr(remote.Node, "gpu_status",
+                        lambda self, a: {"gpus": [{"index": i} for i in range(4)]})
+
+
+@pytest.fixture
 def no_nvidia_smi(monkeypatch):
     import rb_node.remote as remote
+    monkeypatch.undo()  # drop fake_gpus
     monkeypatch.setattr(remote.shutil, "which", lambda name: None)
 
 
@@ -293,3 +302,11 @@ def test_cli_run_job(tmp_path, monkeypatch):
     items = Mailbox(mb).undelivered()
     assert len(items) == 1
     assert json.loads(items[0]["body"])["event"] == "job_finished"
+
+
+# --- PM-12: no GPU list -> refuse ------------------------------------------------
+def test_submit_refused_when_gpu_list_unreadable(tcfg, no_nvidia_smi):
+    sha = _upload_config(tcfg, "j12")
+    r = call(tcfg, ("job_submit", _submit_args("j12", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "gpu_status_unavailable", r
+    assert _jobs(tcfg) == []

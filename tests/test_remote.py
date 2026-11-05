@@ -258,3 +258,61 @@ def test_get_file_out_scanned_like_docs(cfg):
              ("get_file", {"kind": "out", "ref": oid + "/fine.tex", "seq": 0}))
     assert r[0]["error"]["code"] == "denied"
     assert r[1]["ok"]
+
+
+# --- PM-01: poll masks bodies ---------------------------------------------------
+def test_poll_masks_fallback_patterns(cfg):
+    from rb_node.mailbox import Mailbox
+    from rb_node.withheld import FALLBACK_PATTERNS
+    mb = Mailbox(Path(cfg.mailbox_root))
+    probes = ["EXP-013 run seed_7", "H108N-x", "pp_seedext_a", "cleanr1_b", "pp_ltf_c"]
+    assert len(probes) == len(FALLBACK_PATTERNS)
+    for p in probes:
+        mb.post_out("reply", "keep\nresult %s here\nkeep2" % p, [], None)
+    items = call(cfg, ("poll", {}))[0]["result"]["items"]
+    assert len(items) == len(probes)
+    for it in items:
+        assert it["body"] == "keep\n\nkeep2"
+        assert it["withheld_lines"] == 1
+    clean = mb.post_out("reply", "all fine", [], None)
+    last = [i for i in call(cfg, ("poll", {}))[0]["result"]["items"] if i["id"] == clean][0]
+    assert last["body"] == "all fine" and last["withheld_lines"] == 0
+
+
+# --- PM-07: audit warning for unparseable source --------------------------------
+def test_unparseable_withheld_source_audited(cfg, tmp_path):
+    src = tmp_path / "WITHHELD_RUNS.yaml"
+    src.write_text("a: b\n", encoding="utf-8")
+    cfg.withheld_source = str(src)
+    call(cfg, ("hello", {}))
+    recs = [json.loads(l) for l in Path(cfg.audit_path).read_text(encoding="utf-8").splitlines()]
+    w = [r for r in recs if r.get("op") == "withheld_source"]
+    assert w and w[0]["ok"] is False and w[0]["reason"] == "unparseable"
+    assert w[0]["source"] == str(src)
+    assert "a: b" not in json.dumps(w)
+
+
+def test_hello_reports_extra_pattern_count(cfg, tmp_path):
+    src = tmp_path / "w.json"
+    src.write_text(json.dumps({"patterns": ["zz_\\d"]}), encoding="utf-8")
+    cfg.withheld_source = str(src)
+    assert call(cfg, ("hello", {}))[0]["result"]["withheld_extra"] == 1
+
+
+# --- PM-08: read_doc and get_file agree on .tex ---------------------------------
+def test_tex_with_hit_denied_by_both_ops(cfg):
+    trm = Path(cfg.trm_root)
+    (trm / "lab" / "reports" / "n.tex").write_text("a\nresult pp_ltf_x\nb\n", encoding="utf-8")
+    r = call(cfg, ("read_doc", {"path": "lab/reports/n.tex"}),
+             ("get_file", {"kind": "doc", "ref": "lab/reports/n.tex", "seq": 0}))
+    assert r[0]["error"]["code"] == "denied"
+    assert r[1]["error"]["code"] == "denied"
+
+
+def test_clean_tex_readable_by_both_ops(cfg):
+    trm = Path(cfg.trm_root)
+    (trm / "lab" / "reports" / "ok.tex").write_bytes(b"a\nb\n")
+    r = call(cfg, ("read_doc", {"path": "lab/reports/ok.tex"}),
+             ("get_file", {"kind": "doc", "ref": "lab/reports/ok.tex", "seq": 0}))
+    assert r[0]["result"]["text"] == "a\nb\n" and r[0]["result"]["withheld_lines"] == 0
+    assert r[1]["ok"]
