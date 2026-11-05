@@ -161,3 +161,34 @@ def test_lock_stale_threshold_tracks_responder_timeout(env, monkeypatch):
     t = time.time() - (spawn._lock_stale() + 10)
     os.utime(str(lock), (t, t))
     assert spawn._acquire(state) is not None
+
+
+def _capture_argv(env, monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"] = list(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(spawn.subprocess, "run", fake_run)
+    mkmsg(env, "m1")
+    spawn.respond(env, "m1")
+    return seen["argv"]
+
+
+def test_argv_confines_responder_tools(env, monkeypatch):  # PM-02
+    argv = _capture_argv(env, monkeypatch)
+    assert argv[argv.index("--tools") + 1] == "Read,Grep,Glob"
+    assert argv[argv.index("--setting-sources") + 1] == ""
+    assert "--strict-mcp-config" in argv
+    assert argv[argv.index("--allowedTools") + 1] == "mcp__rb__*,Read,Grep,Glob"
+    dis = argv[argv.index("--disallowedTools") + 1].split(",")
+    assert set(dis) == {"Bash", "Write", "Edit", "WebFetch", "WebSearch"}
+    assert argv[argv.index("--max-turns") + 1] == "40"
+
+
+def test_prompt_names_no_nonexistent_work_dir(env, monkeypatch):  # PM-14
+    argv = _capture_argv(env, monkeypatch)
+    prompt = argv[argv.index("-p") + 1]
+    assert "_work" not in prompt and "work directory" not in prompt
+    assert "reply" in prompt and "inbox_read" in prompt
