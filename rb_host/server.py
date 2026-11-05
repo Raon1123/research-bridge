@@ -106,7 +106,7 @@ def _poll_node(cfg: Any, node: str) -> Any:
                 continue
             try:
                 stored = store_incoming(cfg, node, it, c)
-            except ValueError:
+            except (ValueError, OSError):
                 errors += 1
                 continue
             led.append({"kind": "message", "id": iid, "direction": "in", "node": node,

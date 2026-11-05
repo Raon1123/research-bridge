@@ -30,8 +30,10 @@ def untrusted_name(base: str) -> str:
 
 
 # Windows device names are reserved with or without an extension (PM-06).
-_RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.IGNORECASE)
+_RESERVED = re.compile(r"^(con|prn|aux|nul|conin\$|conout\$|(com|lpt)[1-9¹²³])$",
+                       re.IGNORECASE)
 _BAD_CHARS = re.compile(r'[\x00-\x1f<>:"/\|?*]')
+_OWN_FILES = frozenset(["body.txt", "provenance.json"])
 _MSG_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]*$")
 
 
@@ -52,7 +54,7 @@ def valid_remote_name(name: str) -> bool:
 
 def valid_msg_id(msg_id: str) -> bool:
     """Message ids become directory names: conservative ASCII, no device names (PM-06)."""
-    return bool(_MSG_ID.match(msg_id)) and not msg_id.endswith((".", " ")) \
+    return bool(_MSG_ID.fullmatch(msg_id)) and not msg_id.endswith((".", " ")) \
         and not _RESERVED.match(msg_id.split(".", 1)[0].rstrip(" "))
 
 
@@ -101,6 +103,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     # the masked body is stored before the caller acks the item (PM-09)
     (inbox / "body.txt").write_text(body, encoding="utf-8")
     files = []  # type: list
+    used = set()  # type: set
     for idx, att in enumerate(item.get("attachments", [])):
         remote = _remote_name(att.get("name", ""))
         name = untrusted_name(remote)
@@ -112,6 +115,11 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             del entry["name"]
             files.append(entry)
             continue
+        # never collide with the files this module writes, or with an earlier attachment
+        if name.lower() in _OWN_FILES or name.lower() in used:
+            name = "%d-%s" % (idx, name)
+            entry["name"] = name
+        used.add(name.lower())
         name_bad = wh.name_hit(remote) or wh.name_hit(str(att.get("original", "")))
         # keep the node's extension for check_file; the index prefix keeps it from being CLAUDE.md
         stage = stage_dir / ("%d-%s" % (idx, remote.replace(":", "_")))
