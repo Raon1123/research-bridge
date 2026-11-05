@@ -69,7 +69,7 @@ Host rb-<node>-harness
 
 ## 5. Register the node in `host.json`
 
-Shortcut: `rb config init`, `rb config add-node <node>`, then `rb config check` write and verify this file (README §Setup). The JSON below is what they produce.
+Shortcut: `rb config init`, `rb config add-node <node>`, then `rb config check` write and verify this file (design spec §13.3: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`). The JSON below is what they produce.
 
 ```json
 {"nodes": {"<node>": {"alias": "rb-<node>", "harness_alias": "rb-<node>-harness"}}}

@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" width="960" height="680" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>research-bridge concept: laptop (hub) and node1 joined by laptop-to-node SSH</title>
+  <defs>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#57606a"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0969da"/></marker>
+    <style>
+      .panel{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}
+      .box{fill:#ffffff;stroke:#57606a;stroke-width:1.2}
+      .you{fill:#fff8c5;stroke:#9a6700;stroke-width:1.5}
+      .filt{fill:#ffebe9;stroke:#cf222e;stroke-width:1.2}
+      .t{font-size:13px;font-weight:600;fill:#1f2328}
+      .s{font-size:11px;fill:#57606a}
+      .h{font-size:15px;font-weight:700;fill:#1f2328}
+      .lbl{font-size:11px;fill:#1f2328}
+      .blbl{font-size:11px;fill:#0969da}
+      .ln{stroke:#57606a;stroke-width:1.3;fill:none}
+      .ssh{stroke:#0969da;stroke-width:2;fill:none}
+      .ret{stroke:#0969da;stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+      .hk{stroke:#0969da;stroke-width:1.3;fill:none}
+    </style>
+  </defs>
+
+  <rect width="960" height="680" fill="#ffffff"/>
+
+  <!-- panels -->
+  <rect class="panel" x="20" y="40" width="370" height="620" rx="8"/>
+  <text class="h" x="35" y="65">Laptop (hub)</text>
+  <rect class="panel" x="575" y="40" width="370" height="620" rx="8"/>
+  <text class="h" x="590" y="65">node1 (experiment server)</text>
+  <text class="lbl" x="482" y="30" text-anchor="middle">every connection is opened by the laptop</text>
+
+  <!-- laptop boxes -->
+  <rect class="box" x="35" y="80" width="160" height="58" rx="5"/>
+  <text class="t" x="115" y="102" text-anchor="middle">Claude session</text>
+  <text class="s" x="115" y="118" text-anchor="middle">on the laptop</text>
+
+  <rect class="box" x="215" y="80" width="160" height="58" rx="5"/>
+  <text class="t" x="295" y="102" text-anchor="middle">rb-host-mcp</text>
+  <text class="s" x="295" y="118" text-anchor="middle">10 MCP tools</text>
+  <text class="s" x="295" y="131" text-anchor="middle">no approval tool</text>
+
+  <rect class="box" x="35" y="180" width="160" height="58" rx="5"/>
+  <text class="t" x="115" y="202" text-anchor="middle">ledger.jsonl</text>
+  <text class="s" x="115" y="218" text-anchor="middle">jobs wait as</text>
+  <text class="s" x="115" y="231" text-anchor="middle">pending_approval</text>
+
+  <rect class="box" x="215" y="180" width="160" height="58" rx="5"/>
+  <text class="t" x="295" y="202" text-anchor="middle">inbox/ · quarantine/</text>
+  <text class="s" x="295" y="218" text-anchor="middle">received files re-checked;</text>
+  <text class="s" x="295" y="231" text-anchor="middle">failures go to quarantine</text>
+
+  <rect class="box" x="35" y="280" width="160" height="58" rx="5"/>
+  <text class="t" x="115" y="302" text-anchor="middle">8765 dashboard</text>
+  <text class="s" x="115" y="318" text-anchor="middle">/board · /rb/pending</text>
+  <text class="s" x="115" y="331" text-anchor="middle">shows data only</text>
+
+  <rect class="you" x="215" y="280" width="160" height="58" rx="5"/>
+  <text class="t" x="295" y="302" text-anchor="middle">Approval (you)</text>
+  <text class="s" x="295" y="318" text-anchor="middle">rb approve or /rb/approve</text>
+  <text class="s" x="295" y="331" text-anchor="middle">you type the passphrase</text>
+
+  <rect class="box" x="215" y="590" width="160" height="58" rx="5"/>
+  <text class="t" x="295" y="612" text-anchor="middle">harness-staging/</text>
+  <text class="s" x="295" y="628" text-anchor="middle">rb harness push / pull</text>
+  <text class="s" x="295" y="641" text-anchor="middle">you copy files by hand</text>
+
+  <!-- laptop arrows -->
+  <line class="ln" x1="195" y1="109" x2="215" y2="109"/>
+  <text class="s" x="205" y="76" text-anchor="middle">stdio</text>
+  <line class="ln" x1="240" y1="138" x2="175" y2="179" marker-end="url(#g)"/>
+  <text class="lbl" x="150" y="161" text-anchor="end">submit_job,</text>
+  <text class="lbl" x="150" y="173" text-anchor="end">cancel_job</text>
+  <line class="ln" x1="320" y1="138" x2="320" y2="179" marker-end="url(#g)"/>
+  <text class="lbl" x="326" y="163">stores</text>
+  <line class="ln" x1="115" y1="238" x2="115" y2="279" marker-end="url(#g)"/>
+  <line class="ln" x1="180" y1="238" x2="232" y2="279" marker-end="url(#g)"/>
+  <text class="lbl" x="122" y="263">reads</text>
+  <text class="lbl" x="214" y="256">pending</text>
+
+  <!-- legend -->
+  <text class="t" x="35" y="400">Legend</text>
+  <line class="ssh" x1="35" y1="420" x2="80" y2="420" marker-end="url(#b)"/>
+  <text class="s" x="88" y="424">SSH request, laptop → node</text>
+  <line class="ret" x1="80" y1="442" x2="35" y2="442" marker-end="url(#b)"/>
+  <text class="s" x="88" y="446">answer on the same connection</text>
+  <line class="ln" x1="35" y1="464" x2="80" y2="464" marker-end="url(#g)"/>
+  <text class="s" x="88" y="468">local call or file access</text>
+  <rect class="you" x="35" y="478" width="45" height="16" rx="3"/>
+  <text class="s" x="88" y="490">step only you can do</text>
+  <rect class="filt" x="35" y="502" width="45" height="16" rx="3"/>
+  <text class="s" x="88" y="514">withheld-series filter</text>
+  <text class="s" x="35" y="545">The node never opens a connection</text>
+  <text class="s" x="35" y="559">to the laptop. Events and replies wait</text>
+  <text class="s" x="35" y="573">in the node mailbox until poll.</text>
+
+  <!-- node boxes -->
+  <rect class="box" x="590" y="80" width="160" height="258" rx="5"/>
+  <text class="t" x="670" y="102" text-anchor="middle">rb-node serve-remote</text>
+  <text class="s" x="670" y="118" text-anchor="middle">the only command the</text>
+  <text class="s" x="670" y="131" text-anchor="middle">bridge key may run</text>
+  <rect class="filt" x="600" y="150" width="140" height="92" rx="4"/>
+  <text class="t" x="670" y="170" text-anchor="middle">withheld filter</text>
+  <text class="s" x="670" y="186" text-anchor="middle">on every doc and file</text>
+  <text class="s" x="670" y="199" text-anchor="middle">sent back: text hit lines</text>
+  <text class="s" x="670" y="212" text-anchor="middle">blanked; pdf, tex, images</text>
+  <text class="s" x="670" y="225" text-anchor="middle">and unknown types denied</text>
+  <text class="s" x="670" y="270" text-anchor="middle">paths from node config</text>
+  <text class="s" x="670" y="283" text-anchor="middle">only; spawns a server</text>
+  <text class="s" x="670" y="296" text-anchor="middle">session per message</text>
+
+  <rect class="box" x="770" y="80" width="160" height="58" rx="5"/>
+  <text class="t" x="850" y="102" text-anchor="middle">read roots</text>
+  <text class="s" x="850" y="118" text-anchor="middle">H-xxx and EXP-xxx docs</text>
+  <text class="s" x="850" y="131" text-anchor="middle">(read_doc, fetch_file)</text>
+
+  <rect class="box" x="770" y="280" width="160" height="58" rx="5"/>
+  <text class="t" x="850" y="302" text-anchor="middle">approval check</text>
+  <text class="s" x="850" y="318" text-anchor="middle">node keeps a verifier;</text>
+  <text class="s" x="850" y="331" text-anchor="middle">bridge key alone refused</text>
+
+  <rect class="box" x="770" y="380" width="160" height="58" rx="5"/>
+  <text class="t" x="850" y="402" text-anchor="middle">job queue → GPUs</text>
+  <text class="s" x="850" y="418" text-anchor="middle">GPU ids and GPU-hours</text>
+  <text class="s" x="850" y="431" text-anchor="middle">chosen by you</text>
+
+  <rect class="box" x="590" y="380" width="160" height="58" rx="5"/>
+  <text class="t" x="670" y="402" text-anchor="middle">~/.research-bridge/</text>
+  <text class="s" x="670" y="418" text-anchor="middle">mailbox, jobs ledger,</text>
+  <text class="s" x="670" y="431" text-anchor="middle">audit.log</text>
+
+  <rect class="box" x="590" y="480" width="160" height="58" rx="5"/>
+  <text class="t" x="670" y="502" text-anchor="middle">rb-node serve-local</text>
+  <text class="s" x="670" y="518" text-anchor="middle">inbox and reply tools</text>
+  <text class="s" x="670" y="531" text-anchor="middle">for the server session</text>
+
+  <rect class="box" x="770" y="480" width="160" height="58" rx="5"/>
+  <text class="t" x="850" y="502" text-anchor="middle">Claude session</text>
+  <text class="s" x="850" y="518" text-anchor="middle">on node1, one at a time,</text>
+  <text class="s" x="850" y="531" text-anchor="middle">writes only via reply</text>
+
+  <rect class="box" x="590" y="590" width="160" height="58" rx="5"/>
+  <text class="t" x="670" y="612" text-anchor="middle">harness-staging/</text>
+  <text class="s" x="670" y="628" text-anchor="middle">rb-node harness-receive</text>
+  <text class="s" x="670" y="641" text-anchor="middle">no apply command</text>
+
+  <!-- node arrows -->
+  <line class="ln" x1="770" y1="109" x2="751" y2="109" marker-end="url(#g)"/>
+  <line class="ln" x1="750" y1="309" x2="769" y2="309" marker-end="url(#g)"/>
+  <line class="ln" x1="850" y1="338" x2="850" y2="379" marker-end="url(#g)"/>
+  <line class="ln" x1="670" y1="338" x2="670" y2="379" marker-end="url(#g)"/>
+  <line class="ln" x1="670" y1="439" x2="670" y2="479" marker-start="url(#g)" marker-end="url(#g)"/>
+  <line class="ln" x1="750" y1="509" x2="770" y2="509"/>
+  <text class="s" x="760" y="476" text-anchor="middle">stdio</text>
+
+  <!-- SSH between laptop and node -->
+  <line class="ssh" x1="375" y1="100" x2="588" y2="100" marker-end="url(#b)"/>
+  <text class="blbl" x="482" y="92" text-anchor="middle">SSH, bridge key: 10 tools</text>
+  <line class="ret" x1="590" y1="122" x2="377" y2="122" marker-end="url(#b)"/>
+  <text class="blbl" x="482" y="140" text-anchor="middle">replies, events, masked files</text>
+
+  <line class="ssh" x1="375" y1="309" x2="588" y2="309" marker-end="url(#b)"/>
+  <text class="blbl" x="482" y="301" text-anchor="middle">job_submit / job_cancel</text>
+  <text class="blbl" x="482" y="327" text-anchor="middle">+ key from the passphrase</text>
+
+  <line class="hk" x1="375" y1="612" x2="588" y2="612" marker-end="url(#b)"/>
+  <line class="ret" x1="590" y1="630" x2="377" y2="630" marker-end="url(#b)"/>
+  <text class="blbl" x="482" y="604" text-anchor="middle">SSH, separate harness key</text>
+  <text class="blbl" x="482" y="648" text-anchor="middle">pulled tar (allowlist only)</text>
+</svg>

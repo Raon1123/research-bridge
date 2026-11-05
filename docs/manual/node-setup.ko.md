@@ -33,7 +33,7 @@ PYTHONPATH="$HOME/.local/share/research-bridge" exec python3 -m rb_node.cli "$@"
 
 ## 4. `~/.research-bridge/node.json`
 
-간단한 방법 (node 콘솔에서): `rb-node config init`, `rb-node config set <key> <value>` (목록은 JSON), `rb-node config check` (README §Setup).
+간단한 방법 (node 콘솔에서): `rb-node config init`, `rb-node config set <key> <value>` (목록은 JSON), `rb-node config check` (design spec §13.4: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`).
 
 `deploy/node.json.example`에서 시작한다. 경로는 이 파일에서만 가져오며, 허브는 경로를 지정할 수 없다(`AGENTS.md` hard rule 4). 모드 600.
 
