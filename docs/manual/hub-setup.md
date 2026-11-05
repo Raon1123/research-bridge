@@ -1,6 +1,6 @@
 # Hub setup
 
-The hub runs `rb_host`. Today the hub is the laptop (Windows, Python 3.14). Everything here runs on the hub. For the node side see [node-setup.md](node-setup.md); for the roles see [README.md](README.md).
+The hub runs `rb_host`. The first hub was the laptop (Windows, Python 3.14); for a Linux hub see §12. Everything here runs on the hub. For the node side see [node-setup.md](node-setup.md); for the roles see [README.md](README.md).
 
 ## 1. Requirements
 
@@ -139,3 +139,16 @@ Then run the node checks in [node-setup.md](node-setup.md) §7.
 ## 11. Removing a node
 
 Delete its entry from `host.json`, remove its two `Host` blocks from `~/.ssh/config`, `ssh-add -d` both keys, and ask the node's owner to delete the two `authorized_keys` lines. Keep the ledger; it is the record of what was exchanged.
+
+## 12. Linux hub
+
+From 2026-11-05 the hub may be a Linux machine instead of the Windows laptop. Sections 1–11 apply with these changes.
+
+- **Python:** whatever `uv sync --extra host` selects (3.12 on the first Linux hub); the host side needs Python >= 3.10. All tests pass, including the dashboard and bridge-edge tests, which use the repository's `vault-export/` copies.
+- **Data root:** set `RB_HOST_ROOT` (for example `~/project/research-bridge-hub`) in the shell profile. It sets where `host.json` lives and the default `data_root`. Without it the default is `~/.local/share/research-bridge`; on Windows it stays `D:/raw/research-bridge`. `RB_HOST_CONFIG` still overrides the `host.json` path alone. Create the directory with mode 700, then `rb config init` and `rb config add-node <node>`.
+- **Withheld patterns:** there is no vault on the Linux hub, so copy the session-calendar withheld-pattern JSON to `<data root>/withheld_patterns.json` (the Linux default) or set `withheld_patterns_file`. Until it exists the hub re-check uses only the five fallback patterns; `rb config check` reports the missing file.
+- **Keys:** keep them under `~/.ssh/research-bridge/` (mode 700 directory, 600 keys), for example `ssh-keygen -t ed25519 -f ~/.ssh/research-bridge/<node>_ed25519 -C research-bridge-hub`, and load them into `ssh-agent` (`eval "$(ssh-agent)"; ssh-add ...`, or a desktop agent). Use these paths as `IdentityFile` in the §4 blocks.
+- **`from=` in the node's `authorized_keys`:** the hub's own subnet, not the laptop's.
+- **MCP entry:** run `rb config mcp` with `RB_HOST_ROOT` set; the printed entry then carries it in an `env` block. Without that block the MCP server looks for `host.json` in the default location.
+- **Approval:** `rb approve` and `rb reject` in a terminal on the hub (a TTY; SSH sessions with a TTY count). The 8765 dashboard and its `/rb/approve` route are vault-side and are not installed on the Linux hub.
+- **Not available on the Linux hub:** `rb board` laptop sources (portfolio, priorities) unless `board.portfolio` and `board.priorities` point at local copies; the harness channel's path mapping assumes laptop paths (`private/local.json`, `RB_LAPTOP_HOME`).

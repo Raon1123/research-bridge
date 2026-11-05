@@ -1,6 +1,6 @@
 """`rb config`: write and check the laptop's config files from the command line.
 
-Files: host.json (DEFAULT_ROOT/host.json, or RB_HOST_CONFIG) and private/local.json in the
+Files: host.json (<data root>/host.json, or RB_HOST_CONFIG; data root in rb_host.config) and private/local.json in the
 checkout (gitignored). Every write is refused if git would track the target
 (rb_node.configure.git_exposure). ~/.ssh/config and ~/.claude.json are only read, never
 written: `rb config mcp` prints the entry for the user to add.
@@ -16,7 +16,7 @@ from typing import Any, Dict, List
 
 from rb_node.configure import ConfigError, git_exposure, read_json, write_json
 
-from .config import DEFAULT_ROOT
+from .config import default_root, default_withheld
 
 REPO = Path(__file__).resolve().parent.parent
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
@@ -28,7 +28,7 @@ NODE_BOARD_KEYS = ("state", "events", "kanban")
 
 def host_path() -> Path:
     p = os.environ.get("RB_HOST_CONFIG")
-    return Path(p) if p else Path(DEFAULT_ROOT) / "host.json"
+    return Path(p) if p else Path(default_root()) / "host.json"
 
 
 def local_path() -> Path:
@@ -113,9 +113,13 @@ def set_local(laptop_home: str = "", node_home: str = "") -> Path:
 
 def mcp_entry() -> Dict[str, Any]:
     root = Path(__file__).resolve().parents[1].as_posix()
-    return {"research-bridge": {"type": "stdio", "command": "uv",
-                                "args": ["run", "--directory", root, "--extra", "host",
-                                         "python", "-m", "rb_host.server"]}}
+    entry: Dict[str, Any] = {"type": "stdio", "command": "uv",
+                             "args": ["run", "--directory", root, "--extra", "host",
+                                      "python", "-m", "rb_host.server"]}
+    env = {k: os.environ[k] for k in ("RB_HOST_ROOT", "RB_HOST_CONFIG") if os.environ.get(k)}
+    if env:
+        entry["env"] = env
+    return {"research-bridge": entry}
 
 
 def _ssh_hosts() -> List[str]:
@@ -156,9 +160,13 @@ def check() -> List[str]:
                 probs.append("node %s has no %s" % (name, k))
             elif a not in hosts:
                 probs.append("node %s: %s %r is not a Host in ~/.ssh/config" % (name, k, a))
-    root = Path(data.get("data_root") or DEFAULT_ROOT)
+    root = Path(data.get("data_root") or default_root())
     if not root.is_dir():
         probs.append("data_root does not exist: %s" % root)
+    wp = Path(data.get("withheld_patterns_file") or default_withheld())
+    if not wp.is_file():
+        probs.append("withheld_patterns_file does not exist: %s (the hub re-check falls back to "
+                     "the five built-in patterns only)" % wp)
     if not local_path().is_file():
         probs.append("no private/local.json: run `rb config local --laptop-home ... "
                      "--node-home ...` (harness path mapping falls back to guesses)")

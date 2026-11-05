@@ -19,7 +19,7 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`. Plan (Tas
 | Path | Role |
 |---|---|
 | `rb_node/` | Node side. Standard library only, Python >= 3.8, `from __future__ import annotations` in every module. Runs on node1. |
-| `rb_host/` | Laptop side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI, unified board cache (`board.py`, `rb board`). Python 3.14, needs `mcp>=1.27,<2` (extra `host`). |
+| `rb_host/` | Hub side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI, unified board cache (`board.py`, `rb board`). Python >= 3.10 (3.14 on the laptop, 3.12 on the Linux hub), needs `mcp>=1.27,<2` (extra `host`). |
 | `tests/` | pytest. Node and host tests run against a local subprocess node, never against node1. |
 | `deploy/` | `node.json.example`, `authorized_keys.example` (placeholders only). |
 | `vault-export/` | Snapshot and patches of the files this project edited in the vault. See `vault-export/README.md`. |
@@ -30,7 +30,7 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md`. Plan (Tas
 | `docs/CONTRIBUTING.md` | Branch, issue and commit conventions, and what may never be published from this public repository. |
 | `.github/` | Issue templates (design proposal, defect, provisioning step) and the PR template. |
 
-Data on the laptop: `D:/raw/research-bridge/` (`host.json`, `ledger.jsonl`, `inbox/`, `quarantine/`, `harness-staging/`). Node data: `~/.research-bridge/` on node1. Neither is in git.
+Hub data: `RB_HOST_ROOT`, default `D:/raw/research-bridge/` on Windows and `~/.local/share/research-bridge` elsewhere (`host.json`, `ledger.jsonl`, `inbox/`, `quarantine/`, `harness-staging/`). From 2026-11-05 the hub is a Linux development server (`docs/manual/hub-setup.md` §12). Node data: `~/.research-bridge/` on node1. Neither is in git.
 
 ## Environment and tests
 
@@ -41,7 +41,7 @@ The runtime environment is managed by **uv**. Do not use `python -m venv` or `pi
 
 Prefix shell commands with `rtk`. `rtk pytest` hides output on this machine; use `rtk proxy uv run --extra host pytest -q`.
 
-Last recorded results (2026-11-05, laptop, `main` after PRs 32–35): 294 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
+Last recorded results (2026-11-05, Linux hub, Python 3.12): 300 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
 
 ## Hard rules
 

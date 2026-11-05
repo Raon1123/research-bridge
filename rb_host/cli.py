@@ -8,6 +8,7 @@ import sys
 from typing import List, Optional
 
 from . import jobs
+from .config import default_root
 from .client import RemoteError, TransportError
 
 
@@ -227,8 +228,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     cs = c.add_subparsers(dest="action", required=True)
     cs.add_parser("path", help="print where the config files are")
     ci = cs.add_parser("init", help="create host.json (mode 600)")
-    ci.add_argument("--data-root", default="", help="laptop data directory (default %s)"
-                    % "D:/raw/research-bridge")
+    ci.add_argument("--data-root", default="", help="hub data directory (default %s)"
+                    % default_root())
     ci.add_argument("--force", action="store_true", help="overwrite an existing host.json")
     ca = cs.add_parser("add-node", help="register a node and its SSH aliases")
     ca.add_argument("name")

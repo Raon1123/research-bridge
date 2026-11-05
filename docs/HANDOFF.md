@@ -4,7 +4,16 @@ Read `AGENTS.md` first (rules, layout, test commands).
 
 ## Resume snippet
 
-> research-bridge (`main` at the merge of PR 35) is built and reviewed, and the pre-live-run security fixes from the whole-branch review are merged (PRs 32–35, 2026-11-05). Nothing has been installed on node1 and no SSH key or config has been created. Development continues on another machine (a development server) from 2026-11-05; the laptop stays the **hub** (it runs the 8765 dashboard, holds the SSH keys and `host.json`, and is where `rb approve` is typed). Next: the user decides items 2–4 below and does A1–A3, then the session runs B1 (with the pattern file), B2 (with the two new checks) and B3, and records results.
+> research-bridge (`main` at the merge of PR 35) is built and reviewed, and the pre-live-run security fixes from the whole-branch review are merged (PRs 32–35, 2026-11-05). Nothing has been installed on node1 and no SSH key or config has been created. Development continues on another machine (a development server) from 2026-11-05; superseded the same day: that server is now also the **hub** (§Hub moved to the Linux development server). The original plan below kept the laptop as the hub (it runs the 8765 dashboard, holds the SSH keys and `host.json`, and is where `rb approve` is typed). Next: the user decides items 2–4 below and does A1–A3, then the session runs B1 (with the pattern file), B2 (with the two new checks) and B3, and records results.
+
+## Hub moved to the Linux development server (2026-11-05, user decision)
+
+The user decided that the Linux development server is both the hub and the development machine; the laptop no longer takes the hub role. Nothing had been set up on the laptop, so nothing moves. Where this section and older text below disagree (for example "laptop only" rows, `C:/keys/...`, the laptop subnet), this section wins.
+
+- Done on the server (branch `claude/linux-hub`): platform defaults in `rb_host/config.py` (`RB_HOST_ROOT`; Linux default `~/.local/share/research-bridge` instead of a Windows path that Linux reads as relative), `rb config check` reports a missing withheld-pattern file, `rb config mcp` carries `RB_HOST_ROOT` in an `env` block, manual `docs/manual/hub-setup.md` §12. Data root `~/project/research-bridge-hub` (mode 700) with `host.json` for `node1`. 300 tests pass on Python 3.12.
+- Reopened: decision 1 (`from=` subnet) is now the server's subnet, recorded in `private/placeholders.md` as `<HUB_SUBNET>`. A1 keys go under `~/.ssh/research-bridge/` on the server; A2 `~/.ssh/config` on the server (none exists yet); `rb approve` is typed in a terminal on the server.
+- Not on the server: the vault, so no 8765 dashboard, no `/rb/approve` route, no session-calendar withheld JSON, no `rb board` portfolio/priorities sources. §Before B3 item 3 (PM-03, dashboard deploy) does not block B3 for a Linux hub; it applies only if the laptop dashboard is used later.
+- Before any live run: copy the withheld-pattern JSON to `~/project/research-bridge-hub/withheld_patterns.json` (§Before B3 item 1, hub half).
 
 ## Working from the development server
 
