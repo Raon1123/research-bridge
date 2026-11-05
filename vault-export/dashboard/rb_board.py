@@ -10,8 +10,11 @@ import html
 import sys
 
 RB_REPO = "D:/raw/Codes/research-bridge"
-if RB_REPO not in sys.path:
-    sys.path.insert(0, RB_REPO)
+try:  # an importable rb_host (installed, or on the path in tests) wins over the fixed location
+    import rb_host  # noqa: F401
+except ImportError:
+    if RB_REPO not in sys.path:
+        sys.path.insert(0, RB_REPO)
 
 from rb_host import board, jobs  # noqa: E402
 from rb_host.config import HostConfig  # noqa: E402
@@ -68,8 +71,8 @@ def render_board(b: dict) -> str:
             % (STYLE, _e(b["generated"]), len(b["waiting"]), waits, "".join(parts)))
 
 
-def handle_get(client_ip):
-    if client_ip != "127.0.0.1":
+def handle_get(client_ip, host=None):
+    if client_ip != "127.0.0.1" or not jobs.host_allowed(host):
         return 403, "forbidden"
     try:
         return 200, render_board(board.load(_cfg()))

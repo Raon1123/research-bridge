@@ -16,7 +16,7 @@
  
 +    def _rb_board_page(self):
 +        import rb_board
-+        status, text = rb_board.handle_get(self.client_address[0])
++        status, text = rb_board.handle_get(self.client_address[0], self.headers.get("Host"))
 +        page = text.encode("utf-8")
 +        self.send_response(status)
 +        self.send_header("Content-Type", "text/html; charset=utf-8")

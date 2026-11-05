@@ -12,8 +12,11 @@ import secrets
 import sys
 
 RB_REPO = "D:/raw/Codes/research-bridge"
-if RB_REPO not in sys.path:
-    sys.path.insert(0, RB_REPO)
+try:  # an importable rb_host (installed, or on the path in tests) wins over the fixed location
+    import rb_host  # noqa: F401
+except ImportError:
+    if RB_REPO not in sys.path:
+        sys.path.insert(0, RB_REPO)
 
 from rb_host import jobs  # noqa: E402
 from rb_host.client import RemoteError  # noqa: E402
@@ -31,7 +34,8 @@ def _ctx():
 
 
 def _e(v) -> str:
-    return html.escape(str(v), quote=True)
+    """Escape for HTML after stripping control characters a session may have put in the ledger."""
+    return html.escape(jobs.clean(v), quote=True)
 
 
 def _form(action: str, label: str, job_id: str) -> str:
@@ -51,9 +55,17 @@ def render_pending(ledger) -> str:
         gpus = r.get("gpus", "")
         if isinstance(gpus, (list, tuple)):
             gpus = ",".join(str(g) for g in gpus)
+        if r.get("op") == "cancel":
+            what = "CANCEL job %s (key %s)" % (jobs.clean(r.get("target_job_id")),
+                                              jobs.clean(r.get("idempotency_key")))
+            cfg = '<code>%s</code>' % _e(what)
+        else:
+            cfg = ('%s<br><small>config_path: <code>%s</code><br>config_sha256: <code>%s</code></small>'
+                   % (_e(r.get("config_name", "")), _e(r.get("config_path", "")),
+                      _e(jobs.clean(r.get("config_sha256", ""))[:12])))
         rows.append(
             "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s %s</td></tr>"
-            % (_e(jid), _e(r.get("node", "")), _e(r.get("config_name", "")), _e(gpus),
+            % (_e(jid), _e(r.get("node", "")), cfg, _e(gpus),
                _e(r.get("gpu_hours", "")), _e(r.get("note", "")),
                _form("approve", "Approve", jid), _form("reject", "Reject", jid)))
     body = "".join(rows) or '<tr><td colspan="7">No pending jobs.</td></tr>'
@@ -63,8 +75,10 @@ def render_pending(ledger) -> str:
             "<th>note</th><th>action</th></tr>%s</table></body></html>" % body)
 
 
-def handle_post(client_ip, form, token, action):
-    if client_ip != "127.0.0.1":
+def handle_post(client_ip, form, token, action, host=None, origin=None):
+    """host and origin are the request's Host and Origin headers (PM-03). A missing Host is
+    refused; a missing Origin is allowed (same-origin form posts from some clients omit it)."""
+    if client_ip != "127.0.0.1" or not jobs.host_allowed(host) or not jobs.origin_allowed(origin):
         return 403, "forbidden"
     sent = form.get("csrf")
     if not isinstance(sent, str) or not isinstance(token, str) \
@@ -93,8 +107,8 @@ def handle_post(client_ip, form, token, action):
     return 200, "%s ok" % action
 
 
-def handle_get(client_ip):
-    if client_ip != "127.0.0.1":
+def handle_get(client_ip, host=None):
+    if client_ip != "127.0.0.1" or not jobs.host_allowed(host):
         return 403, "forbidden"
     try:
         ledger, _cfg = _ctx()

@@ -10,13 +10,13 @@
          if self.path == "/browser":
              self._serve_html_file(THIS / "browser.html")
              return
-@@ -1214,8 +1217,32 @@
+@@ -1214,8 +1217,33 @@
              "recent_events": events[-limit:],
          })
  
 +    def _rb_pending_page(self):
 +        import rb_pending
-+        status, text = rb_pending.handle_get(self.client_address[0])
++        status, text = rb_pending.handle_get(self.client_address[0], self.headers.get("Host"))
 +        page = text.encode("utf-8")
 +        self.send_response(status)
 +        self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -32,7 +32,8 @@
 +            qs = urlp.parse_qs(self.rfile.read(min(length, 65536)).decode("utf-8", "replace"))
 +            form = {k: v[0] for k, v in qs.items()}
 +            status, text = rb_pending.handle_post(self.client_address[0], form, rb_pending.CSRF_TOKEN,
-+                                                  self.path.rsplit("/", 1)[1])
++                                                  self.path.rsplit("/", 1)[1], self.headers.get("Host"),
++                                                  self.headers.get("Origin"))
 +            data = text.encode("utf-8")
 +            self.send_response(status)
 +            self.send_header("Content-Type", "text/plain; charset=utf-8")
