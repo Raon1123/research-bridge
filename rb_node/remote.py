@@ -323,8 +323,7 @@ class Node:
     # -- jobs --------------------------------------------------------------
     def job_submit(self, args: dict) -> dict:
         known = {g["index"] for g in self.gpu_status({}).get("gpus", [])}
-        if not known:  # cannot verify the GPU ids -> refuse rather than queue unchecked
-            raise ProtocolError("gpu_status_unavailable", "cannot read the GPU list; job refused")
+        # An empty set means "could not read"; jobs.submit refuses it after the approval check.
         return jobs.submit(self.cfg, self.mb, args, known)
 
     def job_cancel(self, args: dict) -> dict:
