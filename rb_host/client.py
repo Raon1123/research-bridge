@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from rb_node.protocol import CHUNK, ProtocolError, encode, read_message
+from rb_node.protocol import CHUNK, MAX_FILE, ProtocolError, encode, read_message
 
 
 class TransportError(Exception):
@@ -162,16 +162,32 @@ class NodeClient:
         h = hashlib.sha256()
         seq = 0
         want = None
+        total = 0
+        too_large = False
+        stalled = False
         with open(str(part), "wb") as fh:
             while True:
                 res = self.call("get_file", kind=kind, ref=ref, seq=seq)
                 data = base64.b64decode(res["data_b64"])
+                if not data and not res.get("eof"):
+                    stalled = True  # an empty non-eof chunk makes no progress
+                    break
+                total += len(data)
+                if total > MAX_FILE:  # hard rule 5 / PM-10: a node must not fill the disk
+                    too_large = True
+                    break
                 fh.write(data)
                 h.update(data)
                 if res.get("eof"):
                     want = res.get("sha256")
                     break
                 seq += 1
+        if stalled:
+            part.unlink()
+            raise RemoteError("stalled", "node sent an empty chunk without eof")
+        if too_large:
+            part.unlink()
+            raise RemoteError("too_large", "download exceeds %d bytes" % MAX_FILE)
         got = h.hexdigest()
         if want != got:
             part.unlink()

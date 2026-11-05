@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import time
 from pathlib import Path
@@ -26,6 +27,43 @@ def untrusted_name(base: str) -> str:
     if base.rstrip(" .").lower() in INSTRUCTION_NAMES or base.startswith("."):
         return base + UNTRUSTED  # Windows drops trailing dots and spaces, so check without them
     return base
+
+
+# Windows device names are reserved with or without an extension (PM-06).
+_RESERVED = re.compile(r"^(con|prn|aux|nul|conin\$|conout\$|(com|lpt)[1-9¹²³])$",
+                       re.IGNORECASE)
+_BAD_CHARS = re.compile(r'[\x00-\x1f<>:"/\|?*]')
+_OWN_FILES = frozenset(["body.txt", "provenance.json"])
+_MSG_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]*$")
+
+
+def valid_remote_name(name: str) -> bool:
+    """True when a node-supplied basename is safe to turn into a local file name (PM-06).
+
+    Rejects drive letters and stream syntax (colon), control and wildcard characters,
+    Windows device names (CON, NUL, COM1, ... with or without extension) and names that
+    end in a dot or space (Windows drops those, so two names could collide).
+    Dot-names and instruction file names are valid here; SEC-02 renames them afterwards.
+    """
+    if not name or name in (".", "..") or _BAD_CHARS.search(name):
+        return False
+    if name.endswith((".", " ")) and untrusted_name(name) == name:
+        return False
+    return not _RESERVED.match(name.split(".", 1)[0].rstrip(" "))
+
+
+def valid_msg_id(msg_id: str) -> bool:
+    """Message ids become directory names: conservative ASCII, no device names (PM-06)."""
+    return bool(_MSG_ID.fullmatch(msg_id)) and not msg_id.endswith((".", " ")) \
+        and not _RESERVED.match(msg_id.split(".", 1)[0].rstrip(" "))
+
+
+def _within(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def _remote_name(name: str) -> str:
@@ -54,7 +92,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     """
     wh = Withheld.load(Path(cfg.withheld_patterns_file))
     msg_id = str(item["id"])
-    if "/" in msg_id or "\\" in msg_id or ":" in msg_id or msg_id.startswith(".") or not msg_id:
+    if not valid_msg_id(msg_id):
         raise ValueError("unsafe message id")
     root = Path(cfg.data_root)
     inbox = root / "inbox" / node / msg_id
@@ -62,11 +100,31 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     stage_dir = quar / ".stage"
     body, body_hits = wh.mask_text(str(item.get("body", "")))
     inbox.mkdir(parents=True, exist_ok=True)
+    # the masked body is stored before the caller acks the item (PM-09)
+    (inbox / "body.txt").write_text(body, encoding="utf-8")
     files = []  # type: list
+    used = set()  # type: set
     for idx, att in enumerate(item.get("attachments", [])):
         remote = _remote_name(att.get("name", ""))
         name = untrusted_name(remote)
         entry = {"index": idx, "name": name, "status": "ok"}  # type: Dict[str, Any]
+        if not valid_remote_name(remote) or not _within(inbox / name, inbox) \
+                or not _within(quar / name, quar):
+            # never fetched or written; the name itself is not recorded (PM-06)
+            entry.update(status="quarantined", reason="bad_name")
+            del entry["name"]
+            files.append(entry)
+            continue
+        # never collide with the files this module writes, or with an earlier attachment
+        while name.lower() in _OWN_FILES or name.lower() in used:
+            name = "%d-%s" % (idx, name)  # repeated until unique ("2-a.txt" may already exist)
+            entry["name"] = name
+        if not _within(inbox / name, inbox) or not _within(quar / name, quar):
+            entry.update(status="quarantined", reason="bad_name")
+            del entry["name"]
+            files.append(entry)
+            continue
+        used.add(name.lower())
         name_bad = wh.name_hit(remote) or wh.name_hit(str(att.get("original", "")))
         # keep the node's extension for check_file; the index prefix keeps it from being CLAUDE.md
         stage = stage_dir / ("%d-%s" % (idx, remote.replace(":", "_")))
@@ -93,7 +151,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     for f in files:
         pf = dict(f)
         if pf["status"] == "quarantined":
-            del pf["name"]  # the name itself may be the withheld content
+            pf.pop("name", None)  # the name itself may be the withheld content
         prov_files.append(pf)
     prov = {"node": node, "msg_id": msg_id,
             "received_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
