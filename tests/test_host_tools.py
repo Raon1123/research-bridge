@@ -294,3 +294,22 @@ def test_poll_and_fetch_never_store_instruction_files(env, tmp_path):
 def test_status_tools(env):
     assert "entries" in server.queue_status("n1")
     assert "gpus" in server.gpu_status("n1")
+
+
+def test_poll_reply_body_readable_from_disk(env):
+    oid = Mailbox(env["mb"]).post_out("reply", "the answer", [], "m0")
+    server.poll("n1")
+    body = env["root"] / "inbox" / "n1" / oid / "body.txt"
+    assert body.read_text(encoding="utf-8") == "the answer"
+
+
+@pytest.mark.parametrize("bad", ["C:x", "CON", "con.txt"])
+def test_fetch_file_rejects_unsafe_names(env, bad):
+    assert server.fetch_file("n1", "reports/figures/" + bad) == {"error": "bad_name"}
+    fetched = env["root"] / "fetched"
+    assert not fetched.exists() or not [p for p in fetched.rglob("*") if p.is_file()]
+
+
+def test_poll_docstring_states_masking_and_recheck():
+    assert "masked on the node" in server.poll.__doc__
+    assert "checked again on the laptop" in server.poll.__doc__

@@ -17,7 +17,7 @@ from rb_node.withheld import Withheld
 from . import jobs
 from .client import NodeClient, RemoteError, TransportError
 from .jobs import ledger_for, load_cfg
-from .store import _remote_name, _safe_name, store_incoming
+from .store import _remote_name, _safe_name, _within, store_incoming, valid_remote_name
 
 mcp = FastMCP("research-bridge")
 _DOC_ID = re.compile(r"^(H|EXP)-\d+$")
@@ -123,7 +123,10 @@ def _poll_node(cfg: Any, node: str) -> Any:
 
 
 def poll(node: Optional[str] = None) -> dict:
-    """Fetch new node items, store and ack them. Bodies are already masked."""
+    """Fetch new node items, store and ack them.
+
+    Bodies are masked on the node and checked again on the laptop before being returned.
+    """
     cfg = load_cfg()
     names = [node] if node else sorted(cfg.nodes)
     items: List[dict] = []
@@ -156,7 +159,11 @@ def fetch_file(node: str, path: str) -> dict:
     """Download a node file through the node policy; returns the local stored path."""
     cfg = load_cfg()
     cfg.alias(node)
+    if not valid_remote_name(_remote_name(path)):
+        return {"error": "bad_name"}  # PM-06: nothing is requested or written
     dest = Path(cfg.data_root) / "fetched" / node / _safe_name(path)
+    if not _within(dest, Path(cfg.data_root) / "fetched" / node):
+        return {"error": "bad_name"}
     # downloaded under the node's extension (check_file needs it), renamed after the check (SEC-02)
     stage = dest.parent / ("fetch-" + _remote_name(path).replace(":", "_"))
 
