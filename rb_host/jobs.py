@@ -16,7 +16,8 @@ from .config import HostConfig, load_host_config
 from .ledger import Ledger
 
 DONE = {"submit": "queued", "cancel": "cancelled_requested"}
-REFUSED = ("not_authorized", "approval_wait", "no_verifier")  # node refused the approval
+REFUSED = ("not_authorized", "approval_wait", "no_verifier",  # node refused the approval
+           "gpu_status_unavailable", "no_gpus")  # node refused the job: it is not queued, ask again later
 CLAIM_TTL_S = 300.0  # an approve call that died mid-way blocks a retry for this long
 
 

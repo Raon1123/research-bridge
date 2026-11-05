@@ -99,9 +99,10 @@ def handle_post(client_ip, form, token, action, host=None, origin=None):
         else:
             jobs.reject(ledger, job_id)
     except RemoteError as exc:
+        code = jobs.clean(exc.code, 60)  # a short code from the node, never the passphrase
         if exc.code in jobs.REFUSED:
-            return 403, "approval refused by the node"
-        return 500, "operation failed"
+            return 403, "approval refused by the node: %s" % code
+        return 500, "operation failed: %s" % code
     except Exception:
         return 500, "operation failed"
     return 200, "%s ok" % action

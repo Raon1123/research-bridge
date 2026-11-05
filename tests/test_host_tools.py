@@ -500,3 +500,49 @@ def test_nested_lock_across_ledger_objects(tmp_path):
             b.append({"kind": "job", "id": "n"})
         a.update("n", x=1)
     assert a.get("n")["x"] == 1 and not (tmp_path / "l.jsonl.lock").exists()
+
+
+@pytest.mark.parametrize("code", ["gpu_status_unavailable", "no_gpus"])
+def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeypatch, capsys, code):
+    from rb_host.client import RemoteError
+    real = jobs.connect
+
+    class Refusing:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self.inner.__exit__(*a)
+
+        def put_file(self, *a, **k):
+            return self.inner.put_file(*a, **k)
+
+        def call(self, op, **k):
+            if op == "job_submit":
+                raise RemoteError(code, "refused <b>")
+            return self.inner.call(op, **k)
+
+    monkeypatch.setattr(jobs, "connect", lambda *a: Refusing(real(*a)))
+    jid = _submit(env)
+    with pytest.raises(RemoteError):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    rec = env["ledger"].get(jid)
+    assert rec["status"] == "pending_approval" and not rec.get("approving")
+    assert [r["id"] for r in env["ledger"].pending_jobs()] == [jid]
+    # CLI shows the code
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    assert cli.main(["approve", jid]) == 1
+    assert code in capsys.readouterr().out
+    # 8765 handler shows the code (and stays 403)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vault-export" / "dashboard"))
+    import rb_pending
+    monkeypatch.setattr(rb_pending, "_ctx", lambda: (env["ledger"], server.load_cfg()))
+    st, body = rb_pending.handle_post("127.0.0.1", {"csrf": "t", "job_id": jid, "passphrase": PW},
+                                      "t", "approve", "127.0.0.1:8765")
+    assert st == 403 and code in body and PW not in body
+    assert env["ledger"].get(jid)["status"] == "pending_approval"
