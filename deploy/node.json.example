@@ -12,7 +12,8 @@
     "/home/<NODE_USER>/project/trm/scripts/queue/jobs"
   ],
   "queue_dir": "/home/<NODE_USER>/project/trm/scripts/queue",
-  "withheld_source": "/home/<NODE_USER>/project/trm/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml",
+  "_withheld_source_note": "Must be the session-calendar JSON pattern file (families[*].patterns), copied to the node during provisioning. A YAML file does not parse: the node then runs on the five fallback patterns only and writes a withheld_source warning to the audit log. Unknown keys such as this one are ignored by the loader.",
+  "withheld_source": "/home/<NODE_USER>/.research-bridge/withheld-patterns.json",
   "claude_bin": "/home/<NODE_USER>/.local/bin/claude",
   "job_template": [],
   "max_file": 52428800,

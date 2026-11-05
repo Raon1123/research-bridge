@@ -43,9 +43,18 @@ def _jobs(cfg):
 
 
 @pytest.fixture(autouse=True)
+def fake_gpus(monkeypatch):
+    """PM-12: submission needs a readable GPU list, so default to four fake GPUs."""
+    import rb_node.remote as remote
+    monkeypatch.setattr(remote.Node, "gpu_status",
+                        lambda self, a: {"gpus": [{"index": i} for i in range(4)]})
+
+
+@pytest.fixture
 def no_nvidia_smi(monkeypatch):
     import rb_node.remote as remote
-    monkeypatch.setattr(remote.shutil, "which", lambda name: None)
+    monkeypatch.setattr(remote.Node, "gpu_status",
+                        lambda self, a: {"gpus": [], "error": "nvidia-smi not found"})
 
 
 @pytest.fixture
@@ -293,3 +302,39 @@ def test_cli_run_job(tmp_path, monkeypatch):
     items = Mailbox(mb).undelivered()
     assert len(items) == 1
     assert json.loads(items[0]["body"])["event"] == "job_finished"
+
+
+# --- PM-12: no GPU list -> refuse ------------------------------------------------
+def test_submit_refused_when_gpu_list_unreadable(tcfg, no_nvidia_smi):
+    sha = _upload_config(tcfg, "j12")
+    r = call(tcfg, ("job_submit", _submit_args("j12", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "gpu_status_unavailable", r
+    assert _jobs(tcfg) == []
+
+
+# --- PM-12 ordering: the GPU refusal comes after approval and idempotency ---------
+def test_wrong_key_with_gpu_list_unreadable_gets_approval_error(tcfg, no_nvidia_smi):
+    sha = _upload_config(tcfg, "j13")
+    r = call(tcfg, ("job_submit", _submit_args("j13", sha, approval_key="0" * 64)))[0]
+    assert not r["ok"] and r["error"]["code"] != "gpu_status_unavailable", r
+    assert _jobs(tcfg) == []
+
+
+def test_replay_with_gpu_list_unreadable_returns_stored_result(tcfg, monkeypatch):
+    import rb_node.remote as remote
+    sha = _upload_config(tcfg, "j14")
+    first = call(tcfg, ("job_submit", _submit_args("j14", sha)))[0]
+    assert first["ok"]
+    monkeypatch.setattr(remote.Node, "gpu_status", lambda self, a: {"gpus": [], "error": "x"})
+    again = call(tcfg, ("job_submit", _submit_args("j14", sha)))[0]
+    assert again["ok"] and again["result"] == first["result"]
+    assert len(_jobs(tcfg)) == 1
+
+
+def test_zero_gpus_read_successfully_is_no_gpus(tcfg, monkeypatch):
+    import rb_node.remote as remote
+    monkeypatch.setattr(remote.Node, "gpu_status", lambda self, a: {"gpus": []})
+    sha = _upload_config(tcfg, "j15")
+    r = call(tcfg, ("job_submit", _submit_args("j15", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "no_gpus", r
+    assert _jobs(tcfg) == []

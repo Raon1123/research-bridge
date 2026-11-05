@@ -115,3 +115,39 @@ def test_load_family_patterns(tmp_path):
     assert w.check_file(good) == "ok"
     assert w.name_hit("x/fig1_mlp_z_iter_k3_s2.png")
     assert "" not in w.patterns
+
+
+# --- PM-05: SVG text is scanned ------------------------------------------------
+def test_svg_text_content_denied(tmp_path):
+    f = tmp_path / "plot.svg"
+    f.write_text('<svg xmlns="http://www.w3.org/2000/svg"><text>run H108N-x</text></svg>',
+                 encoding="utf-8")
+    assert Withheld.load(None).check_file(f) == "deny_content"
+
+
+def test_clean_svg_ok(tmp_path):
+    f = tmp_path / "plot.svg"
+    f.write_text('<svg xmlns="http://www.w3.org/2000/svg"><text>loss</text></svg>', encoding="utf-8")
+    assert Withheld.load(None).check_file(f) == "ok"
+
+
+# --- PM-07: unparseable source is reported, not silent -------------------------
+def test_unparseable_source_sets_warning(tmp_path):
+    src = tmp_path / "WITHHELD_RUNS.yaml"
+    src.write_text("families:\n  - patterns: [a]\n", encoding="utf-8")
+    w = Withheld.load(src)
+    assert w.source_error == "unparseable"
+    assert w.extra_count == 0
+    assert w.name_hit("pp_ltf_x.png")  # fallback still active
+
+
+def test_missing_source_sets_warning(tmp_path):
+    assert Withheld.load(tmp_path / "nope.json").source_error == "unreadable"
+
+
+def test_good_source_no_warning(tmp_path):
+    src = tmp_path / "w.json"
+    src.write_text(json.dumps({"families": [{"patterns": ["famx_\\d+"]}]}), encoding="utf-8")
+    w = Withheld.load(src)
+    assert w.source_error is None and w.extra_count == 1
+    assert Withheld.load(None).source_error is None

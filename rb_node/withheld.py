@@ -16,8 +16,9 @@ FALLBACK_PATTERNS = [
     r"pp_ltf_",
 ]
 
-_TEXT_EXT = {".tex", ".md", ".txt", ".csv", ".json"}
-_NAME_ONLY_EXT = {".png", ".jpg", ".jpeg", ".svg"}
+# .svg is XML text (labels live in <text> elements), so it is scanned, not name-checked only.
+_TEXT_EXT = {".tex", ".md", ".txt", ".csv", ".json", ".svg"}
+_NAME_ONLY_EXT = {".png", ".jpg", ".jpeg"}
 
 
 def _compile(patterns: List[str]) -> list:
@@ -39,13 +40,27 @@ class Withheld:
         # The fallback is always included, so an empty or broken source cannot disable it.
         self.patterns = list(FALLBACK_PATTERNS) + [p for p in patterns if p not in FALLBACK_PATTERNS]
         self._re = _compile(self.patterns)
+        # Set by load(): None, "unreadable" or "unparseable" when a source was given but unusable.
+        self.source_error = None  # type: Optional[str]
+        self.extra_count = len(self.patterns) - len(FALLBACK_PATTERNS)
 
     @classmethod
     def load(cls, source: Optional[Path]) -> "Withheld":
         extra: List[str] = []
+        error = None  # type: Optional[str]
         if source is not None:
             try:
-                data = json.loads(Path(source).read_text(encoding="utf-8"))
+                raw = Path(source).read_text(encoding="utf-8")
+            except OSError:
+                raw = None
+                error = "unreadable"
+            except ValueError:  # not UTF-8
+                raw = None
+                error = "unparseable"
+            try:
+                if raw is None:
+                    raise ValueError
+                data = json.loads(raw)
                 found: list = []
                 if isinstance(data, dict):
                     found.extend(_as_list(data.get("patterns")))
@@ -57,9 +72,12 @@ class Withheld:
                 else:
                     found.extend(_as_list(data))
                 extra = [p for p in found if isinstance(p, str) and p]
-            except (OSError, ValueError):
+            except ValueError:
                 extra = []
-        return cls(extra)
+                error = error or "unparseable"
+        w = cls(extra)
+        w.source_error = error
+        return w
 
     def _hit(self, text: str) -> bool:
         return any(r.search(text) for r in self._re)
