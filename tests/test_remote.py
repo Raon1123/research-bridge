@@ -316,3 +316,29 @@ def test_clean_tex_readable_by_both_ops(cfg):
              ("get_file", {"kind": "doc", "ref": "lab/reports/ok.tex", "seq": 0}))
     assert r[0]["result"]["text"] == "a\nb\n" and r[0]["result"]["withheld_lines"] == 0
     assert r[1]["ok"]
+
+
+# --- fix round 2: attachments, reply_to, events ----------------------------------
+def test_poll_drops_withheld_attachments_and_get_file_refuses(cfg, tmp_path):
+    from rb_node.mailbox import Mailbox
+    mb = Mailbox(Path(cfg.mailbox_root))
+    bad = tmp_path / "pp_ltf_run3.csv"
+    bad.write_text("x", encoding="utf-8")
+    good = tmp_path / "fine.csv"
+    good.write_text("y", encoding="utf-8")
+    oid = mb.post_out("reply", "x", [bad, good], "pp_ltf_msg")
+    item = call(cfg, ("poll", {}))[0]["result"]["items"][0]
+    assert [a["original"] for a in item["attachments"]] == ["fine.csv"]
+    assert item["withheld_attachments"] == 1
+    assert item["reply_to"] is None
+    assert "pp_ltf_" not in json.dumps(item)
+    r = call(cfg, ("get_file", {"kind": "out", "ref": oid + "/pp_ltf_run3.csv", "seq": 0}))[0]
+    assert r["error"]["code"] == "denied"
+
+
+def test_fully_blanked_event_body_becomes_marker(cfg):
+    from rb_node.mailbox import Mailbox
+    mb = Mailbox(Path(cfg.mailbox_root))
+    mb.post_out("event", json.dumps({"event": "job_finished", "job_id": "pp_ltf_x"}), [], None)
+    item = call(cfg, ("poll", {}))[0]["result"]["items"][0]
+    assert json.loads(item["body"]) == {"event": "withheld", "withheld_lines": 1}

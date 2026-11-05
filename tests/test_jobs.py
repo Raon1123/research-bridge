@@ -53,8 +53,8 @@ def fake_gpus(monkeypatch):
 @pytest.fixture
 def no_nvidia_smi(monkeypatch):
     import rb_node.remote as remote
-    monkeypatch.undo()  # drop fake_gpus
-    monkeypatch.setattr(remote.shutil, "which", lambda name: None)
+    monkeypatch.setattr(remote.Node, "gpu_status",
+                        lambda self, a: {"gpus": [], "error": "nvidia-smi not found"})
 
 
 @pytest.fixture
@@ -329,3 +329,12 @@ def test_replay_with_gpu_list_unreadable_returns_stored_result(tcfg, monkeypatch
     again = call(tcfg, ("job_submit", _submit_args("j14", sha)))[0]
     assert again["ok"] and again["result"] == first["result"]
     assert len(_jobs(tcfg)) == 1
+
+
+def test_zero_gpus_read_successfully_is_no_gpus(tcfg, monkeypatch):
+    import rb_node.remote as remote
+    monkeypatch.setattr(remote.Node, "gpu_status", lambda self, a: {"gpus": []})
+    sha = _upload_config(tcfg, "j15")
+    r = call(tcfg, ("job_submit", _submit_args("j15", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "no_gpus", r
+    assert _jobs(tcfg) == []

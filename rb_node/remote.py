@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -171,12 +172,30 @@ class Node:
         return {"status": "new", "triggered": triggered}
 
     def poll(self, args: dict) -> dict:
+        # Single egress point for out/ items. Items are stored raw by post_out and masked here
+        # with the current patterns, so a pattern added later also covers older items.
         items = []
         for it in self.mb.undelivered():
             it = dict(it)
             body = it.get("body")
             if isinstance(body, str):
-                it["body"], it["withheld_lines"] = self.withheld.mask_text(body)
+                it["body"], n = self.withheld.mask_text(body)
+                it["withheld_lines"] = n
+                if n and not it["body"].strip() and it.get("kind") == "event":
+                    it["body"] = json.dumps({"event": "withheld", "withheld_lines": n})
+            rt = it.get("reply_to")
+            if isinstance(rt, str) and self.withheld.name_hit(rt):
+                it["reply_to"] = None
+            kept, dropped = [], 0
+            for a in it.get("attachments", []) or []:
+                names = [a.get(k) for k in ("name", "original")] if isinstance(a, dict) else []
+                if any(isinstance(x, str) and self.withheld.name_hit(x) for x in names):
+                    dropped += 1
+                else:
+                    kept.append(a)
+            if "attachments" in it:
+                it["attachments"] = kept
+            it["withheld_attachments"] = dropped
             items.append(it)
         return {"items": items}
 
@@ -322,8 +341,9 @@ class Node:
 
     # -- jobs --------------------------------------------------------------
     def job_submit(self, args: dict) -> dict:
-        known = {g["index"] for g in self.gpu_status({}).get("gpus", [])}
-        # An empty set means "could not read"; jobs.submit refuses it after the approval check.
+        st = self.gpu_status({})
+        # None = could not read (jobs.submit -> gpu_status_unavailable); empty set = read, zero GPUs.
+        known = None if st.get("error") else {g["index"] for g in st.get("gpus", [])}
         return jobs.submit(self.cfg, self.mb, args, known)
 
     def job_cancel(self, args: dict) -> dict:
