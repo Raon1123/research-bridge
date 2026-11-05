@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 from typing import List, Optional
 
@@ -10,7 +11,38 @@ from . import jobs
 from .client import RemoteError, TransportError
 
 
+def _interactive() -> bool:
+    """True only when a person is at a terminal. Tests replace this; no flag or variable does."""
+    try:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return False
+        if os.name == "nt":
+            # os.isatty() is also True for the NUL device; only a real console answers
+            # GetConsoleMode.
+            import ctypes
+            import msvcrt
+            mode = ctypes.c_uint32()
+            for stream in (sys.stdin, sys.stdout):
+                handle = msvcrt.get_osfhandle(stream.fileno())
+                if not ctypes.windll.kernel32.GetConsoleMode(ctypes.c_void_p(handle),
+                                                             ctypes.byref(mode)):
+                    return False
+        return True
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def _need_terminal(what: str) -> bool:
+    if _interactive():
+        return True
+    print("error: rb %s must be run by the user in an interactive terminal "
+          "(stdin and stdout must be a terminal); a session cannot run it" % what)
+    return False
+
+
 def _approve(args: argparse.Namespace) -> int:
+    if not _need_terminal("approve"):
+        return 1
     cfg = jobs.load_cfg()
     led = jobs.ledger_for(cfg)
     rec = led.get(args.job_id)
@@ -25,14 +57,13 @@ def _approve(args: argparse.Namespace) -> int:
     if rec["status"] not in ("pending_approval", "approved"):
         print("job is %s, cannot approve" % rec["status"])
         return 1
-    if not args.yes:
-        sys.stdout.write("Approve? [y/N] ")
-        sys.stdout.flush()
-        ans = sys.stdin.readline().strip().lower()
-        if ans not in ("y", "yes"):
-            print("not approved")
-            return 1
-    # always typed by the user, also with --yes; there is no flag, file or variable for it
+    sys.stdout.write("Approve? [y/N] ")
+    sys.stdout.flush()
+    ans = sys.stdin.readline().strip().lower()
+    if ans not in ("y", "yes"):
+        print("not approved")
+        return 1
+    # always typed by the user; there is no flag, file or variable for it
     passphrase = getpass.getpass("Approval passphrase: ")
     if not passphrase:
         print("not approved")
@@ -47,6 +78,8 @@ def _approve(args: argparse.Namespace) -> int:
 
 
 def _reject(args: argparse.Namespace) -> int:
+    if not _need_terminal("reject"):
+        return 1
     cfg = jobs.load_cfg()
     try:
         out = jobs.reject(jobs.ledger_for(cfg), args.job_id)
@@ -167,7 +200,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub.add_parser("pending").set_defaults(fn=_pending)
     a = sub.add_parser("approve")
     a.add_argument("job_id")
-    a.add_argument("--yes", action="store_true", help="skip the y/N prompt")
     a.set_defaults(fn=_approve)
     r = sub.add_parser("reject")
     r.add_argument("job_id")

@@ -113,7 +113,7 @@ node 경로를 비워 두면 보드에 `no_path`로 표시된다. node는 `.json
     rb approve <job_id>        # shows the job, asks y/N and the approval passphrase, then uploads and submits
     rb reject <job_id>         # marks it rejected; no node call
 
-또는 `http://127.0.0.1:8765/rb/pending`(loopback 전용, 프로세스별 CSRF 토큰, 승인 passphrase 입력란)에서 승인한다. passphrase는 노드에서 `rb-node approve-key set`으로 정한 것이다(노드 매뉴얼 §4). 매번 직접 입력한다. `--yes`는 y/N 질문만 건너뛰며, passphrase를 넘기는 옵션·파일·환경 변수는 없다. 따라서 Claude 세션은 passphrase 없이는 승인할 수 없다(남는 위험: `docs/design/2026-11-03-node-side-approval.md` §7). passphrase가 틀리면 job은 `pending_approval`로 남는다. 같은 job을 두 번 승인해도 아무 일도 일어나지 않는다. 대시보드 route는 `vault-export/`에서 설치하고(`vault-export/README.md` 참고) 8765 대시보드를 재시작한다. 두 작업 모두 사용자의 승인(go-ahead)이 필요하다.
+또는 `http://127.0.0.1:8765/rb/pending`(loopback 전용, 프로세스별 CSRF 토큰, 승인 passphrase 입력란)에서 승인한다. passphrase는 노드에서 `rb-node approve-key set`으로 정한 것이다(노드 매뉴얼 §4). 매번 직접 입력한다. `rb approve`와 `rb reject`는 실제 콘솔(PowerShell 또는 Windows Terminal)이 필요하다. 입력을 리다이렉트하거나 Git Bash의 mintty에서 실행하면 거부된다. y/N 답과 passphrase는 그 콘솔에서 직접 입력하며, `--yes`는 없고 passphrase를 넘기는 옵션·파일·환경 변수도 없다. 따라서 Claude 세션은 passphrase 없이는 승인할 수 없다(남는 위험: `docs/design/2026-11-03-node-side-approval.md` §7). passphrase가 틀리면 job은 `pending_approval`로 남는다. 같은 job을 두 번 승인해도 아무 일도 일어나지 않는다. 대시보드 route는 `vault-export/`에서 설치하고(`vault-export/README.md` 참고) 8765 대시보드를 재시작한다. 두 작업 모두 사용자의 승인(go-ahead)이 필요하다.
 
 ## 8. Harness 채널 (수동, 선택)
 

@@ -1,11 +1,12 @@
-"""Session-browser bridge edges (vault module loaded by path). Fixture ledger only."""
+"""Session-browser bridge edges (this repo's vault-export copy; the user applies it to the vault).
+Fixture ledger only."""
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 
-VAULT = Path("D:/raw/vault-primary/90_Claude/60_Tools/session-calendar")
+VAULT = Path(__file__).resolve().parents[1] / "vault-export" / "session-calendar"
 sys.path.insert(0, str(VAULT))
 import bridge_edges  # noqa: E402
 
@@ -86,3 +87,16 @@ def test_merge_existing_cache_idempotent(tmp_path):
 
 def test_missing_ledger_gives_no_edges(tmp_path):
     assert bridge_edges.build_edges(tmp_path / "nope.jsonl") == []
+
+
+def test_merge_skips_unsafe_session_ids(tmp_path):
+    # SEC-07: a ledger-supplied session id must never become a path
+    cache = tmp_path / "agents"
+    cache.mkdir()
+    (tmp_path / "x.json").write_text("{}", encoding="utf-8")
+    edge = {"kind": "bridge", "from": "main", "to": "ext:n:r", "t": 1.0, "msg_id": "m"}
+    bad = ["../x", "..\\x", "x" * 36, SID.upper(), SID + "\n", SID[:-1], ""]
+    edges = [dict(edge, sid=b) for b in bad]
+    assert bridge_edges.merge(edges, cache) == {"merged": 0, "skipped": len(bad)}
+    assert (tmp_path / "x.json").read_text(encoding="utf-8") == "{}"
+    assert list(cache.iterdir()) == []

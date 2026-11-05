@@ -26,7 +26,7 @@ def test_get_non_localhost_is_403(monkeypatch):
 
 def test_get_localhost_renders_waiting_first_and_escapes(tmp_path, monkeypatch):
     monkeypatch.setattr(rb_board, "_cfg", lambda: _cfg(tmp_path))
-    st, body = rb_board.handle_get("127.0.0.1")
+    st, body = rb_board.handle_get("127.0.0.1", "127.0.0.1:8765")
     assert st == 200
     assert body.index("Waiting on you (1)") < body.index("rb:ledger</h3>")
     assert "j1" in body and "<b>c.yaml" not in body and "&lt;b&gt;c.yaml" in body
@@ -38,7 +38,7 @@ def test_page_load_opens_no_connection(tmp_path, monkeypatch):
     from rb_host import jobs
     monkeypatch.setattr(jobs, "connect", lambda *a: (_ for _ in ()).throw(AssertionError))
     monkeypatch.setattr(rb_board, "_cfg", lambda: _cfg(tmp_path))
-    assert rb_board.handle_get("127.0.0.1")[0] == 200
+    assert rb_board.handle_get("127.0.0.1", "127.0.0.1:8765")[0] == 200
 
 
 def test_error_is_500_generic(monkeypatch):
@@ -46,5 +46,11 @@ def test_error_is_500_generic(monkeypatch):
         raise RuntimeError("secret internals")
     monkeypatch.setattr(rb_board.board, "load", boom)
     monkeypatch.setattr(rb_board, "_cfg", lambda: HostConfig())
-    st, body = rb_board.handle_get("127.0.0.1")
+    st, body = rb_board.handle_get("127.0.0.1", "127.0.0.1:8765")
     assert st == 500 and "secret" not in body
+
+
+def test_foreign_host_is_403(monkeypatch):
+    monkeypatch.setattr(rb_board, "_cfg", lambda: (_ for _ in ()).throw(AssertionError))
+    for bad in ("evil.example:8765", "127.0.0.1", None):
+        assert rb_board.handle_get("127.0.0.1", bad)[0] == 403

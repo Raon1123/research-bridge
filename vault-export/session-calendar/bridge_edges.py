@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import calendar
 import json
+import re
 import sys
 import time
 from pathlib import Path
 
 LEDGER = Path("D:/raw/research-bridge/ledger.jsonl")
 CACHE = Path("D:/raw/session-calendar/cache/agents")
+SID_RE = re.compile(r"[0-9a-f-]{36}")  # SEC-07: the session id becomes a file name
 KINDS = ("message", "reply", "event", "job")
 
 
@@ -86,6 +88,9 @@ def merge(edges, cache_dir=CACHE):
         by.setdefault(e["sid"], []).append(e)
     merged = skipped = 0
     for sid, es in by.items():
+        if not isinstance(sid, str) or not SID_RE.fullmatch(sid):
+            skipped += len(es)  # never build a path from a ledger-supplied id
+            continue
         p = cache_dir / (sid + ".json")
         if not p.is_file():
             skipped += len(es)

@@ -178,6 +178,7 @@ def test_bridge_key_alone_cannot_queue(env):
 
 
 def test_cli_approve_prompt(env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_interactive", lambda: True)  # a person at a terminal
     jid = _submit(env)
     monkeypatch.setattr("sys.stdin", io.StringIO("n\n"))
     assert cli.main(["approve", jid]) == 1
@@ -192,14 +193,16 @@ def test_cli_approve_prompt(env, monkeypatch, capsys):
     assert env["ledger"].get(jid)["status"] == "queued"
 
 
-def test_cli_yes_pending_reject_harness(env, capsys):
+def test_cli_pending_reject_harness(env, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
     a, b = _submit(env, "ka"), _submit(env, "kb")
     assert cli.main(["pending"]) == 0
     out = capsys.readouterr().out
     assert a in out and b in out
     assert cli.main(["reject", b]) == 0
     assert env["ledger"].get(b)["status"] == "rejected"
-    assert cli.main(["approve", "--yes", a]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    assert cli.main(["approve", a]) == 0
     assert env["ledger"].get(a)["status"] == "queued"
     capsys.readouterr()
     with pytest.raises(SystemExit):  # harness subcommands need arguments; covered in test_harness.py
@@ -294,6 +297,255 @@ def test_poll_and_fetch_never_store_instruction_files(env, tmp_path):
 def test_status_tools(env):
     assert "entries" in server.queue_status("n1")
     assert "gpus" in server.gpu_status("n1")
+
+
+def test_cli_refuses_non_interactive_pm04(env, monkeypatch, capsys):
+    # a session (stdin is a pipe or a file) cannot approve or reject, even when it can
+    # pipe "y" and the passphrase; there is no --yes
+    jid = _submit(env)
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n" + PW + "\n"))
+    assert cli.main(["approve", jid]) == 1
+    assert cli.main(["reject", jid]) == 1
+    assert "interactive terminal" in capsys.readouterr().out
+    assert env["calls"] == [] and env["ledger"].get(jid)["status"] == "pending_approval"
+    with pytest.raises(SystemExit):
+        cli.main(["approve", "--yes", jid])
+    # stdin a terminal but stdout piped: also refused
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+    monkeypatch.setattr("sys.stdin", Tty(""))
+    monkeypatch.setattr("sys.stdout", io.StringIO())
+    assert cli._interactive() is False
+
+
+def test_two_approvals_make_one_node_call_pm11(env, monkeypatch):
+    import threading
+    import time
+    jid = _submit(env)
+    cfg = server.load_cfg()
+    real = jobs.connect
+
+    def slow(cfg_, node):
+        time.sleep(0.5)  # the first approval is still on its way to the node
+        return real(cfg_, node)
+
+    monkeypatch.setattr(jobs, "connect", slow)
+    results = []
+
+    def go():
+        try:
+            results.append(jobs.approve(Ledger(env["root"] / "ledger.jsonl"), cfg, jid, PW))
+        except ValueError as exc:
+            results.append(exc)
+
+    ts = [threading.Thread(target=go) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert len(env["calls"]) == 1
+    assert sum(isinstance(r, dict) for r in results) == 1
+    assert sum(isinstance(r, ValueError) for r in results) == 1
+    assert len(list(_jobs_dir(env).glob("*.job"))) == 1
+    assert env["ledger"].get(jid)["status"] == "queued"
+
+
+def test_failed_transport_clears_claim_so_retry_works(env, monkeypatch):
+    jid = _submit(env)
+    cfg = server.load_cfg()
+    real = jobs.connect
+    monkeypatch.setattr(jobs, "connect", lambda *a: (_ for _ in ()).throw(TransportError("down")))
+    with pytest.raises(TransportError):
+        jobs.approve(env["ledger"], cfg, jid, PW)
+    assert env["ledger"].get(jid)["status"] == "approved"
+    assert not env["ledger"].get(jid).get("approving")
+    monkeypatch.setattr(jobs, "connect", real)
+    assert jobs.approve(env["ledger"], cfg, jid, PW)["status"] == "queued"
+
+
+def test_approve_refuses_name_path_mismatch_sec04(env):
+    jid = _submit(env)
+    env["ledger"].update(jid, config_name="other.yaml")
+    with pytest.raises(ValueError, match="config_name"):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert env["calls"] == [] and env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def test_approve_refuses_changed_config_sec04(env):
+    jid = _submit(env)
+    (env["tmp"] / "run.yaml").write_text("a: 2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="changed"):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert env["calls"] == [] and env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def test_config_swapped_after_claim_is_not_uploaded_sec04(env, monkeypatch):
+    jid = _submit(env)
+    real = jobs.connect
+
+    def swap(cfg_, node):
+        (env["tmp"] / "run.yaml").write_text("a: evil\n", encoding="utf-8")  # after the first check
+        return real(cfg_, node)
+
+    monkeypatch.setattr(jobs, "connect", swap)
+    with pytest.raises(ValueError, match="changed"):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert not list(_jobs_dir(env).glob("*.job"))
+    assert env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def test_describe_strips_control_characters_and_shows_path_hash_sec03(env):
+    jid = _submit(env)
+    env["ledger"].update(jid, note="fine\x1b[2J\x1b]0;pwned\x07 ‮evil\nSUBMIT job fake",
+                         config_name="run.yaml\x1b[31m")
+    text = jobs.describe(env["ledger"].get(jid))
+    for bad in ("\x1b", "\x07", "‮"):
+        assert bad not in text
+    assert text.count("\n") == 7  # the note cannot add lines
+    rec = env["ledger"].get(jid)
+    assert rec["config_path"] in text and rec["config_sha256"][:12] in text
+    assert rec["config_sha256"][:13] not in text
+
+
+def test_ledger_lock_serialises_updates_and_recovers_from_stale_lock(tmp_path):
+    import os
+    import threading
+    import time
+    from rb_host import ledger as lmod
+    led = Ledger(tmp_path / "l.jsonl")
+    led.append({"kind": "job", "id": "a", "n": 0})
+
+    def bump():
+        for _ in range(20):
+            with led.locked():
+                led.update("a", n=led.get("a")["n"] + 1)
+
+    ts = [threading.Thread(target=bump) for _ in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert led.get("a")["n"] == 80
+    assert not (tmp_path / "l.jsonl.lock").exists()
+    lock = tmp_path / "l.jsonl.lock"
+    lock.write_text("999999")
+    old = time.time() - lmod.LOCK_STALE_S - 5
+    os.utime(str(lock), (old, old))
+    assert led.append({"kind": "job", "id": "b"}) is True  # stale lock removed
+    lock.write_text("999999")  # a fresh lock held by someone else blocks until the timeout
+    saved = lmod.LOCK_TIMEOUT_S
+    lmod.LOCK_TIMEOUT_S = 0.2
+    try:
+        with pytest.raises(TimeoutError):
+            led.append({"kind": "job", "id": "c"})
+    finally:
+        lmod.LOCK_TIMEOUT_S = saved
+        lock.unlink()
+
+
+def test_nul_device_is_not_a_terminal_pm04():
+    # on Windows os.isatty() is True for NUL; `rb approve < NUL > NUL` must still be refused
+    import os
+    import subprocess
+    code = ("import sys; from rb_host import cli; "
+            "print('INTERACTIVE=%s' % cli._interactive(), file=sys.stderr); "
+            "sys.exit(cli.main(['approve', 'x']))")
+    with open(os.devnull, "r") as din, open(os.devnull, "w") as dout:
+        r = subprocess.run([sys.executable, "-c", code], stdin=din, stdout=dout,
+                           stderr=subprocess.PIPE, text=True, timeout=60)
+    assert "INTERACTIVE=False" in r.stderr, r.stderr
+    assert r.returncode == 1
+
+
+def test_stale_lock_takeover_leaves_one_holder(tmp_path):
+    # contender A saw the lock as stale, but B replaced it before A acted: A must not break B's lock
+    import os
+    import time
+    from rb_host import ledger as lmod
+    a, b = Ledger(tmp_path / "l.jsonl"), Ledger(tmp_path / "l.jsonl")
+    lock = tmp_path / "l.jsonl.lock"
+    lock.write_text("dead")
+    old = time.time() - lmod.LOCK_STALE_S - 5
+    os.utime(str(lock), (old, old))
+    b._take_over_stale(str(lock))  # B wins the takeover ...
+    assert not lock.exists()
+    with b.locked():  # ... and then holds a fresh lock
+        token = lock.read_text()
+        a._take_over_stale(str(lock))  # A acts on its old "stale" observation
+        assert lock.exists() and lock.read_text() == token  # B's lock stands
+        saved = lmod.LOCK_TIMEOUT_S
+        lmod.LOCK_TIMEOUT_S = 0.2
+        try:
+            with pytest.raises(TimeoutError):  # and A (another process) still cannot get in
+                a._acquire_file()
+        finally:
+            lmod.LOCK_TIMEOUT_S = saved
+    assert not lock.exists()
+    assert not [p for p in tmp_path.iterdir() if ".stale-" in p.name]
+
+
+def test_release_removes_only_own_lock(tmp_path):
+    led = Ledger(tmp_path / "l.jsonl")
+    lock = tmp_path / "l.jsonl.lock"
+    with led.locked():
+        lock.write_text("someone-else")  # as if our lock had been taken over
+    assert lock.read_text() == "someone-else"
+
+
+def test_nested_lock_across_ledger_objects(tmp_path):
+    a, b = Ledger(tmp_path / "l.jsonl"), Ledger(tmp_path / "l.jsonl")
+    with a.locked():
+        with b.locked():
+            b.append({"kind": "job", "id": "n"})
+        a.update("n", x=1)
+    assert a.get("n")["x"] == 1 and not (tmp_path / "l.jsonl.lock").exists()
+
+
+@pytest.mark.parametrize("code", ["gpu_status_unavailable", "no_gpus"])
+def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeypatch, capsys, code):
+    from rb_host.client import RemoteError
+    real = jobs.connect
+
+    class Refusing:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self.inner.__exit__(*a)
+
+        def put_file(self, *a, **k):
+            return self.inner.put_file(*a, **k)
+
+        def call(self, op, **k):
+            if op == "job_submit":
+                raise RemoteError(code, "refused <b>")
+            return self.inner.call(op, **k)
+
+    monkeypatch.setattr(jobs, "connect", lambda *a: Refusing(real(*a)))
+    jid = _submit(env)
+    with pytest.raises(RemoteError):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    rec = env["ledger"].get(jid)
+    assert rec["status"] == "pending_approval" and not rec.get("approving")
+    assert [r["id"] for r in env["ledger"].pending_jobs()] == [jid]
+    # CLI shows the code
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    assert cli.main(["approve", jid]) == 1
+    assert code in capsys.readouterr().out
+    # 8765 handler shows the code (and stays 403)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vault-export" / "dashboard"))
+    import rb_pending
+    monkeypatch.setattr(rb_pending, "_ctx", lambda: (env["ledger"], server.load_cfg()))
+    st, body = rb_pending.handle_post("127.0.0.1", {"csrf": "t", "job_id": jid, "passphrase": PW},
+                                      "t", "approve", "127.0.0.1:8765")
+    assert st == 403 and code in body and PW not in body
+    assert env["ledger"].get(jid)["status"] == "pending_approval"
 
 
 def test_poll_reply_body_readable_from_disk(env):
