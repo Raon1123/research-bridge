@@ -24,28 +24,75 @@ Run the demo yourself. It needs the unified board (`rb_host/board.py`) and node-
     python scripts/demo_dashboard.py            # then open http://127.0.0.1:8799/board
                                                  # approval passphrase: demo passphrase
 
-## Install (laptop)
+## Setup
 
-    pip install -e .[host]
+All config files are written by two commands, `rb config` (laptop) and `rb-node config` (node
+console). You do not need to edit JSON by hand. Step-by-step manuals for both roles, including
+SSH keys and `authorized_keys`: `docs/manual/`.
 
-Host config is JSON at `D:/raw/research-bridge/host.json` (override with `RB_HOST_CONFIG`):
+### Config files and where they live
 
-    {"nodes": {"node1": {"alias": "node1"}}}
+| File | Holds | Written by | In git? |
+|---|---|---|---|
+| `D:/raw/research-bridge/host.json` (or `$RB_HOST_CONFIG`) | nodes, their SSH aliases, data root, board paths | `rb config` | no: outside the checkout |
+| `private/local.json` in the checkout | real laptop and node home paths (harness path mapping) | `rb config local` | no: `private/` is ignored |
+| `~/.research-bridge/node.json` on the node (or `$RB_NODE_CONFIG`) | read/write roots, queue, `job_template`, `harness_root` | `rb-node config` | no: outside the checkout |
+| `local.example.json`, `deploy/*.example` | placeholders only | by hand | yes |
 
-## Private values (not in git)
-
-Server addresses, ports, node names, user names and laptop IPs are replaced in tracked files by
+Real host names, ports, user names and IPs never go into tracked files. Tracked files use
 placeholders (`node1`, `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`, `<LAPTOP_USER>`,
-`<LAPTOP_ETH_SUBNET>` ...). Real values live in the gitignored `private/` directory:
-`private/placeholders.md` (placeholder -> real value) and `private/local.json` (copy of
-`local.example.json`; `laptop_home` and `node_home` feed the harness path mapping, overridable
-with `RB_LAPTOP_HOME` / `RB_NODE_HOME`). Do not commit real values; put them in `private/`.
+`<LAPTOP_ETH_SUBNET>`, ...); the mapping to real values is kept in the gitignored
+`private/placeholders.md`.
 
-## Register the MCP server
+How leaks are prevented:
 
-Add to user-scope `~/.claude.json` under `mcpServers`:
+- `.gitignore` covers `private/`, `host.json`, `node.json`, `local.json`, `*.local.json`, `.env*`
+  and SSH key files (`*_ed25519*`, `id_rsa*`, `*.pem`, `*.key`). Templates keep an `.example`
+  suffix so they stay tracked.
+- Before writing, `rb config` and `rb-node config` ask git whether the target would be tracked
+  (inside a work tree and not ignored, or already tracked). If so, the write is refused. Files
+  are written with mode 600.
+- `rb config check` reports `LEAK RISK` for an existing config file git would pick up.
+- `rb config` only reads `~/.ssh/config` and `~/.claude.json`; it never writes them.
+  `rb config mcp` prints the entry to add yourself.
 
-    "research-bridge": {"type": "stdio", "command": "rb-host-mcp", "args": []}
+### Laptop (hub)
+
+    python -m venv .venv
+    .venv/Scripts/python -m pip install -e ".[host]"
+
+    rb config init                                   # host.json with no nodes
+    rb config add-node node1                         # aliases rb-node1, rb-node1-harness
+    rb config add-node node1 --alias A --harness-alias B --force   # other alias names
+    rb config local --laptop-home C:/Users/<LAPTOP_USER> --node-home /home/<NODE_USER>
+    rb config set nodes.node1.board.state <path>/STATE.md          # optional board paths
+    rb config mcp                                    # prints the ~/.claude.json entry
+    rb config check                                  # lists what is missing; exit 0 = ready
+    rb config show                                   # prints host.json and local.json
+    rb config path                                   # prints where they are
+
+`rb config set` keys: `data_root`, `withheld_patterns_file`, `board.portfolio`,
+`board.priorities`, `nodes.<n>.alias`, `nodes.<n>.harness_alias`,
+`nodes.<n>.board.state|events|kanban`. `rb config check` also confirms that every alias is a
+`Host` in `~/.ssh/config` and that the MCP server is registered. The MCP entry it prints runs
+`<venv python> -m rb_host.server`.
+
+### Node (run on the node console, not through the bridge)
+
+    rb-node config init                              # ~/.research-bridge/node.json, defaults
+    rb-node config set job_template '["uv", "run", "pretrain.py", "--config", "{config}"]'
+    rb-node config set harness_root /home/<NODE_USER>/.claude
+    rb-node config set read_roots '["lab/registry/", "lab/experiments/"]'
+    rb-node config set withheld_source /path/to/withheld_patterns.json
+    rb-node approve-key set                          # approval passphrase (verifier only)
+    rb-node config check                             # lists what is missing; exit 0 = ready
+    rb-node config show
+
+List values take JSON. Unknown keys and wrong types are refused. The bridge key's forced
+command (`rb-node serve-remote`) cannot reach `rb-node config`, so the hub cannot change node
+paths.
+
+## MCP tools
 
 Tools: `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `queue_status`,
 `gpu_status`, `submit_job`, `cancel_job`. `submit_job` and `cancel_job` only write a

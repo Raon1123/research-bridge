@@ -71,6 +71,8 @@ Host rb-<node>-harness
 
 ## 5. `host.json`에 node 등록
 
+간단한 방법: `rb config init`, `rb config add-node <node>`로 이 파일을 만들고 `rb config check`로 확인한다 (README §Setup). 아래 JSON이 그 결과다.
+
 ```json
 {"nodes": {"<node>": {"alias": "rb-<node>", "harness_alias": "rb-<node>-harness"}}}
 ```

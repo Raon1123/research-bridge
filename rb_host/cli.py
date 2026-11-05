@@ -114,6 +114,53 @@ def _board(args: argparse.Namespace) -> int:
     return 0
 
 
+def _config(args: argparse.Namespace) -> int:
+    import json
+    from . import configure as c
+    try:
+        if args.action == "path":
+            print("host.json   %s" % c.host_path())
+            print("local.json  %s" % c.local_path())
+        elif args.action == "init":
+            print("wrote %s" % c.init(args.data_root, args.force))
+        elif args.action == "add-node":
+            e = c.add_node(args.name, args.alias, args.harness_alias, args.force)
+            print("node %s: alias %s, harness_alias %s" % (args.name, e["alias"], e["harness_alias"]))
+        elif args.action == "remove-node":
+            c.remove_node(args.name)
+            print("node %s removed" % args.name)
+        elif args.action == "set":
+            c.set_key(args.key, args.value)
+            print("%s set" % args.key)
+        elif args.action == "local":
+            if not (args.laptop_home or args.node_home):
+                print("error: give --laptop-home and/or --node-home")
+                return 1
+            print("wrote %s" % c.set_local(args.laptop_home, args.node_home))
+        elif args.action == "show":
+            path = c.host_path()
+            print("# %s" % path)
+            print(json.dumps(c.read_json(path), ensure_ascii=False, indent=2) if path.is_file()
+                  else "(missing)")
+            lp = c.local_path()
+            print("# %s" % lp)
+            print(json.dumps(c.read_json(lp), ensure_ascii=False, indent=2) if lp.is_file()
+                  else "(missing)")
+        elif args.action == "mcp":
+            print("Add under \"mcpServers\" in ~/.claude.json (rb does not edit that file):")
+            print(json.dumps(c.mcp_entry(), indent=2)[1:-1].strip())
+        else:
+            probs = c.check()
+            for p in probs:
+                print("- " + p)
+            print("ok" if not probs else "%d item(s) to fix" % len(probs))
+            return 1 if probs else 0
+    except c.ConfigError as exc:
+        print("error: %s" % exc)
+        return 1
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="rb")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -144,6 +191,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     bw = bs.add_parser("show", help="print the board from the cache; opens no connection")
     bw.add_argument("--json", action="store_true")
     b.set_defaults(fn=_board)
+    c = sub.add_parser("config", help="write and check host.json and private/local.json")
+    cs = c.add_subparsers(dest="action", required=True)
+    cs.add_parser("path", help="print where the config files are")
+    ci = cs.add_parser("init", help="create host.json (mode 600)")
+    ci.add_argument("--data-root", default="", help="laptop data directory (default %s)"
+                    % "D:/raw/research-bridge")
+    ci.add_argument("--force", action="store_true", help="overwrite an existing host.json")
+    ca = cs.add_parser("add-node", help="register a node and its SSH aliases")
+    ca.add_argument("name")
+    ca.add_argument("--alias", default="", help="SSH alias for the bridge key (default rb-<name>)")
+    ca.add_argument("--harness-alias", default="",
+                    help="SSH alias for the harness key (default rb-<name>-harness)")
+    ca.add_argument("--force", action="store_true", help="replace an existing entry")
+    cr = cs.add_parser("remove-node", help="delete a node entry")
+    cr.add_argument("name")
+    cv = cs.add_parser("set", help="set one value: data_root, withheld_patterns_file, "
+                       "board.portfolio|priorities, nodes.<n>.alias|harness_alias, "
+                       "nodes.<n>.board.state|events|kanban")
+    cv.add_argument("key")
+    cv.add_argument("value")
+    cl = cs.add_parser("local", help="write private/local.json (real home paths, gitignored)")
+    cl.add_argument("--laptop-home", default="")
+    cl.add_argument("--node-home", default="")
+    cs.add_parser("show", help="print both files")
+    cs.add_parser("mcp", help="print the ~/.claude.json entry for the MCP server")
+    cs.add_parser("check", help="list what is missing or would leak; exit 1 if anything")
+    c.set_defaults(fn=_config)
     args = ap.parse_args(argv)
     return args.fn(args)
 

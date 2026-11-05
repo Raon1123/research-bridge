@@ -31,6 +31,8 @@ Subcommands: `serve-remote` (hub requests on stdin), `serve-local` (MCP for the 
 
 ## 4. `~/.research-bridge/node.json`
 
+Shortcut, on the node console: `rb-node config init`, `rb-node config set <key> <value>` (lists as JSON), `rb-node config check` (README §Setup).
+
 Start from `deploy/node.json.example`. Paths come only from this file; the hub cannot supply paths (`AGENTS.md` hard rule 4). Mode 600.
 
 | Key | Meaning |

@@ -7,7 +7,7 @@ import sys
 from typing import List, Optional
 
 SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive",
-               "approve-key")
+               "approve-key", "config")
 
 
 def _not_implemented(name: str) -> int:
@@ -29,6 +29,55 @@ def _harness_receive() -> int:
         sys.stderr.write("rb-node: %s\n" % exc)
         return 1
     return harness_receive(cfg, cmd, sys.stdin.buffer, sys.stdout.buffer)
+
+
+def _config(rest: List[str]) -> int:
+    """Create, edit and check node.json. Node console only: no bridge op reaches this."""
+    import json
+    from . import configure as c
+    from .config import config_path
+    ap = argparse.ArgumentParser(prog="rb-node config")
+    sub = ap.add_subparsers(dest="action", required=True)
+    sub.add_parser("path", help="print the node.json path (RB_NODE_CONFIG overrides it)")
+    i = sub.add_parser("init", help="write node.json with the defaults (mode 600)")
+    i.add_argument("--force", action="store_true", help="overwrite an existing file")
+    sub.add_parser("show", help="print node.json")
+    s = sub.add_parser("set", help="set one key; lists take JSON, e.g. '[\"a\", \"b\"]'")
+    s.add_argument("key")
+    s.add_argument("value")
+    sub.add_parser("check", help="list what is missing; exit 1 if anything is")
+    ns = ap.parse_args(rest)
+    path = config_path()
+    try:
+        if ns.action == "path":
+            print(path)
+            return 0
+        if ns.action == "init":
+            if path.exists() and not ns.force:
+                sys.stderr.write("%s exists; use --force to overwrite\n" % path)
+                return 1
+            c.write_json(path, c.node_defaults())
+            print("wrote %s" % path)
+            return 0
+        if not path.is_file():
+            sys.stderr.write("no %s; run `rb-node config init` first\n" % path)
+            return 1
+        data = c.read_json(path)
+        if ns.action == "show":
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+            return 0
+        if ns.action == "set":
+            c.write_json(path, c.node_set(data, ns.key, c.parse_value(ns.value)))
+            print("%s set" % ns.key)
+            return 0
+        probs = c.node_check(data)
+        for p in probs:
+            print("- " + p)
+        print("ok" if not probs else "%d item(s) to fix" % len(probs))
+        return 1 if probs else 0
+    except (c.ConfigError, OSError) as exc:
+        sys.stderr.write("rb-node config: %s\n" % exc)
+        return 1
 
 
 def _approve_key(rest: List[str]) -> int:
@@ -137,6 +186,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _harness_receive()
     if ns.command == "approve-key":
         return _approve_key(_rest)
+    if ns.command == "config":
+        return _config(_rest)
     return _not_implemented(ns.command)
 
 
