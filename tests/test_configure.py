@@ -79,9 +79,10 @@ def test_host_check_reports(tmp_path, monkeypatch, capsys):
     assert "'rb-node1' is not a Host" in out and "MCP server not registered" in out
 
 
-def test_mcp_entry_uses_current_python():
+def test_mcp_entry_runs_through_uv():
     e = hc.mcp_entry()["research-bridge"]
-    assert e["args"] == ["-m", "rb_host.server"] and e["command"].endswith(("python", "python.exe"))
+    assert e["command"] == "uv" and e["args"][:2] == ["run", "--directory"]
+    assert e["args"][-3:] == ["python", "-m", "rb_host.server"] and "--extra" in e["args"]
 
 
 def test_node_config_flow(tmp_path, monkeypatch, capsys):

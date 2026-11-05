@@ -83,15 +83,15 @@ After A3 is confirmed. Each must hold.
 
 ### B3. MCP registration and live run (plan Step 7)
 
-User applies this to `~/.claude.json` at user scope (entry point is `rb_host.server`; adjust the interpreter path to the installed venv):
+User applies this to `~/.claude.json` at user scope (entry point is `rb_host.server`; run through `uv`; adjust the `--directory` path to the checkout):
 
 ```json
 {
   "mcpServers": {
     "rb-host-mcp": {
       "type": "stdio",
-      "command": "D:/raw/Codes/research-bridge/.venv/Scripts/python.exe",
-      "args": ["-m", "rb_host.server"]
+      "command": "uv",
+      "args": ["run", "--directory", "D:/raw/Codes/research-bridge", "--extra", "host", "python", "-m", "rb_host.server"]
     }
   }
 }

@@ -12,12 +12,11 @@ Laptop-to-node bridge for Claude sessions. A Claude session on the laptop can me
 
 **1. Install (laptop).**
 
-    python -m venv .venv
-    .venv/Scripts/python -m pip install -e ".[host]"
+    uv sync --extra host
 
 **2. Try the demo.** No node or SSH is needed: it starts a throwaway local node with made-up jobs and fake GPUs.
 
-    .venv/Scripts/python scripts/demo_dashboard.py   # then open http://127.0.0.1:8799/board
+    uv run --extra host python scripts/demo_dashboard.py   # then open http://127.0.0.1:8799/board
                                                      # approval passphrase: demo passphrase
 
 | Unified board (`/board`) | Pending approval (`/rb/pending`) |

@@ -8,7 +8,7 @@ Read `AGENTS.md` first (rules, layout, test commands).
 
 ## Working from the development server
 
-Clone or pull `main`; create `.venv` as in `AGENTS.md` (on Linux: `.venv/bin/python`). What does not carry over from the laptop:
+Clone or pull `main`; run `uv sync --extra host` as in `AGENTS.md`. What does not carry over from the laptop:
 
 | Item | Where it lives | Note |
 |---|---|---|
@@ -36,7 +36,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 | Tier | Issues | State |
 |---|---|---|
 | Done | bridge (Tasks 1–12); 10 whole-branch review; 12 board module + CLI; 13 `/board` page patch; PM-01..12, 14, 17 (page) and SEC-01..04, 07 | Merged. Issues 10, 12 and 13 are still open on GitHub and can be closed. |
-| User only, blocks B3 | 2 shared key, 3 `job_template`, 4 harness allowlist, 5 keys + aliases + `authorized_keys`, 6 laptop `.venv` + `host.json` + `~/.claude.json`, 7 install on node1, 8 security checks + live run, 9 node read roots; 25 decide whether transport authentication comes before or after B3 | Not started. Order: 2–4, 5, 6, 7 (with 9's paths and §Before B3 item 1), 8 (with item 2). |
+| User only, blocks B3 | 2 shared key, 3 `job_template`, 4 harness allowlist, 5 keys + aliases + `authorized_keys`, 6 laptop `uv sync` + `host.json` + `~/.claude.json`, 7 install on node1, 8 security checks + live run, 9 node read roots; 25 decide whether transport authentication comes before or after B3 | Not started. Order: 2–4, 5, 6, 7 (with 9's paths and §Before B3 item 1), 8 (with item 2). |
 | User decision | 14 board open questions; PM-18 masking gaps (case variants, text split across lines, zero-width characters) | Defaults are in code. |
 | After B3, need a design first | 15 ledger fields, 16 `reply_to` to node, 17 queue numbering lock, PM-13 laptop attachment root, PM-15 per-chunk re-read, PM-16 board fetch path, PM-17 server half (single-threaded approval), PM-19 `mcp` import in the dashboard, responder Read/Grep/Glob not confined to read roots, SEC-05 config loader, SEC-06 `pdftotext` exposure | Start from `docs/design/TEMPLATE.md`. |
 | After B3, vault side | 18 bridge edges on the session-browser main screen, 19 `verify.py` baseline | Laptop only. |
@@ -51,7 +51,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 
 ## Steps still to do
 
-**User (do not delegate):** A1 keys with passphrase under `C:/keys/research-bridge/` and `ssh-add`; A2 `rb-node1` and `rb-node1-harness` in `~/.ssh/config` (`IdentitiesOnly yes`, `StrictHostKeyChecking yes`); A3 the two `deploy/authorized_keys.example` lines on node1; laptop `.venv` and `~/.claude.json` MCP entry; `host.json` (`{"nodes": {"node1": {"alias": "rb-node1", "harness_alias": "rb-node1-harness"}}}`); set the approval verifier on node1 with `rb-node approve-key set` (`docs/design/2026-11-03-node-side-approval.md`).
+**User (do not delegate):** A1 keys with passphrase under `C:/keys/research-bridge/` and `ssh-add`; A2 `rb-node1` and `rb-node1-harness` in `~/.ssh/config` (`IdentitiesOnly yes`, `StrictHostKeyChecking yes`); A3 the two `deploy/authorized_keys.example` lines on node1; laptop `uv sync --extra host` and `~/.claude.json` MCP entry; `host.json` (`{"nodes": {"node1": {"alias": "rb-node1", "harness_alias": "rb-node1-harness"}}}`); set the approval verifier on node1 with `rb-node approve-key set` (`docs/design/2026-11-03-node-side-approval.md`).
 
 **Session, after the user confirms each command:** B1 install with §Before B3 item 1; B2 the security checks in `docs/provisioning.md` plus item 2; B3 send a test message with a small pdf, `poll`, `read_doc("node1","H-001")`, submit a job with `gpu_hours=0.01`, `rb approve` on the laptop console, expect `job_finished` with `budget_exceeded` or `done`; then fill the Results section of `docs/provisioning.md` and write a postmortem of the run.
 
@@ -64,8 +64,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 
 ## Verification commands
 
-    .venv/Scripts/python -m pytest -q        # laptop: 294 passed on 2026-11-05
-    .venv/bin/python -m pytest -q            # development server
+    uv run --extra host pytest -q            # laptop and development server; 294 passed on 2026-11-05
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
     curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
 

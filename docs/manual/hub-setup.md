@@ -11,9 +11,8 @@ The hub runs `rb_host`. Today the hub is the laptop (Windows, Python 3.14). Ever
 ## 2. Install
 
     cd D:/raw/Codes/research-bridge
-    python -m venv .venv
-    .venv/Scripts/python -m pip install -e ".[host]"
-    .venv/Scripts/python -m pytest -q
+    uv sync --extra host
+    uv run --extra host pytest -q
 
 `tests/test_rb_pending.py` and `tests/test_bridge_edges.py` need the vault dashboard files in place; if the vault is absent, run the rest with `--ignore` for those two files.
 
@@ -96,8 +95,8 @@ Add to user-scope `~/.claude.json` under `mcpServers`:
 ```json
 "research-bridge": {
   "type": "stdio",
-  "command": "D:/raw/Codes/research-bridge/.venv/Scripts/python.exe",
-  "args": ["-m", "rb_host.server"]
+  "command": "uv",
+  "args": ["run", "--directory", "D:/raw/Codes/research-bridge", "--extra", "host", "python", "-m", "rb_host.server"]
 }
 ```
 
@@ -131,7 +130,7 @@ Only the allowlist (`CLAUDE.md`, `settings.json`, `rtk-reference.md`, `commands/
 
 ## 10. Checks
 
-    .venv/Scripts/python -m pytest -q
+    uv run --extra host pytest -q
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200
     curl -s -o NUL -w "%{http_code}" http://<HUB_LAN_IP>:8765/rb/pending   # 403
 

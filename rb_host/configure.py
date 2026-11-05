@@ -112,8 +112,10 @@ def set_local(laptop_home: str = "", node_home: str = "") -> Path:
 
 
 def mcp_entry() -> Dict[str, Any]:
-    return {"research-bridge": {"type": "stdio", "command": Path(sys.executable).as_posix(),
-                                "args": ["-m", "rb_host.server"]}}
+    root = Path(__file__).resolve().parents[1].as_posix()
+    return {"research-bridge": {"type": "stdio", "command": "uv",
+                                "args": ["run", "--directory", root, "--extra", "host",
+                                         "python", "-m", "rb_host.server"]}}
 
 
 def _ssh_hosts() -> List[str]:

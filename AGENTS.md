@@ -34,13 +34,12 @@ Data on the laptop: `D:/raw/research-bridge/` (`host.json`, `ledger.jsonl`, `inb
 
 ## Environment and tests
 
-The main checkout has **no `.venv` yet**. Create it here:
+The runtime environment is managed by **uv**. Do not use `python -m venv` or `pip`. `uv sync --extra host` creates and fills `.venv`; run everything through `uv run`:
 
-    python -m venv .venv
-    .venv/Scripts/python -m pip install -e ".[host]"
-    .venv/Scripts/python -m pytest -q
+    uv sync --extra host
+    uv run --extra host pytest -q
 
-Prefix shell commands with `rtk`. `rtk pytest` hides output on this machine; use `rtk proxy .venv/Scripts/python -m pytest -q`.
+Prefix shell commands with `rtk`. `rtk pytest` hides output on this machine; use `rtk proxy uv run --extra host pytest -q`.
 
 Last recorded results (2026-11-05, laptop, `main` after PRs 32–35): 294 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
 

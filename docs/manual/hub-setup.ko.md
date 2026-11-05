@@ -13,9 +13,8 @@ hub는 `rb_host`를 실행한다. 현재 hub는 laptop(Windows, Python 3.14)이�
 ## 2. 설치
 
     cd D:/raw/Codes/research-bridge
-    python -m venv .venv
-    .venv/Scripts/python -m pip install -e ".[host]"
-    .venv/Scripts/python -m pytest -q
+    uv sync --extra host
+    uv run --extra host pytest -q
 
 `tests/test_rb_pending.py`와 `tests/test_bridge_edges.py`는 vault 대시보드 파일이 제자리에 있어야 한다. vault가 없으면 이 두 파일에 `--ignore`를 지정하고 나머지를 실행한다.
 
@@ -98,8 +97,8 @@ node 경로를 비워 두면 보드에 `no_path`로 표시된다. node는 `.json
 ```json
 "research-bridge": {
   "type": "stdio",
-  "command": "D:/raw/Codes/research-bridge/.venv/Scripts/python.exe",
-  "args": ["-m", "rb_host.server"]
+  "command": "uv",
+  "args": ["run", "--directory", "D:/raw/Codes/research-bridge", "--extra", "host", "python", "-m", "rb_host.server"]
 }
 ```
 
@@ -133,7 +132,7 @@ node 경로를 비워 두면 보드에 `no_path`로 표시된다. node는 `.json
 
 ## 10. 점검
 
-    .venv/Scripts/python -m pytest -q
+    uv run --extra host pytest -q
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200
     curl -s -o NUL -w "%{http_code}" http://<HUB_LAN_IP>:8765/rb/pending   # 403
 
