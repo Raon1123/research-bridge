@@ -132,6 +132,11 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     prior = _idem_lookup(state, key, "job_submit")
     if prior is not None:
         return prior
+    # PM-12: after approval and replay. None = GPU list unreadable; empty = read, no GPUs.
+    if known_gpus is None:
+        raise ProtocolError("gpu_status_unavailable", "cannot read the GPU list; job refused")
+    if not known_gpus:
+        raise ProtocolError("no_gpus", "node reports no GPUs; job refused")
     job_id = _check_id(_str(args, "job_id"))
     config_name = _str(args, "config_name")
     sha = _str(args, "config_sha256")

@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -44,6 +45,10 @@ class Node:
         src = Path(cfg.withheld_source) if cfg.withheld_source else None
         self.withheld = Withheld.load(src)
         self.audit = Audit(Path(cfg.audit_path))
+        if src is not None and self.withheld.source_error:
+            # Path and reason only, never pattern text. Fallback patterns stay active.
+            self.audit.record(op="withheld_source", ok=False, source=str(src),
+                              reason=self.withheld.source_error)
         self.ops = {
             "hello": self.hello, "msg_begin": self.msg_begin, "put_chunk": self.put_chunk,
             "msg_commit": self.msg_commit, "poll": self.poll, "ack": self.ack,
@@ -55,7 +60,8 @@ class Node:
 
     # -- messages ----------------------------------------------------------
     def hello(self, args: dict) -> dict:
-        return {"node": socket.gethostname(), "version": __version__}
+        return {"node": socket.gethostname(), "version": __version__,
+                "withheld_extra": self.withheld.extra_count}
 
     def _msg_dir(self, msg_id: str) -> Path:
         return self.mb.root / "in" / _check_id(msg_id)
@@ -166,7 +172,32 @@ class Node:
         return {"status": "new", "triggered": triggered}
 
     def poll(self, args: dict) -> dict:
-        return {"items": self.mb.undelivered()}
+        # Single egress point for out/ items. Items are stored raw by post_out and masked here
+        # with the current patterns, so a pattern added later also covers older items.
+        items = []
+        for it in self.mb.undelivered():
+            it = dict(it)
+            body = it.get("body")
+            if isinstance(body, str):
+                it["body"], n = self.withheld.mask_text(body)
+                it["withheld_lines"] = n
+                if n and not it["body"].strip() and it.get("kind") == "event":
+                    it["body"] = json.dumps({"event": "withheld", "withheld_lines": n})
+            rt = it.get("reply_to")
+            if isinstance(rt, str) and self.withheld.name_hit(rt):
+                it["reply_to"] = None
+            kept, dropped = [], 0
+            for a in it.get("attachments", []) or []:
+                names = [a.get(k) for k in ("name", "original")] if isinstance(a, dict) else []
+                if any(isinstance(x, str) and self.withheld.name_hit(x) for x in names):
+                    dropped += 1
+                else:
+                    kept.append(a)
+            if "attachments" in it:
+                it["attachments"] = kept
+            it["withheld_attachments"] = dropped
+            items.append(it)
+        return {"items": items}
 
     def ack(self, args: dict) -> dict:
         ids = _arg(args, "ids", list)
@@ -257,6 +288,8 @@ class Node:
             p = self._doc_path(_arg(args, "path", str))
             if p.suffix.lower() not in MASK_EXT | {".tex"}:
                 raise PolicyError("not a text document")
+            if p.suffix.lower() == ".tex" and self.withheld.check_file(p) != "ok":
+                raise PolicyError("withheld")  # same rule as get_file (hard rule 3)
             text = p.read_bytes().decode("utf-8", "replace")
         if len(text) > self.cfg.max_file:
             raise ProtocolError("too_large", "document too large")
@@ -308,8 +341,10 @@ class Node:
 
     # -- jobs --------------------------------------------------------------
     def job_submit(self, args: dict) -> dict:
-        known = {g["index"] for g in self.gpu_status({}).get("gpus", [])}
-        return jobs.submit(self.cfg, self.mb, args, known or None)
+        st = self.gpu_status({})
+        # None = could not read (jobs.submit -> gpu_status_unavailable); empty set = read, zero GPUs.
+        known = None if st.get("error") else {g["index"] for g in st.get("gpus", [])}
+        return jobs.submit(self.cfg, self.mb, args, known)
 
     def job_cancel(self, args: dict) -> dict:
         return jobs.cancel(self.cfg, self.mb, args)

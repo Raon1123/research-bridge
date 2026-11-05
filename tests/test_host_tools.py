@@ -546,3 +546,22 @@ def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeyp
                                       "t", "approve", "127.0.0.1:8765")
     assert st == 403 and code in body and PW not in body
     assert env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def test_poll_reply_body_readable_from_disk(env):
+    oid = Mailbox(env["mb"]).post_out("reply", "the answer", [], "m0")
+    server.poll("n1")
+    body = env["root"] / "inbox" / "n1" / oid / "body.txt"
+    assert body.read_text(encoding="utf-8") == "the answer"
+
+
+@pytest.mark.parametrize("bad", ["C:x", "CON", "con.txt"])
+def test_fetch_file_rejects_unsafe_names(env, bad):
+    assert server.fetch_file("n1", "reports/figures/" + bad) == {"error": "bad_name"}
+    fetched = env["root"] / "fetched"
+    assert not fetched.exists() or not [p for p in fetched.rglob("*") if p.is_file()]
+
+
+def test_poll_docstring_states_masking_and_recheck():
+    assert "masked on the node" in server.poll.__doc__
+    assert "checked again on the laptop" in server.poll.__doc__
