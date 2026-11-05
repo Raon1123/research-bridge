@@ -1,86 +1,72 @@
-# research-bridge handoff — 2026-11-02
+# research-bridge handoff — 2026-11-05
 
 Read `AGENTS.md` first (rules, layout, test commands).
 
 ## Resume snippet
 
-> research-bridge (`D:/raw/Codes/research-bridge`, branch `main` at `f9503cf`) is built through Task 12 and the Task 13 documents. All code is written and reviewed. Nothing has been installed on node1 and no SSH key or config has been created. Continue with Task 13: the user decides items 2–4 below, creates the keys and SSH entries (A1–A3 in `docs/provisioning.md`), creates `.venv` in this directory, and the session then runs the install (B1), the four security checks (B2) and the live run (B3), and records results (Step 8). The laptop subnet for `from=` is decided: `<LAPTOP_ETH_SUBNET>`.
+> research-bridge (`main` at the merge of PR 35) is built and reviewed, and the pre-live-run security fixes from the whole-branch review are merged (PRs 32–35, 2026-11-05). Nothing has been installed on node1 and no SSH key or config has been created. Development continues on another machine (a development server) from 2026-11-05; the laptop stays the **hub** (it runs the 8765 dashboard, holds the SSH keys and `host.json`, and is where `rb approve` is typed). Next: the user decides items 2–4 below and does A1–A3, then the session runs B1 (with the pattern file), B2 (with the two new checks) and B3, and records results.
 
-## MVP scope (2026-11-03)
+## Working from the development server
 
-Open issues are tracked in GitHub issue 21. MVP here means: a laptop Claude session sends a message with an attachment to node1 and gets the reply, reads one H/EXP document, and a tiny job runs after `rb approve`; the user sees all of it on one page. Tiering of the open issues against that:
+Clone or pull `main`; create `.venv` as in `AGENTS.md` (on Linux: `.venv/bin/python`). What does not carry over from the laptop:
+
+| Item | Where it lives | Note |
+|---|---|---|
+| Tests | anywhere | The dashboard and bridge-edge tests import the repository's own `vault-export/` copies, and `rb_host` comes from the editable install, so the whole suite runs without the vault. |
+| 8765 dashboard, `vault-export/` deployment | laptop only | Apply PR 35's `vault-export/` files there (see §Before B3). |
+| `rb approve`, `rb reject` | laptop only | Need a real console and the approval passphrase (`AGENTS.md` rule 1). |
+| SSH keys, `~/.ssh/config`, `host.json`, `~/.claude.json` MCP entry | laptop only | Connection direction is laptop to node (rule 2). Do not create keys on the development server. |
+| `private/` (real names and addresses) | laptop only, gitignored | The repository is public: placeholders only (`docs/CONTRIBUTING.md`). |
+
+Line endings: copy `rb_node/` to node1 as LF files (`core.autocrlf=input`, or a Linux checkout).
+
+## Before B3 (must do)
+
+Code for PM-01 to PM-12, PM-14 and part of PM-17 is merged; what each fix covers is in `docs/postmortems/2026-11-03-whole-branch-review.md` (Fix verified fields). Four things are not code and are still open:
+
+1. **PM-07, B1:** copy the session-calendar withheld-pattern JSON to `~/.research-bridge/withheld-patterns.json` on node1 and point `withheld_source` at it. Check that `hello` reports `withheld_extra > 0` and that the node audit log has no `withheld_source` warning. Also check the laptop's `withheld_patterns_file` exists; a missing file silently falls back to the five fallback patterns.
+2. **PM-02, add to B2:** on node1, run the responder argv (`claude -p ... --tools Read,Grep,Glob --setting-sources ""`) and confirm it exits 0. If node1's Claude CLI rejects `--setting-sources ""`, every responder run ends in `responder_failed` and B3 gets no reply. Then ask the responder to run a shell command and expect a refusal.
+3. **PM-03, laptop (user approves):** copy `vault-export/dashboard/rb_pending.py`, `rb_board.py`, the updated `server.py.patch` and `vault-export/session-calendar/bridge_edges.py` to the vault, then restart 8765. Until then the running dashboard has no `Host` check. The new check fails closed: the rb pages return 403 if `server.py` does not pass the `Host` header.
+4. **PM-04 residual (accept or design):** a laptop session that can open a pseudo-console and knows the passphrase can still approve.
+
+## Issue tiers (2026-11-05)
+
+Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a message with an attachment to node1 and gets the reply, reads one H/EXP document, and a tiny job runs after `rb approve`; the user sees it on one page.
 
 | Tier | Issues | State |
 |---|---|---|
-| MVP, code | bridge (Tasks 1–12) | Done before this date. |
-| MVP, code | 12 board module + CLI, 13 `/board` page patch | **Done 2026-11-03** on branch `claude/mvp-scope-review-01fb0e` (not merged): `rb_host/board.py`, `rb board refresh\|show`, `vault-export/dashboard/rb_board.py` + `server.py.board.patch`, 19 tests. Patch not applied to the vault. |
-| MVP, user only | 2 shared key, 3 `job_template`, 4 harness allowlist, 5 keys + aliases + `authorized_keys`, 6 main-checkout `.venv` + `host.json` + `~/.claude.json`, 7 install on node1, 8 security checks + live run, 9 node read roots | Not started. Each needs the user or a node1 command the user approves. Order: 2–4 decisions, 5, 6, 7 (with 9's paths), 8. |
-| MVP, user decision | 14 board open questions (now six; question 6 = `events.jsonl` refused by the node) | Defaults are in code and logged in the design §13; the user confirms or changes them. Note for question 1: the state source keeps every `STATE.md` frontmatter pair that survives withheld masking, so a status word no pattern matches would reach the page; narrow it to a key allowlist once the real keys are known. |
-| Before the live run (recommended) | 10 whole-branch review | Not done. A separate session on the most capable model; the board code should be in its range. |
-| After MVP | 11 postmortem, 15 ledger fields, 16 `reply_to` to node, 17 queue numbering lock, 18 bridge edges on the session-browser main screen, 19 `verify.py` baseline, 20 merge settings and old branches | Deferred. 15, 16 and 17 need a design (`docs/design/TEMPLATE.md`); 17 matters only with a second submitter. |
-
-## State
-
-| Area | Status |
-|---|---|
-| Node: protocol, paths, withheld filter, mailbox, serve-remote, jobs, serve-local + responder, harness | Done (Tasks 1–7, 10). `rb_node/` |
-| Host: client, ledger, store, MCP server, `rb` CLI, harness | Done (Tasks 8–10). `rb_host/` |
-| 8765 approval endpoint (vault dashboard) | Done and live (Task 11). Files in `vault-export/dashboard/`. |
-| Session-browser edges (vault session-calendar) | Done, no-op until a ledger exists (Task 12). Files in `vault-export/session-calendar/`. |
-| Provisioning documents | Written (Task 13 Step 1): `docs/provisioning.md`, `deploy/*.example`. |
-| node1 install, keys, SSH entries, live run | **Not started** (Task 13 Steps 2–8). |
-| Unified board (laptop) | Built 2026-11-03, not merged: `rb_host/board.py`, `rb board`, `vault-export/dashboard/rb_board.py` + `server.py.board.patch` (not applied). Node paths for state/events/kanban go in `host.json` once issue 9 confirms them. |
-| Final whole-branch review | **Not done.** The subagent-driven procedure ends with one broad review of the whole range `0af6bca..f9503cf` on the most capable model. |
-
-Main was fast-forwarded to `f9503cf` on 2026-11-02 (the first merge to `824f1f8` was on 2026-10-27, user-approved). The branch `research-bridge/impl` and the worktree `D:/raw/Codes/research-bridge-wt` still exist and point at the same commit. Remove them when no longer needed: `git worktree remove ../research-bridge-wt` then `git branch -d research-bridge/impl`. The worktree holds a working `.venv` you can borrow until the main one exists.
+| Done | bridge (Tasks 1–12); 10 whole-branch review; 12 board module + CLI; 13 `/board` page patch; PM-01..12, 14, 17 (page) and SEC-01..04, 07 | Merged. Issues 10, 12 and 13 are still open on GitHub and can be closed. |
+| User only, blocks B3 | 2 shared key, 3 `job_template`, 4 harness allowlist, 5 keys + aliases + `authorized_keys`, 6 laptop `.venv` + `host.json` + `~/.claude.json`, 7 install on node1, 8 security checks + live run, 9 node read roots; 25 decide whether transport authentication comes before or after B3 | Not started. Order: 2–4, 5, 6, 7 (with 9's paths and §Before B3 item 1), 8 (with item 2). |
+| User decision | 14 board open questions; PM-18 masking gaps (case variants, text split across lines, zero-width characters) | Defaults are in code. |
+| After B3, need a design first | 15 ledger fields, 16 `reply_to` to node, 17 queue numbering lock, PM-13 laptop attachment root, PM-15 per-chunk re-read, PM-16 board fetch path, PM-17 server half (single-threaded approval), PM-19 `mcp` import in the dashboard, responder Read/Grep/Glob not confined to read roots, SEC-05 config loader, SEC-06 `pdftotext` exposure | Start from `docs/design/TEMPLATE.md`. |
+| After B3, vault side | 18 bridge edges on the session-browser main screen, 19 `verify.py` baseline | Laptop only. |
+| Repository | 11 first-build postmortem, 20 merge settings and old branches | Deferred. |
 
 ## Pending decisions (user)
 
 1. ~~Laptop subnet for `from=`~~ — decided: `<LAPTOP_ETH_SUBNET>`.
-2. Does the shared key `<SHARED_KEY>` stay in node1's `authorized_keys`? Only the new keys are restricted by `restrict,from=...,command=...`; `<SHARED_KEY>` keeps an unrestricted shell, so the "no unauthorized read or write" line is not fully enforced until it is removed or restricted. Plan default: it stays; clean up after the bridge is stable.
-3. `job_template` in the node's `node.json`: an argv list with a `{config}` placeholder. It ships empty and `job_submit` refuses (`no_job_template`) until it is set. The training entry point on node1 is not known to this project.
-4. Harness allowlist. The plan named `60_Tools/harness-sync/deliver.ps1`, which does not exist; the allowlist in use comes from `60_Tools/sync/prepare_staging.py` (`HARNESS_FILES` = `CLAUDE.md`, `settings.json`, `rtk-reference.md`; `HARNESS_DIRS` = `commands`, `agents`, `hooks`, `workflows`). Confirm or change. `harness_root` (the node's `~/.claude`) is empty by default, so push and pull are refused until set.
+2. Does the shared key `<SHARED_KEY>` stay in node1's `authorized_keys`? Only the new keys are restricted by `restrict,from=...,command=...`; `<SHARED_KEY>` keeps an unrestricted shell. Plan default: it stays; clean up after the bridge is stable.
+3. `job_template` in the node's `node.json`: an argv list with a `{config}` placeholder. It ships empty and `job_submit` refuses (`no_job_template`) until it is set.
+4. Harness allowlist: from `60_Tools/sync/prepare_staging.py` (`HARNESS_FILES` = `CLAUDE.md`, `settings.json`, `rtk-reference.md`; `HARNESS_DIRS` = `commands`, `agents`, `hooks`, `workflows`). Confirm or change. `harness_root` is empty by default, so push and pull are refused until set.
 
 ## Steps still to do
 
-**User (do not delegate):**
+**User (do not delegate):** A1 keys with passphrase under `C:/keys/research-bridge/` and `ssh-add`; A2 `rb-node1` and `rb-node1-harness` in `~/.ssh/config` (`IdentitiesOnly yes`, `StrictHostKeyChecking yes`); A3 the two `deploy/authorized_keys.example` lines on node1; laptop `.venv` and `~/.claude.json` MCP entry; `host.json` (`{"nodes": {"node1": {"alias": "rb-node1", "harness_alias": "rb-node1-harness"}}}`); set the approval verifier on node1 with `rb-node approve-key set` (`docs/design/2026-11-03-node-side-approval.md`).
 
-- A1: `ssh-keygen` two ed25519 keys under `C:/keys/research-bridge/` (with passphrase), `ssh-add` both.
-- A2: add `rb-node1` and `rb-node1-harness` to `~/.ssh/config` (`IdentitiesOnly yes`, `StrictHostKeyChecking yes`).
-- A3: append the two lines of `deploy/authorized_keys.example` to node1's `~/.ssh/authorized_keys` with `from="<LAPTOP_ETH_SUBNET>"` and the `.pub` contents.
-- Create `.venv` here (commands in `AGENTS.md`) and register the MCP server in `~/.claude.json` pointing at **this** directory's `.venv/Scripts/python.exe -m rb_host.server`. The snippet in `docs/provisioning.md` §B3 already uses that path.
-- Create `D:/raw/research-bridge/host.json`: `{"nodes": {"node1": {"alias": "rb-node1", "harness_alias": "rb-node1-harness"}}}`. Without it `rb approve` and the dashboard approve button return an error.
+**Session, after the user confirms each command:** B1 install with §Before B3 item 1; B2 the security checks in `docs/provisioning.md` plus item 2; B3 send a test message with a small pdf, `poll`, `read_doc("node1","H-001")`, submit a job with `gpu_hours=0.01`, `rb approve` on the laptop console, expect `job_finished` with `budget_exceeded` or `done`; then fill the Results section of `docs/provisioning.md` and write a postmortem of the run.
 
-**Session, after the user confirms each command:**
+## Notes
 
-- B1: install `rb_node` on node1 through the existing `node1` alias, write `~/.research-bridge/node.json` from `deploy/node.json.example` with decisions 3 and 4 applied.
-- B2: four security checks (table in `docs/provisioning.md`).
-- B3: send a test message with a small pdf, `poll`, `read_doc("node1","H-001")`, submit a tiny job with `gpu_hours=0.01`, `rb approve`. Expect `job_finished` with `budget_exceeded` or `done`.
-- Step 8: fill the Results section of `docs/provisioning.md`, write the vault daily log `90_Claude/90_Daily/2026-11-02.md` (or the day of the run), commit.
-
-## Follow-ups (not blocking)
-
-Every item below and in §Pending decisions / §Steps still to do is also a GitHub issue; tracking issue: Raon1123/research-bridge#21. Setup instructions per role: `docs/manual/` (English, with Korean translations).
-
-- Final whole-branch review done 2026-11-03 over `d29aa11..7df8fd8` (board included): `docs/postmortems/2026-11-03-whole-branch-review.md`. **Fix the seven S1 items before the B3 live run**: PM-01 node `poll` bodies unmasked, PM-02 responder tools not restricted (`--allowedTools` only), PM-03 8765 approve open to DNS rebinding (no `Host` check), PM-04 a laptop session can self-approve via `rb approve --yes` or `curl`, PM-05 SVG name-only check, PM-06 drive-letter names escape the laptop data root, PM-07 node runs on fallback patterns only. S2 items PM-08 to PM-17 are listed in the same file. None is fixed.
-- Complete the draft postmortem `docs/postmortems/2026-10-27-sdd-build.md` (items from the ledger only; `<to fill>` fields and an audit remain). Write a postmortem after the B3 live run.
-- Changes to the protocol, ledger fields or keys start from `docs/design/TEMPLATE.md`; candidates are listed in `docs/design/README.md`.
-- Unified board (autoresearch on node1 + research-bridge + the 8765 portfolio and priorities boards): draft design `docs/design/2026-11-02-unified-board.md`. First step is the user's: confirm the current node paths of `STATE.md`, `events.jsonl` and the kanban data, then add them as read roots in node1's `node.json`. The read roots in `deploy/node.json.example` still use pre-restructuring names.
-- Hashes in this file and in `docs/history/` predate the 2026-11-02 rewrite of `main` and no longer resolve (`f9503cf` is now `a28a30b`, `c1a4786` is now `a8bb492`; mapping for fixes in `docs/postmortems/2026-10-27-sdd-build.md`). Branch rules: `docs/CONTRIBUTING.md`.
-- `render.py` in the vault session-calendar builds the main screen from transcripts and does not read `cache/agents/*.json`, so bridge edges will not show on the main screen until it does. `bridge_edges.merge` writes into that cache only for sessions whose cache file already exists.
-- `verify.py --server` reported one failure ("sessions whose utterances are not in time order", 1 session) after the Task 12 refresh. No baseline was taken before the change. It is inferred to be pre-existing because the bridge step is a no-op without a ledger. Confirm by running `verify.py` with the bridge step disabled.
-- Ledger records do not carry `to_session` or attachment byte totals, so bridge edges always show `<node>:responder` and `bytes` 0. Add the fields on the host side if wanted.
-- `reply_to` is stored in the host ledger only; the node's `msg_begin` has no such field, so a server session cannot see which earlier message a new one answers.
-- `GET /rb/pending` is loopback-only; the other 8765 routes remain reachable from the LAN as before.
-- `docs/history/sdd-2026-10-27/task-11-report.md` describes the first round of Task 11 only; the loopback fix is in the ledger.
-- Git reports LF to CRLF conversion warnings on this machine. Copying `rb_node/` to node1 should use LF files (check out with `core.autocrlf=input` or convert before `scp`).
-- Node queue numbering is not locked against two concurrent submitters (single submitter assumed).
-- `os.killpg` budget kill path and the detached responder spawn are tested only with fakes; the live run covers them.
+- 2026-11-05 fixes were made by four implementer subagents, one per area (node masking, responder, laptop storage, approval), each followed by a task review, fix rounds and a scoped re-review, then one cross-branch review. Rulings made then: `.tex` with a hit is denied by `read_doc` (not masked); the responder prompt drops the work-directory sentence instead of gaining a write tool; an unreadable GPU list gives `gpu_status_unavailable` and an empty one `no_gpus`; an event body masked to nothing becomes `{"event":"withheld","withheld_lines":N}`; `--setting-sources ""` is kept until B2 shows otherwise.
+- Known minor gaps left open: an attachment name long enough to exceed the Windows path limit is retried on every poll; the node's `withheld_lines` / `withheld_attachments` counts are not kept in laptop provenance; the audit warning for an unparseable withheld source repeats on every connection.
+- Hashes in `docs/history/` predate the 2026-11-02 rewrite of `main` (mapping in `docs/postmortems/2026-10-27-sdd-build.md`).
+- The branch `research-bridge/impl` and worktree `D:/raw/Codes/research-bridge-wt` on the laptop are obsolete; remove them when convenient.
 
 ## Verification commands
 
-    .venv/Scripts/python -m pytest -q
-    curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop
-    curl -s -o NUL -w "%{http_code}" http://<LAPTOP_WIFI_IP>:8765/rb/pending # 403 from the LAN address
+    .venv/Scripts/python -m pytest -q        # laptop: 294 passed on 2026-11-05
+    .venv/bin/python -m pytest -q            # development server
+    curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
+    curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
 
 Vault-side state checks: `vault-export/CHECKSUMS.txt`.
