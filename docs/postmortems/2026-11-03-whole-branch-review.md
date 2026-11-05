@@ -9,7 +9,7 @@ tags: [postmortem, research-bridge]
 
 # Final whole-branch review (issue 10) — postmortem (2026-10-27 – 2026-11-03)
 
-This document covers the final whole-branch review requested in GitHub issue 10 (`Raon1123/research-bridge`): every commit from the first-build base `d29aa11` to the tip of `claude/mvp-scope-review-01fb0e` (`7df8fd8`, 25 commits), including the unified board added on 2026-11-03. It records the defects the review found. None of them has been fixed yet. Fixes are tracked in `docs/HANDOFF.md` §Follow-ups. It does not assign blame.
+This document covers the final whole-branch review requested in GitHub issue 10 (`Raon1123/research-bridge`): every commit from the first-build base `d29aa11` to the tip of `claude/mvp-scope-review-01fb0e` (`7df8fd8`, 25 commits), including the unified board added on 2026-11-03. It records the defects the review found. Fixes for PM-01 to PM-12, PM-14 and part of PM-17 were merged on 2026-11-05 (PRs 32–35); the Fix verified fields say what each one covers and what still needs node1 or the vault. Open work is tracked in `docs/HANDOFF.md`. It does not assign blame.
 
 ## How this was made
 
@@ -27,26 +27,26 @@ Abbreviations used: MCP = Model Context Protocol; SSH = Secure Shell; CSRF = cro
 
 | ID | Severity | What happened | Fix verified |
 |---|---|---|---|
-| PM-01 | S1 | Node `poll` returns reply and event bodies without withheld masking; only the laptop masks them | not verified |
-| PM-02 | S1 | The responder's tool limit uses `--allowedTools`, which pre-approves tools but does not remove others; node settings still apply | not verified |
-| PM-03 | S1 | 8765 approve route checks the client address only; a DNS-rebinding page in the user's browser can read the CSRF token and approve | not verified |
-| PM-04 | S1 | A laptop Claude session can approve its own job through `rb approve --yes` or `curl` to 8765 without MCP | not verified |
-| PM-05 | S1 | SVG files are checked by name only, on the node and on the laptop | not verified |
-| PM-06 | S1 | Node-supplied attachment names like `C:x` escape the laptop data root on Windows | not verified |
-| PM-07 | S1 | The shipped node config points the withheld source at a YAML file, so the node masks with the five fallback patterns only | not verified |
-| PM-08 | S2 | `read_doc` returns `.tex` files with hit lines blanked; rule 3 and `fetch_file` deny them | not verified |
-| PM-09 | S2 | Polled reply bodies are not stored on the laptop; the design says they are | not verified |
-| PM-10 | S2 | The laptop download loop has no size cap | not verified |
-| PM-11 | S2 | The ledger has no lock; `rb approve` and the 8765 button can approve the same job at once | not verified |
-| PM-12 | S2 | GPU index validation is skipped when `nvidia-smi` is missing | not verified |
-| PM-13 | S2 | `send_message` uploads any laptop file the caller names | not verified |
-| PM-14 | S2 | The responder prompt names a work directory that nothing creates and the responder cannot write | not verified |
-| PM-15 | S2 | `get_file` re-reads and re-masks the whole file for every 1 MiB chunk | not verified |
-| PM-16 | S2 | Board refresh shares `fetched/<node>/<basename>` with `fetch_file` and reloads `host.json` instead of using its `cfg` | not verified |
-| PM-17 | S2 | 8765 approval page omits config path and hash; approval blocks the single-threaded server | not verified |
+| PM-01 | S1 | Node `poll` returns reply and event bodies without withheld masking; only the laptop masks them | fixed in code (PR 32), tests only |
+| PM-02 | S1 | The responder's tool limit uses `--allowedTools`, which pre-approves tools but does not remove others; node settings still apply | fixed in code (PR 33); node1 CLI not checked |
+| PM-03 | S1 | 8765 approve route checks the client address only; a DNS-rebinding page in the user's browser can read the CSRF token and approve | fixed in `vault-export/` (PR 35); not deployed |
+| PM-04 | S1 | A laptop Claude session can approve its own job through `rb approve --yes` or `curl` to 8765 without MCP | reduced (PR 35); residual |
+| PM-05 | S1 | SVG files are checked by name only, on the node and on the laptop | fixed (PR 32), tests only |
+| PM-06 | S1 | Node-supplied attachment names like `C:x` escape the laptop data root on Windows | fixed (PR 34), tests only |
+| PM-07 | S1 | The shipped node config points the withheld source at a YAML file, so the node masks with the five fallback patterns only | code part fixed (PR 32); pattern file not on node1 |
+| PM-08 | S2 | `read_doc` returns `.tex` files with hit lines blanked; rule 3 and `fetch_file` deny them | fixed (PR 32), tests only |
+| PM-09 | S2 | Polled reply bodies are not stored on the laptop; the design says they are | fixed (PR 34), tests only |
+| PM-10 | S2 | The laptop download loop has no size cap | fixed (PR 34), tests only |
+| PM-11 | S2 | The ledger has no lock; `rb approve` and the 8765 button can approve the same job at once | fixed (PR 35), tests only |
+| PM-12 | S2 | GPU index validation is skipped when `nvidia-smi` is missing | fixed (PRs 32, 35), tests only |
+| PM-13 | S2 | `send_message` uploads any laptop file the caller names | open |
+| PM-14 | S2 | The responder prompt names a work directory that nothing creates and the responder cannot write | fixed (PR 33), tests only |
+| PM-15 | S2 | `get_file` re-reads and re-masks the whole file for every 1 MiB chunk | open |
+| PM-16 | S2 | Board refresh shares `fetched/<node>/<basename>` with `fetch_file` and reloads `host.json` instead of using its `cfg` | open |
+| PM-17 | S2 | 8765 approval page omits config path and hash; approval blocks the single-threaded server | page half fixed (PR 35); server half open |
 | PM-18 | S3 | Withheld patterns are case-sensitive | n/a |
 | PM-19 | S3 | `/board` needs `mcp` importable in the dashboard Python | n/a |
-| PM-20 | S3 | `fetch_file` deletes a failed file instead of moving it to `quarantine/` as `AGENTS.md` states | n/a |
+| PM-20 | S3 | `fetch_file` deletes a failed file instead of moving it to `quarantine/` as `AGENTS.md` states | n/a (rule text corrected) |
 
 No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 
@@ -60,7 +60,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from the code): masking was placed on the document paths (`read_doc`, `get_file`) only; message bodies were assumed to be the responder's own text. The responder can read withheld files directly (PM-02), so its text can carry withheld content. Line blanking on either side also cannot catch a paraphrase or a number quoted without its identifier.
 - How it surfaced: this review (code reading, then probe).
 - Fix: none in this review. Direction: mask `body` in `post_out` or in `Node.poll` with the node's `Withheld`, report the hit count, and keep the laptop re-check.
-- Fix verified: not verified
+- Fix verified: fixed in code (PR 32, 2026-11-05): `Node.poll` masks bodies, drops attachments whose name or original hits, nulls a hitting `reply_to`; tests in `tests/test_remote.py` failed before the fix. Not yet run on node1 (B2).
 - Prevention: a node test that posts a reply containing each fallback pattern and asserts `poll` returns it blanked.
 - Evidence: `rb_node/remote.py:167-168` 「return {"items": self.mb.undelivered()}」; `rb_host/server.py:125` 「Bodies are already masked.」; probe output (synthetic probe string, not a node message) 「poll body: result for H108N here」.
 
@@ -72,7 +72,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from the flag text and `spawn.py`): rule 8 was implemented with the pre-approval flag. The node's Claude Code version and settings are not known to this project.
 - How it surfaced: this review.
 - Fix: none. Direction: add `--tools Read,Grep,Glob` and `--setting-sources ""` (or a controlled `--settings` file with deny rules for withheld paths), keep `--disallowedTools Bash,Write,Edit,WebFetch,WebSearch` as a backstop, and check the result in the B2 security checks on node1.
-- Fix verified: not verified
+- Fix verified: fixed in code (PR 33, 2026-11-05): argv has `--tools Read,Grep,Glob`, `--setting-sources ""`, `--disallowedTools`; spawn tests failed before the fix. **Not verified** that node1's Claude CLI accepts `--setting-sources ""` (B2 check). Read/Grep/Glob are still not confined to the read roots.
 - Prevention: a spawn test that asserts the argv contains `--tools` and `--setting-sources`; a B2 check that asks the responder to run a shell command and expects refusal.
 - Evidence: `rb_node/spawn.py:21` 「ALLOWED_TOOLS = "mcp__rb__*,Read,Grep,Glob"」; `rb_node/spawn.py:125` 「"--allowedTools", ALLOWED_TOOLS, "--max-turns", MAX_TURNS,」; `rb_node/spawn.py:128` 「r = subprocess.run(argv, cwd=cfg.trm_root, timeout=RESPONDER_TIMEOUT,」.
 
@@ -84,7 +84,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): the loopback check was designed against LAN clients only.
 - How it surfaced: this review; the vault `server.py` was grepped for `Host` handling (only `Content-Length` is read from headers).
 - Fix: none. Direction: in `handle_get` and `handle_post`, refuse unless `Host` is exactly `127.0.0.1:8765` or `localhost:8765`; for POST also require `Origin` to match when present.
-- Fix verified: not verified
+- Fix verified: fixed in `vault-export/dashboard/` (PR 35, 2026-11-05): Host and Origin checks, tests in `tests/test_rb_pending.py`. **Not deployed**: the running 8765 dashboard has no Host check until the files are copied to the vault and 8765 is restarted.
 - Prevention: a `test_rb_pending.py` case with a foreign `Host` header that expects 403.
 - Evidence: `vault-export/dashboard/rb_pending.py:62` 「if client_ip != "127.0.0.1":」; vault `dashboard/server.py:1340` 「ap.add_argument("--host", default="0.0.0.0")」; `start_dashboard.vbs:13` 「server.py --port 8765 --host 0.0.0.0」.
 
@@ -96,7 +96,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): the threat model treats "not MCP" as "the user". Nothing ties approval to an action only the user can take.
 - How it surfaced: this review.
 - Fix: none. Direction: add deny rules for `rb approve`, `rb reject` and `127.0.0.1:8765/rb/` requests to the laptop Claude Code settings; make `rb approve` refuse when standard input is not an interactive terminal and drop `--yes`, or require a code the page shows only to the user.
-- Fix verified: not verified
+- Fix verified: reduced (PR 35, 2026-11-05): `--yes` removed; `rb approve`/`rb reject` need a real console (on Windows `GetConsoleMode` on stdin and stdout, so NUL redirects fail); with SEC-01 the node needs the passphrase-derived key. Residual: a session that can open a pseudo-console and knows the passphrase can still approve.
 - Prevention: write the rule into `AGENTS.md` hard rule 1 ("approval must need an action the agent cannot take"), and add a test that `rb approve` refuses non-interactive input.
 - Evidence: `rb_host/cli.py:114` 「a.add_argument("--yes", action="store_true", help="skip the y/N prompt")」; `vault-export/dashboard/rb_pending.py:36` 「'<input type="hidden" name="csrf" value="%s">'」.
 
@@ -108,7 +108,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): SVG was grouped with raster images.
 - How it surfaced: this review (probe).
 - Fix: none. Direction: move `.svg` to the scanned text set (deny on hit).
-- Fix verified: not verified
+- Fix verified: fixed (PR 32, 2026-11-05): `.svg` is scanned as text; `tests/test_withheld.py` case failed before the fix.
 - Prevention: a `test_withheld.py` case with a withheld string inside an SVG `<text>` element.
 - Evidence: `rb_node/withheld.py:20` 「_NAME_ONLY_EXT = {".png", ".jpg", ".jpeg", ".svg"}」; probe output 「svg check_file: ok」.
 
@@ -120,7 +120,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): the name check was written for POSIX separators.
 - How it surfaced: this review (probe).
 - Fix: none. Direction: on the laptop, accept only names matching `^[A-Za-z0-9][A-Za-z0-9._ -]*$` (no colon), check `dest.resolve()` is under the intended directory, and apply the same rule to the message id.
-- Fix verified: not verified
+- Fix verified: fixed (PR 34, 2026-11-05): name deny-list (colon, control and wildcard characters, Windows device names incl. `CONIN$`/`CONOUT$`, trailing dot or space), message-id allowlist with `fullmatch`, `resolve()` containment; `tests/test_host_store.py` failed before the fix.
 - Prevention: a `test_host_client.py` case with attachment names `C:x`, `CON`, `a:b` that expects quarantine or rejection, not a write.
 - Evidence: `rb_host/store.py:18-19` 「base = str(name).replace("\\", "/").rsplit("/", 1)[-1]」; probe output 「join C: C:evil.txt」.
 
@@ -132,7 +132,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (recorded): `AGENTS.md` Conventions 「YAML withheld sources are treated as unparseable (fallback patterns only)」.
 - How it surfaced: this review.
 - Fix: none. Direction: ship the session-calendar pattern JSON to node1 during B1 and point `withheld_source` at it; log a warning in the audit when the source does not parse.
-- Fix verified: not verified
+- Fix verified: code part fixed (PR 32, 2026-11-05): unparseable source writes an audit warning; `deploy/node.json.example` points at a JSON file. **Not done**: copy the session-calendar pattern JSON to node1 in B1 and check `hello` reports `withheld_extra > 0`.
 - Prevention: a B2 check that reads a document containing a family pattern (not a fallback one) and expects it blanked on the node.
 - Evidence: `deploy/node.json.example` 「"withheld_source": "/home/<NODE_USER>/project/trm/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml"」; `rb_node/withheld.py:60-61` 「except (OSError, ValueError):」 / 「extra = []」.
 
@@ -144,7 +144,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): `read_doc` reuses the text mask for every text type it accepts.
 - How it surfaced: this review.
 - Fix: none. Direction: decide which rule is wanted, then make both paths and `AGENTS.md` agree.
-- Fix verified: not verified
+- Fix verified: fixed (PR 32, 2026-11-05): `read_doc` denies a `.tex` with a hit, as `get_file` does; one test reads the same file through both.
 - Prevention: a test that reads the same withheld `.tex` through both ops and expects the same outcome.
 - Evidence: `rb_node/remote.py:257` 「if p.suffix.lower() not in MASK_EXT | {".tex"}:」.
 
@@ -156,7 +156,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (recorded): design spec line 122 「Bodies stored in `inbox/`/`outbox/` files, not in the ledger line.」; not implemented.
 - How it surfaced: this review.
 - Fix: none. Direction: write the masked body to `inbox/<node>/<msg_id>/body.txt` before the ack.
-- Fix verified: not verified
+- Fix verified: fixed (PR 34, 2026-11-05): masked body written to `inbox/<node>/<msg>/body.txt` before the ack; attachment names cannot overwrite it.
 - Prevention: a host test that polls a reply and then reads its body back from `inbox/`.
 - Evidence: `rb_host/store.py:80` 「(inbox / "provenance.json").write_text(json.dumps(prov, ensure_ascii=False, indent=2),」.
 
@@ -168,7 +168,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from the code): the node was trusted to enforce the cap.
 - How it surfaced: this review.
 - Fix: none. Direction: stop and delete the `.part` file once it passes `MAX_FILE`.
-- Fix verified: not verified
+- Fix verified: fixed (PR 34, 2026-11-05): download stops past 50 MB (`too_large`) and on an empty non-eof chunk (`stalled`); `.part` deleted.
 - Prevention: a client test with a fake node that never sends `eof`.
 - Evidence: `rb_host/client.py:166-174` 「res = self.call("get_file", kind=kind, ref=ref, seq=seq)」.
 
@@ -180,7 +180,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred).
 - How it surfaced: this review.
 - Fix: none. Direction: an exclusive lock file around append/update and around the status check plus `approved` write in `approve`.
-- Fix verified: not verified
+- Fix verified: fixed (PR 35, 2026-11-05): token lock file around ledger writes and the approve claim; stale takeover by rename; release only of its own token. A three-party race in a microsecond window remains (node idempotency covers it).
 - Prevention: a test that runs two `approve` calls in threads and expects one node call.
 - Evidence: `rb_host/jobs.py:104-112` 「if rec["status"] not in ("pending_approval", "approved"):」.
 
@@ -192,7 +192,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from the code): an empty GPU list was mapped to "no check" so tests without `nvidia-smi` pass.
 - How it surfaced: this review.
 - Fix: none. Direction: refuse submission (`gpu_status_unavailable`) when the GPU list cannot be read.
-- Fix verified: not verified
+- Fix verified: fixed (PRs 32 and 35, 2026-11-05): node refuses `gpu_status_unavailable` (list unreadable) or `no_gpus` (empty list) after the approval check and replay lookup; the laptop returns the job to `pending_approval` and shows the code.
 - Prevention: a node test with `nvidia-smi` absent that expects refusal.
 - Evidence: `rb_node/remote.py:310-311` 「known = {g["index"] for g in self.gpu_status({}).get("gpus", [])}」 / 「return jobs.submit(self.cfg, self.mb, args, known or None)」.
 
@@ -204,7 +204,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): the design lists attachments as laptop paths with a size cap only (spec line 75).
 - How it surfaced: this review.
 - Fix: none. Direction: a design proposal for a laptop attachment allowlist (`docs/design/TEMPLATE.md`).
-- Fix verified: n/a
+- Fix verified: open: needs a design proposal (laptop attachment root).
 - Prevention: a design rule that every laptop path an MCP tool reads lies under a configured root.
 - Evidence: `rb_host/server.py:76-79` 「files = [Path(a) for a in attachments]」.
 
@@ -216,7 +216,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from `local.py` and `spawn.py`): the work directory was planned with the reply tool but its creation and a confined write tool were not added.
 - How it surfaced: this review.
 - Fix: none. Direction: either create the work directory and allow a write tool confined to it, or remove the sentence from the prompt.
-- Fix verified: not verified
+- Fix verified: fixed (PR 33, 2026-11-05): the sentence naming the work directory is removed from the prompt.
 - Prevention: a spawn test that checks every directory named in the prompt exists before the responder starts.
 - Evidence: `rb_node/spawn.py:28-29` 「Put any files you want to send "」 / 「"under the message work directory and list them in reply attachments."」; `rb_node/local.py:89` 「work = self.mb.root / "out" / "_work" / (_check_id(msg_id) if isinstance(msg_id, str) else "_")」.
 
@@ -228,7 +228,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from the code): `get_file` is stateless per call, so masking is redone per chunk.
 - How it surfaced: this review.
 - Fix: none. Direction: build the outgoing bytes once into a node-side spool file per (ref, mtime) and serve slices from it.
-- Fix verified: not verified
+- Fix verified: open (after B3).
 - Prevention: a test that counts file reads for a three-chunk transfer.
 - Evidence: `rb_node/remote.py:215` 「data = self._bytes_for(p)」.
 
@@ -240,7 +240,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred, from `board.py`): the board reuses the MCP tool functions, which load their own config and own output path.
 - How it surfaced: this review.
 - Fix: none. Direction: a board-private fetch helper that takes `cfg` and writes under `board/tmp/`.
-- Fix verified: not verified
+- Fix verified: open (after B3).
 - Prevention: a board test with a pre-existing `fetched/<node>/<name>` file that expects it untouched.
 - Evidence: `rb_host/board.py:207` 「res = server.fetch_file(node, path)」; `rb_host/server.py:158` 「dest = Path(cfg.data_root) / "fetched" / node / _safe_name(path)」.
 
@@ -252,7 +252,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): the page was built from the ledger's display fields; the vault server was not changed to threaded serving.
 - How it surfaced: this review.
 - Fix: none. Direction: show `config_path` and the first 12 characters of `config_sha256`; run approval in a worker thread or return 202 and poll.
-- Fix verified: not verified
+- Fix verified: page half fixed (PR 35, 2026-11-05): page and `rb approve` show `config_path` and the first 12 characters of `config_sha256`, and approval verifies both. Open: approval still runs inside the single-threaded vault server.
 - Prevention: a `test_rb_pending.py` assertion that the page contains `config_path`.
 - Evidence: `vault-export/dashboard/rb_pending.py:51` 「% (_e(jid), _e(r.get("node", "")), _e(r.get("config_name", "")), _e(gpus),」; vault `dashboard/server.py:1344` 「server = HTTPServer((args.host, args.port), Handler)」.
 
@@ -288,7 +288,7 @@ No S0 item: nothing has run on node1, so no anti-goal can have occurred.
 - Cause (inferred): rule 3 was written from `store_incoming` only.
 - How it surfaced: this review.
 - Fix: n/a. Direction: change the sentence to name both behaviours.
-- Fix verified: n/a
+- Fix verified: n/a: `AGENTS.md` rule 3 now names both behaviours (2026-11-05).
 - Prevention: none needed beyond the corrected sentence.
 - Evidence: `rb_host/server.py:174-176` 「if verdict != "ok":」 / 「dest.unlink()」.
 
