@@ -3,6 +3,17 @@
 Laptop-to-node bridge for Claude sessions: an MCP server (`rb-host-mcp`) and an approval CLI (`rb`).
 The node side (`rb-node`) is stdlib-only and is reached over SSH.
 
+## How it fits together
+
+![research-bridge concept](docs/images/concept.svg)
+
+- Every SSH connection is opened by the laptop. Replies, events and files come back as the answer to a laptop request (`poll`, `read_doc`, `fetch_file`, ...); the node never connects to the laptop.
+- `submit_job` and `cancel_job` only write a `pending_approval` record to the laptop ledger. A job reaches the node only after you approve it with `rb approve` or the dashboard's `/rb/approve` and type the approval passphrase. The node checks the key derived from it against a stored verifier, so the bridge key alone cannot queue or cancel a job.
+- Documents and files leave the node only through the withheld-series filter, and the laptop checks them again before storing; failures go to `quarantine/`.
+- The harness channel uses its own SSH key and writes only to staging directories; you copy files from there by hand.
+
+Source: `docs/superpowers/specs/2026-10-27-research-bridge-design.md` §6 and the hard rules in `AGENTS.md`. The figure is a hand-written SVG (`docs/images/concept.svg`); edit it as text.
+
 ## What it looks like
 
 Screenshots from `scripts/demo_dashboard.py`. They show the two pages the 8765 dashboard serves, using made-up data: a throwaway local node, two jobs and fake GPUs. No real node, ledger or vault file is involved.
