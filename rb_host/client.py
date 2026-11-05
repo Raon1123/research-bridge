@@ -164,12 +164,13 @@ class NodeClient:
         want = None
         total = 0
         too_large = False
+        stalled = False
         with open(str(part), "wb") as fh:
             while True:
                 res = self.call("get_file", kind=kind, ref=ref, seq=seq)
                 data = base64.b64decode(res["data_b64"])
                 if not data and not res.get("eof"):
-                    too_large = True  # an empty non-eof chunk makes no progress
+                    stalled = True  # an empty non-eof chunk makes no progress
                     break
                 total += len(data)
                 if total > MAX_FILE:  # hard rule 5 / PM-10: a node must not fill the disk
@@ -181,9 +182,12 @@ class NodeClient:
                     want = res.get("sha256")
                     break
                 seq += 1
+        if stalled:
+            part.unlink()
+            raise RemoteError("stalled", "node sent an empty chunk without eof")
         if too_large:
             part.unlink()
-            raise RemoteError("too_large", "download over %d bytes or not progressing" % MAX_FILE)
+            raise RemoteError("too_large", "download exceeds %d bytes" % MAX_FILE)
         got = h.hexdigest()
         if want != got:
             part.unlink()

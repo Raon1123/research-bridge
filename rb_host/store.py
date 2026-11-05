@@ -116,9 +116,14 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             files.append(entry)
             continue
         # never collide with the files this module writes, or with an earlier attachment
-        if name.lower() in _OWN_FILES or name.lower() in used:
-            name = "%d-%s" % (idx, name)
+        while name.lower() in _OWN_FILES or name.lower() in used:
+            name = "%d-%s" % (idx, name)  # repeated until unique ("2-a.txt" may already exist)
             entry["name"] = name
+        if not _within(inbox / name, inbox) or not _within(quar / name, quar):
+            entry.update(status="quarantined", reason="bad_name")
+            del entry["name"]
+            files.append(entry)
+            continue
         used.add(name.lower())
         name_bad = wh.name_hit(remote) or wh.name_hit(str(att.get("original", "")))
         # keep the node's extension for check_file; the index prefix keeps it from being CLAUDE.md

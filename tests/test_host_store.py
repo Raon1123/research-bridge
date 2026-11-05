@@ -161,9 +161,21 @@ def test_empty_non_eof_chunks_do_not_spin(tmp_path):
     env = {"PYTHONPATH": str(Path(__file__).resolve().parents[1])}
     dest = tmp_path / "dl" / "x.bin"
     with NodeClient("x", ssh_argv=[sys.executable, str(script)], env=env) as c:
-        with pytest.raises(RemoteError):
+        with pytest.raises(RemoteError) as ei:
             c.get_file("doc", "x.bin", dest)
+    assert ei.value.code == "stalled"
     assert list(dest.parent.iterdir()) == []
+
+
+def test_index_rename_cannot_collide(tmp_path):
+    names = ["2-a.txt", "a.txt", "a.txt"]
+    item = {"id": "m2", "body": "", "attachments": [{"name": n} for n in names]}
+    cl = FakeClient({"2-a.txt": b"first", "a.txt": b"dup"})
+    out = store_incoming(_hcfg(tmp_path), "node1", item, cl)
+    inbox = tmp_path / "data" / "inbox" / "node1" / "m2"
+    assert len(set(n.lower() for n in out["files"])) == 3
+    assert (inbox / "2-a.txt").read_bytes() == b"first"
+    assert sorted((inbox / n).read_bytes() for n in out["files"]) == [b"dup", b"dup", b"first"]
 
 
 def test_poll_survives_oserror_item(tmp_path, monkeypatch):
