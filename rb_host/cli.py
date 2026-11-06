@@ -148,6 +148,37 @@ def _board(args: argparse.Namespace) -> int:
     return 0
 
 
+def _share(args: argparse.Namespace) -> int:
+    from . import share
+    if args.action == "serve":
+        from . import share_serve
+        try:
+            cfg = jobs.load_cfg()
+            share_serve.serve(share.share_dir(cfg), args.bind, args.port)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            print("error: %s" % exc)
+            return 1
+        return 0
+    try:
+        cfg = jobs.load_cfg()
+    except FileNotFoundError:
+        print("error: no host.json; see docs/manual/hub-setup.md")
+        return 1
+    if args.days < 0:
+        print("error: --days must be >= 0")
+        return 1
+    res = share.build(cfg, args.days, args.tier)
+    for p in res["paths"]:
+        print(p)
+    conf = cfg.share if isinstance(cfg.share, dict) else {}
+    if not isinstance(conf.get("labels"), list):
+        print('labels not configured: all project and track labels shown as "other"')
+    print("dropped %d" % res["dropped"])
+    if res["dropped"] > 0:
+        sys.stderr.write("dropped %d item(s) by the withheld re-check\n" % res["dropped"])
+    return 1 if res["dropped"] > 0 else 0
+
+
 def _config(args: argparse.Namespace) -> int:
     import json
     from . import configure as c
@@ -224,6 +255,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     bw = bs.add_parser("show", help="print the board from the cache; opens no connection")
     bw.add_argument("--json", action="store_true")
     b.set_defaults(fn=_board)
+    sh = sub.add_parser("share", help="shared status page snapshot (no node contact)")
+    ss = sh.add_subparsers(dest="action", required=True)
+    sb = ss.add_parser("build", help="write snapshot.json and index.html from the local caches")
+    sb.add_argument("--days", type=int, default=7)
+    sb.add_argument("--tier", choices=["shared", "owner"], default="shared")
+    sv = ss.add_parser("serve", help="serve the shared directory read-only")
+    sv.add_argument("--port", type=int, default=8766)
+    sv.add_argument("--bind", default="127.0.0.1")
+    sh.set_defaults(fn=_share)
     c = sub.add_parser("config", help="write and check host.json and private/local.json")
     cs = c.add_subparsers(dest="action", required=True)
     cs.add_parser("path", help="print where the config files are")
@@ -240,7 +280,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cr = cs.add_parser("remove-node", help="delete a node entry")
     cr.add_argument("name")
     cv = cs.add_parser("set", help="set one value: data_root, withheld_patterns_file, "
-                       "board.portfolio|priorities, nodes.<n>.alias|harness_alias, "
+                       "board.portfolio|priorities, share.calendar_sessions|calendar_status|runs, nodes.<n>.alias|harness_alias, "
                        "nodes.<n>.board.state|events|kanban")
     cv.add_argument("key")
     cv.add_argument("value")
