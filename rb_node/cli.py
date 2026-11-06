@@ -7,7 +7,7 @@ import sys
 from typing import List, Optional
 
 SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive",
-               "approve-key", "config")
+               "approve-key", "config", "git-status", "install-record")
 
 
 def _not_implemented(name: str) -> int:
@@ -136,7 +136,41 @@ def _run_job(args: List[str]) -> int:
     if not argv or not gpus or ns.gpu_hours <= 0:
         sys.stderr.write("rb-node run-job: invalid arguments\n")
         return 2
-    return run_job(gpus, ns.gpu_hours, ns.job_id, argv, Path(cfg.mailbox_root) / "state")
+    return run_job(gpus, ns.gpu_hours, ns.job_id, argv, Path(cfg.mailbox_root) / "state",
+                   trm_root=Path(cfg.trm_root))
+
+
+def _git_status() -> int:
+    """Print the git state of trm_root and the install record (node console, read only)."""
+    import json
+    from pathlib import Path
+    from . import gitinfo
+    from .config import load_config
+    try:
+        cfg = load_config()
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("rb-node: %s\n" % exc)
+        return 1
+    print(json.dumps({"trm": gitinfo.repo_state(Path(cfg.trm_root)),
+                      "install": gitinfo.read_install(Path(cfg.mailbox_root).parent)},
+                     indent=2))
+    return 0
+
+
+def _install_record(rest: List[str]) -> int:
+    """Write ~/.research-bridge/install.json from a research-bridge checkout (node-install.sh)."""
+    from pathlib import Path
+    from . import __version__, gitinfo
+    from .config import DEFAULT_RB, _home
+    if len(rest) != 1:
+        sys.stderr.write("usage: rb-node install-record <research-bridge checkout>\n")
+        return 2
+    rec = gitinfo.write_install(Path(_home(DEFAULT_RB)), Path(rest[0]), __version__)
+    src = rec["source"]
+    print("install record: version %s, commit %s%s" % (
+        rec["version"], (src.get("head") or "unknown")[:12],
+        " (dirty)" if src.get("dirty_files") else ""))
+    return 0
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -188,6 +222,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _approve_key(_rest)
     if ns.command == "config":
         return _config(_rest)
+    if ns.command == "git-status":
+        return _git_status()
+    if ns.command == "install-record":
+        return _install_record(_rest)
     return _not_implemented(ns.command)
 
 

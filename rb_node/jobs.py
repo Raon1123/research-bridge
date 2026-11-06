@@ -8,7 +8,7 @@ import shlex
 from pathlib import Path
 from typing import Any, List, Optional, Set
 
-from . import approval
+from . import approval, gitinfo
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _mkdir, _read_json, _write_json
 from .protocol import ProtocolError
@@ -150,6 +150,9 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     argv = ["rb-node", "run-job", "--gpus", ",".join(str(g) for g in gpus),
             "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
     argv += [t.replace("{config}", str(config_path)) for t in cfg.job_template]
+    git = gitinfo.repo_state(Path(cfg.trm_root))  # pinned at submit; run-job records the start state
+    _mkdir(state / "git")
+    _write_json(state / "git" / (job_id + ".json"), git)
     body = "#!/bin/bash\nexec %s\n" % " ".join(shlex.quote(a) for a in argv)
     queue = Path(cfg.queue_dir)
     jobs_dir = queue / "jobs"
@@ -159,7 +162,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     with open(str(tmp), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(body)
     os.replace(str(tmp), str(target))
-    result = {"queued": str(target)}
+    result = {"queued": str(target), "git": {k: git.get(k) for k in ("head", "dirty_files") if k in git}}
     _idem_store(state, key, "job_submit", result)
     return result
 

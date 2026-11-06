@@ -7,8 +7,9 @@ import signal
 import subprocess
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
+from . import gitinfo
 from .mailbox import Mailbox, _mkdir, _write_json
 
 KILL_GRACE = 60.0
@@ -40,7 +41,8 @@ def _stop(proc: "subprocess.Popen", grace: float, posix: bool) -> None:
 
 
 def run_job(gpus: List[int], gpu_hours: float, job_id: str, argv: List[str], state_dir: Path,
-            poll_interval: float = CANCEL_POLL, kill_grace: float = KILL_GRACE) -> int:
+            poll_interval: float = CANCEL_POLL, kill_grace: float = KILL_GRACE,
+            trm_root: Optional[Path] = None) -> int:
     state_dir = Path(state_dir)
     jobs = state_dir / "jobs"
     _mkdir(jobs)
@@ -50,6 +52,16 @@ def run_job(gpus: List[int], gpu_hours: float, job_id: str, argv: List[str], sta
     start = time.time()
     base = {"job_id": job_id, "gpus": list(gpus), "gpu_hours": gpu_hours,
             "started": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    if trm_root is not None:
+        # git at submit (pinned by job_submit) vs at start: a different head means the tree moved
+        # while the job waited in the queue.
+        start_git = gitinfo.repo_state(Path(trm_root))
+        base["git_start"] = {k: start_git.get(k) for k in ("head", "branch", "dirty_files")}
+        try:
+            sub = json.loads((state_dir / "git" / (job_id + ".json")).read_text(encoding="utf-8"))
+            base["git_submit"] = {k: sub.get(k) for k in ("head", "branch", "dirty_files")}
+        except (OSError, ValueError):
+            pass
     _write_json(record, dict(base, status="running"))
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpus)
@@ -90,7 +102,8 @@ def run_job(gpus: List[int], gpu_hours: float, job_id: str, argv: List[str], sta
     _write_json(record, dict(base, status=status, exit_code=rc,
                              ended=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                              seconds=round(time.time() - start, 3)))
-    Mailbox(state_dir.parent).post_out(
-        "event", json.dumps({"event": "job_finished", "job_id": job_id, "status": status}),
-        [], None)
+    event = {"event": "job_finished", "job_id": job_id, "status": status}
+    if "git_start" in base:
+        event["git_head"] = base["git_start"].get("head")
+    Mailbox(state_dir.parent).post_out("event", json.dumps(event), [], None)
     return rc

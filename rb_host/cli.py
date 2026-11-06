@@ -148,6 +148,25 @@ def _board(args: argparse.Namespace) -> int:
     return 0
 
 
+def _git_status(args: argparse.Namespace) -> int:
+    """Ask the node for the git state of its research tree and installed code (read only)."""
+    import json
+    from .client import NodeClient
+    try:
+        cfg = jobs.load_cfg()
+        name = args.node or (next(iter(cfg.nodes)) if len(cfg.nodes) == 1 else "")
+        if not name:
+            print("error: --node is required")
+            return 1
+        with NodeClient(cfg.alias(name)) as c:
+            res = c.call("git_status")
+    except (FileNotFoundError, ValueError, RemoteError, TransportError) as exc:
+        print("error: %s" % exc)
+        return 1
+    print(json.dumps(res, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _share(args: argparse.Namespace) -> int:
     from . import share
     if args.action == "serve":
@@ -255,6 +274,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     bw = bs.add_parser("show", help="print the board from the cache; opens no connection")
     bw.add_argument("--json", action="store_true")
     b.set_defaults(fn=_board)
+    g = sub.add_parser("git-status", help="git state of the node's research tree and installed code")
+    g.add_argument("--node")
+    g.set_defaults(fn=_git_status)
     sh = sub.add_parser("share", help="shared status page snapshot (no node contact)")
     ss = sh.add_subparsers(dest="action", required=True)
     sb = ss.add_parser("build", help="write snapshot.json and index.html from the local caches")
