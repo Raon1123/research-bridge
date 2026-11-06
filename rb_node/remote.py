@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List
 
-from . import __version__, approval, jobs, spawn
+from . import __version__, approval, gitinfo, jobs, spawn
 from .audit import Audit
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _read_json
@@ -55,7 +55,7 @@ class Node:
             "get_file": self.get_file, "read_doc": self.read_doc,
             "queue_status": self.queue_status, "gpu_status": self.gpu_status,
             "job_submit": self.job_submit, "job_cancel": self.job_cancel,
-            "approve_params": self.approve_params,
+            "approve_params": self.approve_params, "git_status": self.git_status,
         }  # type: Dict[str, Callable[[dict], Any]]
 
     # -- messages ----------------------------------------------------------
@@ -348,6 +348,14 @@ class Node:
 
     def job_cancel(self, args: dict) -> dict:
         return jobs.cancel(self.cfg, self.mb, args)
+
+    def git_status(self, args: dict) -> dict:
+        """Read-only git state of trm_root and of the installed rb_node (no names, no diffs)."""
+        trm = gitinfo.mask_state(gitinfo.repo_state(Path(self.cfg.trm_root)), self.withheld)
+        inst = gitinfo.read_install(Path(self.cfg.mailbox_root).parent)
+        if inst and isinstance(inst.get("source"), dict):
+            inst = dict(inst, source=gitinfo.mask_state(inst["source"], self.withheld))
+        return {"trm": trm, "install": inst}
 
     def approve_params(self, args: dict) -> dict:
         return approval.params(Path(self.cfg.approval_path))

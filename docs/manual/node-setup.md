@@ -99,3 +99,10 @@ An approved job's queue file wraps the template command in `rb-node run-job --gp
 ## 9. Upgrading and removing
 
 Upgrade: copy the new `rb_node/` over the old one (same LF rule) with the user's go-ahead; `node.json` and the mailbox are kept. Remove: delete the two `authorized_keys` lines, then `~/.local/bin/rb-node`, `~/.local/share/research-bridge/` and, once its contents are no longer needed, `~/.research-bridge/`.
+
+## 10. Scripts, git tracking, live research session
+
+- `scripts/node-install.sh` installs or updates `rb_node` from a checkout (`--update` runs `git pull --ff-only`, never a push), writes the wrapper and `node.json`, and records the installed commit in `~/.research-bridge/install.json`. It prints the two `authorized_keys` lines and edits that file only with `--apply-authorized-keys`. `--dry-run` shows the steps.
+- `scripts/hub-connect.sh` (hub side) creates the two keys, prints or (`--apply-ssh-config`) appends the `~/.ssh/config` block, shows the host-key fingerprint to verify, and registers the node in `host.json`.
+- Git tracking, read only and without file names or commit subjects: `rb-node git-status` (node console), the `git_status` bridge op and `rb git-status --node <n>` (hub) report branch, HEAD, dirty-file count, ahead/behind and the origin URL (credentials removed) for `trm_root` and for the installed code. `job_submit` pins the `trm_root` HEAD in `state/git/<job_id>.json`; `run-job` records `git_submit` and `git_start` in the job record, and the `job_finished` event carries `git_head`.
+- `scripts/trm-link.sh [trm_dir] [--apply]` registers `rb-node serve-local` as a project MCP server so a live session in `trm` can read hub messages and `reply` / `post_event`. Open question (issue): the auto-spawned responder and a live session can both answer the same message.
