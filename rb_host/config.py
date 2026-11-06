@@ -16,6 +16,7 @@ class HostConfig:
     data_root: str = DEFAULT_ROOT
     withheld_patterns_file: str = DEFAULT_WITHHELD
     board: Dict[str, str] = field(default_factory=dict)  # laptop source paths for rb board
+    share: Dict[str, Any] = field(default_factory=dict)  # rb share: calendar_sessions|calendar_status|runs paths, labels list
 
     def alias(self, node: str) -> str:
         entry = self.nodes.get(node)
@@ -29,5 +30,5 @@ def load_host_config(path: Optional[Path] = None) -> HostConfig:
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("host config must be a JSON object: %s" % p)
-    kw = {k: data[k] for k in ("nodes", "data_root", "withheld_patterns_file", "board") if k in data}
+    kw = {k: data[k] for k in ("nodes", "data_root", "withheld_patterns_file", "board", "share") if k in data}
     return HostConfig(**kw)

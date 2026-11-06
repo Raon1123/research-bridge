@@ -22,6 +22,7 @@ REPO = Path(__file__).resolve().parent.parent
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 TOP_KEYS = ("data_root", "withheld_patterns_file")
 BOARD_KEYS = ("portfolio", "priorities")
+SHARE_KEYS = ("calendar_sessions", "calendar_status", "runs")
 NODE_KEYS = ("alias", "harness_alias")
 NODE_BOARD_KEYS = ("state", "events", "kanban")
 
@@ -77,7 +78,7 @@ def remove_node(name: str) -> None:
 
 def set_key(key: str, value: str) -> None:
     """Dotted keys: data_root, withheld_patterns_file, board.<portfolio|priorities>,
-    nodes.<name>.<alias|harness_alias>, nodes.<name>.board.<state|events|kanban>."""
+    share.<calendar_sessions|calendar_status|runs>, nodes.<name>.<alias|harness_alias>, nodes.<name>.board.<state|events|kanban>."""
     path = host_path()
     data = _load(path)
     parts = key.split(".")
@@ -85,6 +86,8 @@ def set_key(key: str, value: str) -> None:
         data[key] = value
     elif len(parts) == 2 and parts[0] == "board" and parts[1] in BOARD_KEYS:
         data.setdefault("board", {})[parts[1]] = value
+    elif len(parts) == 2 and parts[0] == "share" and parts[1] in SHARE_KEYS:
+        data.setdefault("share", {})[parts[1]] = value
     elif len(parts) >= 3 and parts[0] == "nodes":
         node = data.get("nodes", {}).get(parts[1])
         if node is None:
