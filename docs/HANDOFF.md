@@ -6,6 +6,27 @@ Read `AGENTS.md` first (rules, layout, test commands).
 
 > research-bridge (`main` at the merge of PR 35) is built and reviewed, and the pre-live-run security fixes from the whole-branch review are merged (PRs 32–35, 2026-11-05). Nothing has been installed on node1 and no SSH key or config has been created. Development continues on another machine (a development server) from 2026-11-05; the laptop stays the **hub** (it runs the 8765 dashboard, holds the SSH keys and `host.json`, and is where `rb approve` is typed). Next: the user decides items 2–4 below and does A1–A3, then the session runs B1 (with the pattern file), B2 (with the two new checks) and B3, and records results.
 
+## Shared status page (2026-11-06, development server)
+
+Built on branch `claude/dashboard-planning-proposal-39dfca` (commits e68109a, 218d60a), design `docs/design/2026-11-06-shared-status-page.md` steps 3–4: `rb_host/share.py` builds `share/snapshot.json` and `index.html` from allowlisted fields of the session-calendar files, the run view files, the board cache and the ledger (withheld re-check, atomic writes, one audit line); `rb_host/share_serve.py` serves exactly `/`, `/index.html` and `/snapshot.json` (GET/HEAD, loopback by default, refuses a non-shared tier); 21 tests in `tests/test_share.py`. It was built without the vault, so the input formats are assumed (plan `docs/superpowers/plans/2026-11-06-shared-status-page.md` Global Constraints §A).
+
+Run on the laptop:
+
+    rb config set share.calendar_sessions <path>
+    rb config set share.calendar_status <path>
+    rb config set share.runs <path>
+    # add "labels": [...] to the share block of host.json by hand (no label allowlist: every label shows as "other")
+    rb share build
+    rb share serve --port <SHARE_PORT>        # default 8766, bind 127.0.0.1; --bind 0.0.0.0 for the LAN
+
+What the user does next:
+
+- (a) Provide masked samples of the session-calendar sessions and status files and of the runs view data, so step 2 can replace the assumed formats.
+- (b) Decide issue #39 open questions 2–6 (design §15).
+- (c) Step 5: apply the `vault-export/dashboard/` `/share` loopback patch and the link from `/board` (not started).
+- (d) Step 6: live check on the laptop and from another device (not started).
+- (e) The two parked items (no `Host` header check on `rb share serve`; owner files under `share/owner/`) are the user's call; the defaults stand.
+
 ## Working from the development server
 
 Clone or pull `main`; run `uv sync --extra host` as in `AGENTS.md`. What does not carry over from the laptop:
@@ -64,7 +85,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 
 ## Verification commands
 
-    uv run --extra host pytest -q            # laptop and development server; 294 passed on 2026-11-05
+    uv run --extra host pytest -q   # 315 passed on 2026-11-06 (development server)
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
     curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
 

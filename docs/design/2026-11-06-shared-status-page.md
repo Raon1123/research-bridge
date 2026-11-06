@@ -1,10 +1,11 @@
 # Shared research status page (session calendar + experiment progress) — design
 
-Date: 2026-11-06 · Status: draft · Author: research-bridge session "대시보드 기획 및 제안" · Code (proposed): `rb_host/share.py`, `rb share build|serve` CLI, `vault-export/dashboard/` (one link on existing pages) · Data (proposed): `D:/raw/research-bridge/share/` (laptop snapshot)
+Date: 2026-11-06 · Status: built (steps 3–4; steps 2, 5, 6 open) · Author: research-bridge session "대시보드 기획 및 제안" · Code (proposed): `rb_host/share.py`, `rb share build|serve` CLI, `vault-export/dashboard/` (one link on existing pages) · Data (proposed): `D:/raw/research-bridge/share/` (laptop snapshot)
 
 Status history:
 - 2026-11-06 draft (proposal; nothing built)
 - 2026-11-06 audience decided by the user: only the user's own devices (Open question 1). Outside-viewer tier removed.
+- 2026-11-06 built: rb_host/share.py, rb_host/share_serve.py, rb share build|serve, tests/test_share.py (commits e68109a, 218d60a; suite 315 passed). Steps 2, 5 and 6 of §9 still open.
 
 ## 1. Intent
 
@@ -85,9 +86,9 @@ priorities live.json ──────┘
 | Name | Kind | Notes |
 |---|---|---|
 | `rb share build [--days N] [--tier owner\|shared]` | internal (CLI) | Read-only over sources. Exit 0 if a source is missing; the section shows `unavailable`. Exit 1 if the withheld re-check drops anything, with a count (no content) on stderr. |
-| `rb share serve [--port <SHARE_PORT>] [--bind 127.0.0.1\|0.0.0.0]` | internal (CLI) | Default bind loopback. Serves exactly two files. |
+| `rb share serve [--port <SHARE_PORT>] [--bind 127.0.0.1\|0.0.0.0]` | internal (CLI) | Default bind loopback; default port 8766 (`<SHARE_PORT>`). Serves exactly two files. Threaded server with a 10 s handler timeout; the page refreshes every 300 s through a meta tag; stale flags are as of build time. |
 | `GET /share` on 8765 | read, loopback only | Owner tier. Patch in `vault-export/dashboard/`. |
-| `share/snapshot.json` | file | Schema in §8; `schema_version` field. |
+| `share/snapshot.json` | file | Schema in §8; `schema_version` field. The owner tier is written to `share/owner/` (outside the served root); `rb share serve` refuses a root whose `snapshot.json` has `tier` other than `shared`. |
 
 The MCP tool set is unchanged.
 
@@ -126,31 +127,45 @@ The numbers above are layout examples, not data.
 | Stages | board cache `node1:events` (blocked, unified-board OQ6) | track, stage code, age |
 | Priorities (owner tier only) | `live.json` | as the unified board |
 
+The session-calendar and run-view file shapes in this table are assumed, not read from the laptop files; they are documented in the [plan, Global Constraints §A](../superpowers/plans/2026-11-06-shared-status-page.md) and must be verified against the real files (§9 step 2).
+
 Weekly cost (`status.json` `cost_usd`) is owner tier only by default (Open question 5). No ledger record kinds change.
 
 ## 9. Scope of this phase
 
 0. **User:** answer Open questions 1–2 (audience and surface). Everything after depends on them.
 1. **User:** apply the unified-board patch and PM-03 files, restart 8765 (`HANDOFF.md` §Before B3 item 3). `/board` currently returns 404.
-2. Read the exact output files of `render.py` and `runs_view.py` (read-only) and fix the source table in §8; record any field that carries free text.
-3. `rb_host/share.py`: allowlist reducers per source, withheld re-check, snapshot writer; tests with fixture copies of the session-calendar and run-view outputs (never the live vault).
-4. `index.html` renderer (inline data, no external scripts) and `rb share serve`.
-5. `vault-export/dashboard/` patch for `GET /share` (loopback) and a link from `/board`; user applies and restarts.
-6. Live check: build, open owner and LAN tiers, try vault paths through the share port.
+2. (open) Read the exact output files of `render.py` and `runs_view.py` (read-only) and fix the source table in §8; record any field that carries free text.
+3. (done 2026-11-06) `rb_host/share.py`: allowlist reducers per source, withheld re-check, snapshot writer; tests with fixture copies of the session-calendar and run-view outputs (never the live vault).
+4. (done 2026-11-06) `index.html` renderer (inline data, no external scripts) and `rb share serve`.
+5. (open) `vault-export/dashboard/` patch for `GET /share` (loopback) and a link from `/board`; user applies and restarts.
+6. (open) Live check: build, open owner and LAN tiers, try vault paths through the share port.
 
 ## 10. Verification
 
 | Goal / anti-goal | Check | Kind | Status |
 |---|---|---|---|
-| G1 | `tests/test_share.py::test_all_sections_present` | unit test | not run (not built) |
-| G2 | `tests/test_share.py::test_unknown_source_field_not_copied` (add a field to a fixture; it must not appear) | unit test | not run |
-| G3 | `tests/test_share.py::test_serve_only_two_files` (`/`, `/../`, `/md?…`, encoded traversal, symlink → 404); live: same paths against `<HUB_LAN_IP>:<SHARE_PORT>` | unit test; live check | not run |
-| G4 | `tests/test_share.py::test_stale_and_failed_sources_marked` | unit test | not run |
-| G5 | `tests/test_share.py::test_sources_unchanged` (sha256 before and after) | unit test | not run |
-| G6 | `tests/test_share.py::test_shared_tier_has_no_waiting_list_or_pending_details` | unit test | not run |
-| Anti-goal: withheld | `tests/test_share.py::test_withheld_label_dropped`, `test_audit_has_no_payload` | unit test | not run |
-| Anti-goal: leaves the LAN | `tests/test_share.py::test_no_network_client_imported` (builder imports no HTTP client); manual: share port not forwarded on the router | unit test; manual | not run |
+| G1 | `tests/test_share.py::test_all_sections_present` | unit test | passes (2026-11-06, dev server) |
+| G2 | `tests/test_share.py::test_unknown_source_field_not_copied` (add a field to a fixture; it must not appear) | unit test | passes (2026-11-06, dev server) |
+| G3 | `tests/test_share.py::test_serve_only_two_files` (`/`, `/../`, `/md?…`, encoded traversal, symlink → 404); live: same paths against `<HUB_LAN_IP>:<SHARE_PORT>` | unit test; live check | unit test passes (2026-11-06, dev server); live check not run |
+| G4 | `tests/test_share.py::test_stale_and_failed_sources_marked` | unit test | passes (2026-11-06, dev server) |
+| G5 | `tests/test_share.py::test_sources_unchanged` (sha256 before and after) | unit test | passes (2026-11-06, dev server) |
+| G6 | `tests/test_share.py::test_shared_tier_has_no_waiting_list_or_pending_details` | unit test | passes (2026-11-06, dev server) |
+| Anti-goal: withheld | `tests/test_share.py::test_withheld_label_dropped`, `test_audit_has_no_payload` | unit test | passes (2026-11-06, dev server) |
+| Anti-goal: leaves the LAN | `tests/test_share.py::test_no_network_client_imported` (builder imports no HTTP client); manual: share port not forwarded on the router | unit test; manual | unit test passes (2026-11-06, dev server); manual not run |
 | Anti-goal: tool set | existing tool-set test | unit test | passes today |
+| Extra: CLI variants | `tests/test_share.py::test_cli_build_variants` | unit test | passes (2026-11-06, dev server) |
+| Extra: label allowlist | `tests/test_share.py::test_labels_not_on_allowlist_become_other` | unit test | passes (2026-11-06, dev server) |
+| Extra: atomic write | `tests/test_share.py::test_snapshot_written_atomically` | unit test | passes (2026-11-06, dev server) |
+| Extra: no script or external URL | `tests/test_share.py::test_html_has_no_script_or_external_url` | unit test | passes (2026-11-06, dev server) |
+| Extra: robustness (G5) | `tests/test_share.py::test_bad_records_do_not_raise` | unit test | passes (2026-11-06, dev server) |
+| Extra: node cache strings (G2, withheld) | `tests/test_share.py::test_node_cache_strings_are_checked` | unit test | passes (2026-11-06, dev server) |
+| Extra: node names (G2, withheld) | `tests/test_share.py::test_bad_node_name_skipped` | unit test | passes (2026-11-06, dev server) |
+| Extra: withheld source error (G4) | `tests/test_share.py::test_withheld_source_error_reported` | unit test | passes (2026-11-06, dev server) |
+| Extra: idle connection | `tests/test_share.py::test_idle_connection_does_not_block` | unit test | passes (2026-11-06, dev server) |
+| Extra: track order | `tests/test_share.py::test_tracks_order_independent` | unit test | passes (2026-11-06, dev server) |
+| Extra: negative days | `tests/test_share.py::test_cli_negative_days_rejected` | unit test | passes (2026-11-06, dev server) |
+| Extra: PUT response (G3) | `tests/test_share.py::test_put_has_plain_405_with_headers` | unit test | passes (2026-11-06, dev server) |
 
 ## 11. Decided by the user
 
@@ -170,7 +185,18 @@ Weekly cost (`status.json` `cost_usd`) is owner tier only by default (Open quest
 
 | # | Ruling | Cost if wrong | Where recorded |
 |---|---|---|---|
-| — | none yet | — | — |
+| 1 | Input formats of session-calendar sessions/status and run-view files are assumed (no vault on the build machine); reducers tolerate missing or wrong-typed fields. | Reducers rewritten after a masked laptop sample. | Plan Global Constraints §A; this log |
+| 2 | Owner tier is written to `share/owner/` (outside the served root); `rb share serve` refuses a root whose snapshot has tier other than `shared`. | None (safety). | `share.py`, `share_serve.py`, `test_shared_tier_has_no_waiting_list_or_pending_details` |
+| 3 | `index.html` has no `<script>`; tables are rendered in Python with `html.escape`. | None. | `share_serve.py`, `test_html_has_no_script_or_external_url` |
+| 4 | Label allowlist absent: every label is `other` (Open question 4 default kept); `rb share build` prints a hint. | User adds `share.labels`. | `share.py`, `cli.py` |
+| 5 | `gpu_hours_period` is summed from ledger job records created in the period (Open question 5 default: GPU-hours yes, cost no). | Wrong source if node-side GPU-hours are wanted. | `share.py` `_ledger` |
+| 6 | The audit line carries source ids (§7), not session labels or timestamps. | None. | `test_audit_has_no_payload` |
+| 7 | Three tasks were implemented in parallel by subagents with disjoint files; one integration fix round (tracks wording `unavailable (<error>)`, `//` raw-path check, dropped count on stderr). | None. | Plan |
+| 8 | Branch not rebased on `claude/linux-hub` (PR #38 unmerged); edits to `config.py`, `cli.py`, `configure.py` kept minimal. | A small conflict when #38 merges. | This log |
+| 9 | Routines are counted in totals only (no per-day row, no active hours); run `finished`/`failed` counted on the end date, `started` on the start date; `fetched_at` of calendar and runs files is the file mtime; unset source path gives error `not_configured`, missing file `missing`. | A per-day routine row or different attribution needed later. | `share.py` |
+| 10 | Whole-branch review findings fixed in one wave: no exception leaves `build` (OverflowError, OSError, non-UTF-8), node-cache `fetched_at` normalised and error codes / node names shape-checked, page rendered before either file is written, failed runs without an end date counted on the start date, `withheld:patterns` source reports a broken pattern file, newest event per track chosen by timestamp (a newest event with a bad stage drops the track), ThreadingHTTPServer with a 10 s handler timeout, request log never echoes an unknown path, own 404/405 bodies with uniform headers. | None. | Commit 218d60a, tests above |
+| 11 | Parked: no `Host` header check on `rb share serve` (the LAN server is reached by IP; a check would block the intended use; exposure is counts only). | A DNS-rebinding page on a LAN device could read the shared snapshot. | This log |
+| 12 | Parked: owner files stay at `share/owner/`, under the share directory; they are unreachable through `rb share serve` (exact-path allowlist, tested) and `share/` must never be served by a generic static server. | A leak if someone serves `share/` with another server. | Plan §B, this log |
 
 ## 14. Left to the builder
 
