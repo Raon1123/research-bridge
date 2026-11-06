@@ -87,6 +87,12 @@ def env(tmp_path, monkeypatch):
     stat = _write(cal / "status.json", {"generated": "2026-11-06T00:00:00Z", "cost_usd": 12.5})
     runs = _write(tmp_path / "runs" / "runs.json", _runs())
     wp = _write(tmp_path / "withheld.json", {"patterns": []})
+    port = _write(tmp_path / "board-fixture" / "portfolio.json", {
+        "columns": ["ready"], "papers": [{"paper_id": "p0", "short": "P0", "column": "ready",
+                                          "tasks": []}]})
+    live = _write(tmp_path / "board-fixture" / "live.json", {
+        "meta": {"refreshed": "2026-11-03 11:02"}, "items": [],
+        "ranking": {"tiers": []}})
     # n1:queue is stale (old fetched_at, short cadence); n1:gpu fresh; n1:events fresh
     _board_file(root, "queue", [{"state": "queued", "count": 2}, {"state": "running", "count": 1},
                                 {"state": "done", "count": 5}, {"state": "failed", "count": 1}],
@@ -110,9 +116,10 @@ def env(tmp_path, monkeypatch):
         "nodes": {"n1": {"alias": "x"}}, "data_root": str(root),
         "withheld_patterns_file": str(wp),
         "share": {"calendar_sessions": str(sess), "calendar_status": str(stat),
-                  "runs": str(runs), "labels": ["ARG"]}}), encoding="utf-8")
+                  "runs": str(runs), "labels": ["ARG"]},
+        "board": {"portfolio": str(port), "priorities": str(live)}}), encoding="utf-8")
     monkeypatch.setenv("RB_HOST_CONFIG", str(host))
-    inputs = [sess, stat, runs, wp, root / "ledger.jsonl"] + sorted((root / "board").glob("*.json"))
+    inputs = [sess, stat, runs, wp, port, live, root / "ledger.jsonl"] + sorted((root / "board").glob("*.json"))
     return {"tmp": tmp_path, "root": root, "host": host, "inputs": inputs,
             "cfg": config.load_host_config(host), "sessions": sess}
 
@@ -161,12 +168,13 @@ def test_all_sections_present(env):
     assert set(exp["queue"]) == {"queued", "running", "done", "failed", "pending_approvals"}
     assert {"in_use", "total", "gpu_hours_period"} <= set(exp["gpu"])
     assert set(_src(snap)) == {"calendar:sessions", "calendar:status", "runs", "n1:queue",
-                               "n1:gpu", "n1:events", "rb:ledger"}
+                               "n1:gpu", "n1:events", "rb:ledger",
+                               "withheld:patterns"}
     # sessions: ARG laptop 1.5 h + a record without end (0 h); ZZZ -> 'gpu-box' maps to server
     day = _days_ago(1).isoformat()
     row = [r for r in snap["sessions"]["per_day"]
            if r["date"] == day and r["lane"] == "laptop" and r["project"] == "ARG"]
-    assert len(row) == 1 and row[0]["count"] == 2 and abs(row[0]["active_h"] - 1.2) < 0.31
+    assert len(row) == 1 and row[0]["count"] == 2 and row[0]["active_h"] == 1.5
     assert any(r["lane"] == "server" and r["project"] == "other"
                for r in snap["sessions"]["per_day"])
     assert snap["sessions"]["totals"]["routines"] == 1
@@ -174,8 +182,12 @@ def test_all_sections_present(env):
     assert runs[(day, "ARG")]["started"] == 2
     assert runs[(day, "ARG")]["finished"] == 1 and runs[(day, "ARG")]["failed"] == 1
     assert snap["experiments"]["gpu"]["in_use"] == 1 and snap["experiments"]["gpu"]["total"] == 2
-    for t in snap["experiments"]["tracks"]:
+    tracks = snap["experiments"]["tracks"]
+    assert tracks
+    for t in tracks:
         assert set(t) == {"track", "stage", "last_event_age_s"}
+    arg = [t for t in tracks if t["track"] == "ARG"]
+    assert len(arg) == 1 and arg[0]["stage"] == "S5" and arg[0]["last_event_age_s"] >= 0
 
 
 def test_unknown_source_field_not_copied(env):
@@ -366,7 +378,7 @@ def test_audit_has_no_payload(env):
 def test_no_network_client_imported():
     code = ("import sys, rb_host.share; "
             "bad = [m for m in ('urllib.request','http.client','rb_host.server','rb_host.client',"
-            "'mcp','socket') if m in sys.modules]; "
+            "'rb_host.jobs','rb_host.board','mcp','socket') if m in sys.modules]; "
             "print(','.join(bad)); sys.exit(1 if bad else 0)")
     env = dict(os.environ, PYTHONPATH=str(REPO))
     r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
@@ -411,6 +423,7 @@ def test_snapshot_written_atomically(env, monkeypatch):
     assert not list(root.rglob("*.part"))
     index = root / "index.html"
     before = index.read_bytes()
+    snap_before = (root / "snapshot.json").read_bytes()
 
     def boom(snapshot):
         raise RuntimeError("render failed")
@@ -421,5 +434,96 @@ def test_snapshot_written_atomically(env, monkeypatch):
     with pytest.raises(Exception):
         _build(env)
     assert index.read_bytes() == before
+    assert (root / "snapshot.json").read_bytes() == snap_before
     assert not list(root.rglob("*.part"))
     assert res["paths"]
+
+
+def test_bad_records_do_not_raise(env):
+    d1 = _days_ago(1)
+    st = _iso(d1, "01:00:00Z")
+    _write(env["tmp"] / "cal" / "sessions.json", {"sessions": [
+        "str", 5, None, {"start": 5}, {"start": ["x"], "project": 3},
+        {"start": "0001-01-01T00:00:00+01:00"}, {"start": "9999-12-31T23:59:59-01:00"},
+        {"start": st, "end": _iso(d1, "00:00:00Z"), "project": "ARG"},   # negative duration
+        {"start": st, "end": _iso(_days_ago(0), "23:00:00Z"), "project": "ARG"},  # > 24 h
+        {"start": st, "end": "9999-12-31T23:59:59-01:00", "project": "ARG"}]})
+    _write(env["tmp"] / "runs" / "runs.json", {"runs": [
+        1, {"started": "0001-01-01T00:00:00+01:00", "ended": "9999-12-31T23:59:59-01:00"},
+        {"status": 7, "started": st}, {"status": "failed", "started": st, "project": "ARG"}]})
+    _write(env["root"] / "board" / "n1_events.json", {
+        "fetched_at": "0001-01-01T00:00:00+01:00", "ok": True, "cadence_s": True,
+        "items": [{"track": "ARG", "stage": "S5", "ts": "9999-12-31T23:59:59-01:00"}, 3]})
+    with open(str(env["root"] / "ledger.jsonl"), "ab") as fh:
+        fh.write(b'\xff\xfe not utf8\n')
+    snap = _snap(env)
+    sess = [r for r in snap["sessions"]["per_day"] if r["date"] == d1.isoformat()]
+    assert all(0 <= r["active_h"] <= 24 * r["count"] for r in sess)
+    assert sum(r["active_h"] for r in sess) == 0
+    runs = {(r["date"], r["project"]): r for r in snap["experiments"]["runs_per_day"]}
+    assert runs[(d1.isoformat(), "ARG")]["failed"] == 1  # failed, no `ended`
+    assert snap["experiments"]["tracks"] == []
+    src = _src(snap)
+    assert src["rb:ledger"]["ok"] is False and src["rb:ledger"]["error"] == "unreadable"
+    assert src["n1:events"]["fetched_at"] is None
+
+
+def test_node_cache_strings_are_checked(env):
+    _write(env["root"] / "board" / "n1_queue.json", {
+        "fetched_at": "free text from the node", "ok": False,
+        "error": "Something went wrong on the node", "cadence_s": 60, "items": []})
+    snap = _snap(env)
+    q = _src(snap)["n1:queue"]
+    assert q["fetched_at"] is None and q["error"] == "bad_error_code"
+    assert "free text" not in json.dumps(snap) and "Something" not in json.dumps(snap)
+
+
+def test_bad_node_name_skipped(env):
+    raw = json.loads(env["host"].read_text(encoding="utf-8"))
+    raw["nodes"]["bad name/../x"] = {"alias": "y"}
+    env["host"].write_text(json.dumps(raw), encoding="utf-8")
+    res = share.build(config.load_host_config(env["host"]), today=TODAY)
+    assert not any("bad" in k for k in _src(res["snapshot"]))
+    assert res["dropped"] >= 1
+
+
+def test_withheld_source_error_reported(env):
+    env["tmp"].joinpath("withheld.json").write_text("{not json", encoding="utf-8")
+    src = _src(_snap(env))["withheld:patterns"]
+    assert src["ok"] is False and src["error"]
+
+
+def test_idle_connection_does_not_block(env):
+    _build(env)
+    import socket
+    with _Running(share.share_dir(env["cfg"])) as srv:
+        idle = socket.create_connection(("127.0.0.1", srv.server_address[1]))
+        try:
+            st, _, _ = _get(srv, "GET", "/")
+            assert st == 200
+        finally:
+            idle.close()
+
+
+def test_tracks_order_independent(env):
+    old, new = _iso(_days_ago(2), "00:00:00Z"), _iso(_days_ago(0), "00:00:00Z")
+    evs = [{"track": "ARG", "stage": "S5", "ts": new}, {"track": "ARG", "stage": "S1", "ts": old}]
+    wh = share.Withheld.load(Path(env["cfg"].withheld_patterns_file))
+    for order in (evs, evs[::-1]):
+        t, _ = share.reduce_tracks(order, wh, {"ARG"})
+        assert t[0]["stage"] == "S5"
+
+
+def test_cli_negative_days_rejected(env, capsys):
+    assert cli.main(["share", "build", "--days", "-1"]) == 1
+    assert "--days must be >= 0" in capsys.readouterr().out
+
+
+def test_put_has_plain_405_with_headers(env):
+    _build(env)
+    with _Running(share.share_dir(env["cfg"])) as srv:
+        for method in ("PUT", "FOO"):
+            st, h, body = _get(srv, method, "/")
+            assert st == 405 and h["cache-control"] == "no-store"
+            assert h["x-content-type-options"] == "nosniff"
+            assert h["content-type"].startswith("text/plain") and b"<" not in body

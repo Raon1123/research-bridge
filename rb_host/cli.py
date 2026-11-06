@@ -154,7 +154,7 @@ def _share(args: argparse.Namespace) -> int:
         try:
             cfg = jobs.load_cfg()
             share_serve.serve(share.share_dir(cfg), args.bind, args.port)
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, ValueError, OSError) as exc:
             print("error: %s" % exc)
             return 1
         return 0
@@ -163,10 +163,14 @@ def _share(args: argparse.Namespace) -> int:
     except FileNotFoundError:
         print("error: no host.json; see docs/manual/hub-setup.md")
         return 1
+    if args.days < 0:
+        print("error: --days must be >= 0")
+        return 1
     res = share.build(cfg, args.days, args.tier)
     for p in res["paths"]:
         print(p)
-    if not isinstance(cfg.share.get("labels"), list):
+    conf = cfg.share if isinstance(cfg.share, dict) else {}
+    if not isinstance(conf.get("labels"), list):
         print('labels not configured: all project and track labels shown as "other"')
     print("dropped %d" % res["dropped"])
     if res["dropped"] > 0:

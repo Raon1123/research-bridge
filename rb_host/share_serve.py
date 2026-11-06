@@ -10,7 +10,7 @@ import html
 import json
 import os
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -134,7 +134,8 @@ def _waiting(snap: dict) -> str:
         return _unavailable()
     if not w:
         return "<p>(no items)</p>"
-    return "<ul>%s</ul>" % "".join("<li>%s</li>" % _e(i) for i in w)
+    return _table(["source", "ref", "what"],
+                  [[x.get("source", ""), x.get("ref", ""), x.get("what", "")] for x in _rows(w)])
 
 
 def render_html(snapshot: dict) -> str:
@@ -144,12 +145,13 @@ def render_html(snapshot: dict) -> str:
     owner = snap.get("tier") == "owner"
     parts = ["<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+             "<meta http-equiv=\"refresh\" content=\"300\">"
              "<title>research status</title><style>%s</style></head><body>\n" % STYLE,
              "<!-- research-bridge share page; schema_version %s -->\n" % _e(snap.get("schema_version", "unknown")),
              "<h1>Research status</h1>\n"]
     if owner:
         parts.append('<p class="owner">owner view (loopback only)</p>\n')
-    parts.append("<p>period: %s to %s<br>built at: %s</p>\n" % (
+    parts.append("<p>period: %s to %s<br>built at: %s (stale flags as of build time)</p>\n" % (
         _e(per.get("from", "unavailable")), _e(per.get("to", "unavailable")),
         _e(snap.get("built_at", "unavailable"))))
     parts.append(_section("Sources", lambda: _sources(snap)))
@@ -184,6 +186,7 @@ class _Handler(BaseHTTPRequestHandler):
     root = Path(".")  # type: Path
     server_version = "rb-share"
     sys_version = ""
+    timeout = 10  # an idle connection must not hold a handler thread forever
 
     def _plain(self, code: int, text: str, head: bool = False) -> None:
         body = text.encode("utf-8")
@@ -226,35 +229,59 @@ class _Handler(BaseHTTPRequestHandler):
         self._serve(True)
 
     def _no_method(self) -> None:
+        body = b"method not allowed"
         self.send_response(405)
         self.send_header("Allow", "GET, HEAD")
-        body = b"method not allowed"
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        self.close_connection = True
+
+    def send_error(self, code: int, message: Optional[str] = None,
+                   explain: Optional[str] = None) -> None:
+        # Never the default HTML error body: unknown methods get our 405, the rest plain text.
+        if code == 501:
+            return self._no_method()
+        self.close_connection = True
+        self._plain(code, "error", self.command == "HEAD")
 
     do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _no_method
 
     def log_request(self, code: Any = "-", size: Any = "-") -> None:
         # method, path (query stripped), status only; no body.
         path = self.path.split("?", 1)[0].split("#", 1)[0]
+        if path not in ALLOWED_PATHS:
+            path = "<other>"
         sys.stderr.write("%s %s %s\n" % (self.command, path, code))
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         pass  # request lines come from log_request; parse errors carry no useful data
 
 
-def make_server(root: Path, bind: str, port: int) -> HTTPServer:
+class _Server(ThreadingHTTPServer):
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        sys.stderr.write("request error: %s\n" % sys.exc_info()[0].__name__)
+
+
+def make_server(root: Path, bind: str, port: int) -> ThreadingHTTPServer:
     """Build (do not start) the server for `root`. Refuses a snapshot whose tier is not shared."""
     _check_tier(root)
     handler = type("ShareHandler", (_Handler,), {"root": Path(root)})
-    return HTTPServer((bind, port), handler)
+    srv = _Server((bind, port), handler)
+    srv.daemon_threads = True
+    return srv
 
 
 def serve(root: Path, bind: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
     srv = make_server(root, bind, port)
+    where = "loopback only" if bind in ("127.0.0.1", "localhost") else "LAN"
+    sys.stderr.write("serving %s on %s:%s (index.html, snapshot.json only) (%s)\n"
+                     % (root, bind, srv.server_address[1], where))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

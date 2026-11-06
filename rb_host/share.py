@@ -23,6 +23,8 @@ from .config import HostConfig
 from .ledger import Ledger
 
 SCHEMA_VERSION = 1
+NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+ERROR_CODE = re.compile(r"^[a-z_]{1,40}$")
 SHARED_FILES = ("index.html", "snapshot.json")
 LOCAL_CADENCE_S = 3600
 NODE_SOURCES = ("queue", "gpu", "events")
@@ -50,9 +52,9 @@ def _parse(ts: Any) -> Optional[datetime]:
         return None
     try:
         d = datetime.fromisoformat(ts.strip().replace("Z", "+00:00"))
-    except ValueError:
+        return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
+    except (ValueError, OverflowError):
         return None
-    return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
 
 
 def _iso(d: datetime) -> str:
@@ -89,7 +91,9 @@ def _read_list(path: Any, key: str) -> Tuple[Optional[list], Optional[str], Opti
     try:
         data = json.loads(p.read_bytes().decode("utf-8-sig"))
         fetched = _iso(datetime.fromtimestamp(p.stat().st_mtime, timezone.utc))
-    except (OSError, ValueError):
+    except OSError:
+        return None, "unreadable", None
+    except (ValueError, RecursionError):
         return None, "unparseable", None
     if isinstance(data, dict) and isinstance(data.get(key), list):
         data = data[key]
@@ -160,9 +164,12 @@ def reduce_runs(recs: list, start: date, end: date, wh: Withheld,
             continue
         failed = isinstance(status, str) and status.lower() in FAILED
         s = _parse(r.get("started"))
-        if s is not None and _in_period(s.date(), start, end):
-            acc.setdefault((s.date().isoformat(), proj or "other"), [0, 0, 0])[0] += 1
         e = _parse(r.get("ended"))
+        if s is not None and _in_period(s.date(), start, end):
+            cell = acc.setdefault((s.date().isoformat(), proj or "other"), [0, 0, 0])
+            cell[0] += 1
+            if failed and e is None:  # crashed before writing `ended`: failed on its start date
+                cell[2] += 1
         if e is not None and _in_period(e.date(), start, end):
             cell = acc.setdefault((e.date().isoformat(), proj or "other"), [0, 0, 0])
             cell[2 if failed else 1] += 1
@@ -193,31 +200,32 @@ def reduce_gpu(items: list) -> Tuple[int, int]:
 
 
 def reduce_tracks(items: list, wh: Withheld, labels: Optional[Set[str]]) -> Tuple[list, int]:
-    """Newest event per track (items are newest first). Bad stage or withheld text drops the track."""
-    seen = {}  # type: Dict[str, Optional[float]]
-    stages = {}  # type: Dict[str, str]
-    done = set()  # type: Set[str]
-    dropped = 0
+    """Newest event (by parsed ts, any input order) per track. Bad stage or withheld text drops the track."""
+    newest = {}  # type: Dict[str, Tuple[float, dict]]
     for ev in items:
         if not isinstance(ev, dict) or not isinstance(ev.get("track"), str):
             continue
-        raw = ev["track"]
-        if raw in done:
+        age = _age_s(ev.get("ts"))
+        if age is None:
             continue
-        done.add(raw)
+        raw = ev["track"]
+        if raw not in newest or age < newest[raw][0]:
+            newest[raw] = (age, ev)
+    seen = {}  # type: Dict[str, float]
+    stages = {}  # type: Dict[str, str]
+    dropped = 0
+    for raw in sorted(newest):
+        age, ev = newest[raw]
         track, hit = _label(raw, wh, labels)
         stage = ev.get("stage")
         if hit or not isinstance(stage, str) or wh._hit(stage) or not STAGE.match(stage):
             dropped += 1
             continue
-        age = _age_s(ev.get("ts"))
-        if age is None:
-            continue
         age = max(0.0, age)
         track = track or "other"
-        if track not in seen or (seen[track] is not None and age < seen[track]):
+        if track not in seen or age < seen[track]:
             seen[track], stages[track] = age, stage
-    return ([{"track": t, "stage": stages[t], "last_event_age_s": int(seen[t] or 0)}
+    return ([{"track": t, "stage": stages[t], "last_event_age_s": int(seen[t])}
              for t in sorted(seen)], dropped)
 
 
@@ -225,8 +233,11 @@ def _node_cache(cfg: HostConfig, sid: str) -> dict:
     p = Path(cfg.data_root) / "board" / (sid.replace(":", "_") + ".json")
     try:
         rec = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError:
         return {"fetched_at": None, "ok": False, "error": "never_fetched", "cadence_s": 600,
+                "items": []}
+    except (ValueError, RecursionError):
+        return {"fetched_at": None, "ok": False, "error": "unparseable", "cadence_s": 600,
                 "items": []}
     if not isinstance(rec, dict):
         return {"fetched_at": None, "ok": False, "error": "unparseable", "cadence_s": 600,
@@ -298,7 +309,9 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
                 cal_fetched = _iso(_parse(gen)) if _parse(gen) else None
                 c = st.get("cost_usd")
                 cost = c if isinstance(c, (int, float)) and not isinstance(c, bool) else None
-            except (OSError, ValueError):
+            except OSError:
+                cal_err = "unreadable"
+            except (ValueError, RecursionError):
                 cal_err = "unparseable"
     sources.append(_source("calendar:status", cal_fetched, cal_err is None, cal_err,
                            LOCAL_CADENCE_S))
@@ -313,6 +326,9 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
     queue = {"queued": 0, "running": 0, "done": 0, "failed": 0}
     in_use, total, tracks = 0, 0, []  # type: int, int, list
     for node in sorted(cfg.nodes):
+        if not isinstance(node, str) or not NODE_NAME.match(node) or wh._hit(node):
+            dropped += 1
+            continue
         for name in NODE_SOURCES:
             sid = "%s:%s" % (node, name)
             rec = _node_cache(cfg, sid)
@@ -320,12 +336,15 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
             e = rec.get("error") if not ok else None
             if not ok and not isinstance(e, str):
                 e = "unavailable"
+            if isinstance(e, str) and not ERROR_CODE.match(e):
+                e = "bad_error_code"
             if isinstance(e, str) and wh._hit(e):
                 e, dropped = "withheld", dropped + 1
             cad = rec.get("cadence_s")
-            sources.append(_source(sid, rec.get("fetched_at") if isinstance(
-                rec.get("fetched_at"), str) else None, ok, e,
-                cad if isinstance(cad, int) else 600))
+            fa = _parse(rec.get("fetched_at"))
+            sources.append(_source(sid, _iso(fa) if fa else None, ok, e,
+                                   cad if isinstance(cad, int) and not isinstance(cad, bool)
+                                   else 600))
             items = rec.get("items") if ok and isinstance(rec.get("items"), list) else []
             if name == "queue":
                 for k, v in reduce_queue(items).items():
@@ -341,9 +360,11 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
     try:
         pending, gpu_hours = _ledger(cfg, start, end)
         sources.append(_source("rb:ledger", _now(), True, None, None))
-    except (OSError, TypeError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pending, gpu_hours = 0, 0.0
         sources.append(_source("rb:ledger", None, False, "unreadable", None))
+    sources.append(_source("withheld:patterns", None, wh.source_error is None,
+                           None if wh.source_error is None else str(wh.source_error), None))
     queue["pending_approvals"] = pending
 
     snap = {
@@ -374,8 +395,9 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
     body = json.dumps(snap, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8")
     out = share_dir(cfg) if tier == "shared" else owner_dir(cfg)
     html_path, json_path = out / SHARED_FILES[0], out / SHARED_FILES[1]
+    page = share_serve.render_html(snap).encode("utf-8")  # render first: a failure keeps both files
     _write_atomic(json_path, body)
-    _write_atomic(html_path, share_serve.render_html(snap).encode("utf-8"))
+    _write_atomic(html_path, page)
     counts = {"sessions.per_day": len(per_day), "experiments.runs_per_day": len(runs_per_day),
               "experiments.tracks": len(tracks)}
     if tier == "owner":

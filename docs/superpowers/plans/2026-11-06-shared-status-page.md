@@ -46,7 +46,7 @@ Reducers must be tolerant: a missing file → `ok:false, error:"missing"`; JSON 
 
 Source ids: `calendar:sessions`, `calendar:status`, `runs`, `node1:queue`, `node1:gpu`, `node1:events` (one per configured node), `rb:ledger`. Stale rule as `board.py`: `fetched_at` missing or older than the source cadence (`calendar:*` and `runs` 3600 s; node sources their board `cadence_s`; `rb:ledger` never stale).
 
-Owner tier (`tier: "owner"`) adds exactly: `"waiting": [...]` (from `board.load(cfg)["waiting"]`, strings re-checked) and `"cost_usd": <number|null>` under `sessions.totals`. Nothing else differs. Owner files are written to `share/owner/` (outside the served root).
+Owner tier (`tier: "owner"`) adds exactly: `"waiting": [...]` (from `board.load(cfg)["waiting"]`, strings re-checked) and `"cost_usd": <number|null>` under `sessions.totals`. Nothing else differs. Owner files are written to `share/owner/`: under the share directory, but unreachable through `rb share serve`, whose path allowlist names only the two shared files. Never serve `share/` with a generic static server.
 
 Label rule (OQ4 default): `host.json` `share.labels` is a list of allowed project/track labels. A label not on the list (or any label when the list is absent) becomes `other`. Before that mapping, every string is checked with `Withheld._hit`; a hit drops the whole item and increments `dropped`.
 
