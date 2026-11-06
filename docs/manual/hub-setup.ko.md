@@ -2,7 +2,7 @@
 
 이 문서는 영어 원문 [hub-setup.md](hub-setup.md)의 번역이며, 두 문서가 다르면 영어 원문을 기준으로 한다.
 
-hub는 `rb_host`를 실행한다. 현재 hub는 laptop(Windows, Python 3.14)이다. 이 문서의 모든 작업은 hub에서 실행한다. node 쪽은 [node-setup.ko.md](node-setup.ko.md)를, 각 역할은 [README.ko.md](README.ko.md)를 본다.
+hub는 `rb_host`를 실행한다. 첫 hub는 laptop(Windows, Python 3.14)이었다. Linux hub는 12절을 본다. 이 문서의 모든 작업은 hub에서 실행한다. node 쪽은 [node-setup.ko.md](node-setup.ko.md)를, 각 역할은 [README.ko.md](README.ko.md)를 본다.
 
 ## 1. 요구 사항
 
@@ -141,3 +141,16 @@ node 경로를 비워 두면 보드에 `no_path`로 표시된다. node는 `.json
 ## 11. node 제거
 
 `host.json`에서 해당 항목을 삭제하고, `~/.ssh/config`에서 `Host` 블록 두 개를 제거하고, 두 키를 `ssh-add -d`로 삭제한 뒤, node 소유자에게 `authorized_keys`의 두 줄을 삭제해 달라고 요청한다. 원장(ledger)은 교환 내역의 기록이므로 보존한다.
+
+## 12. Linux hub
+
+2026-11-05부터 hub는 Windows laptop 대신 Linux 기계일 수 있다. 1–11절은 아래 차이를 빼고 그대로 적용된다.
+
+- **Python:** `uv sync --extra host`가 고르는 버전(첫 Linux hub에서는 3.12). host 쪽은 Python 3.10 이상이 필요하다. 대시보드와 bridge-edge 테스트를 포함한 모든 테스트가 통과한다(저장소의 `vault-export/` 사본을 쓴다).
+- **데이터 루트:** 셸 프로필에 `RB_HOST_ROOT`(예: `~/project/research-bridge-hub`)를 설정한다. 이 값이 `host.json`의 위치와 기본 `data_root`를 정한다. 설정하지 않으면 기본값은 `~/.local/share/research-bridge`이고, Windows에서는 그대로 `D:/raw/research-bridge`이다. `RB_HOST_CONFIG`는 여전히 `host.json` 경로만 따로 바꾼다. 디렉터리를 권한 700으로 만든 뒤 `rb config init`, `rb config add-node <node>`를 실행한다.
+- **Withheld 패턴:** Linux hub에는 vault가 없으므로 session-calendar의 withheld 패턴 JSON을 `<데이터 루트>/withheld_patterns.json`(Linux 기본값)에 복사하거나 `withheld_patterns_file`을 설정한다. 파일이 생기기 전까지 hub 재검사는 다섯 개의 기본 패턴만 쓴다. `rb config check`가 파일이 없음을 알린다.
+- **키:** `~/.ssh/research-bridge/`(디렉터리 700, 키 600)에 둔다. 예: `ssh-keygen -t ed25519 -f ~/.ssh/research-bridge/<node>_ed25519 -C research-bridge-hub`. `ssh-agent`에 올린다(`eval "$(ssh-agent)"; ssh-add ...` 또는 데스크톱 agent). 4절의 `IdentityFile`에 이 경로를 쓴다.
+- **node `authorized_keys`의 `from=`:** laptop이 아니라 hub 자신의 서브넷.
+- **MCP 항목:** `RB_HOST_ROOT`를 설정한 상태에서 `rb config mcp`를 실행하면 출력 항목에 `env` 블록으로 들어간다. 이 블록이 없으면 MCP 서버는 기본 위치에서 `host.json`을 찾는다.
+- **승인:** hub의 터미널(TTY, TTY가 있는 SSH 세션 포함)에서 `rb approve`, `rb reject`. 8765 대시보드와 `/rb/approve` 경로는 vault 쪽에 있으며 Linux hub에는 설치되지 않는다.
+- **Linux hub에서 쓸 수 없는 것:** `board.portfolio`, `board.priorities`를 로컬 사본으로 지정하지 않으면 `rb board`의 laptop 소스(portfolio, priorities). harness 채널의 경로 대응은 laptop 경로를 가정한다(`private/local.json`, `RB_LAPTOP_HOME`).
