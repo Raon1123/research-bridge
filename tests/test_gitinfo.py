@@ -35,3 +35,19 @@ def test_install_record(tmp_path):
     r = _repo(tmp_path / "src") if (tmp_path / "src").mkdir() is None else None
     rec = gitinfo.write_install(tmp_path / "rb", r, "9.9")
     assert gitinfo.read_install(tmp_path / "rb")["version"] == "9.9" and rec["source"]["available"]
+
+
+def test_read_doc_ids_use_configured_paths(tmp_path):
+    import json
+    from rb_node.config import NodeConfig
+    from rb_node.remote import Node
+    (tmp_path / "x" / "exp").mkdir(parents=True)
+    (tmp_path / "x" / "exp" / "EXP-001_slug.md").write_text("hello")
+    (tmp_path / "x" / "H.md").write_text("# H-001 title\nbody\n")
+    cfg = NodeConfig(trm_root=str(tmp_path), read_roots=["x/"], write_roots=[],
+                     experiments_dir="x/exp", hypotheses_path="x/H.md",
+                     mailbox_root=str(tmp_path / "mb"), audit_path=str(tmp_path / "a.jsonl"),
+                     withheld_source=None)
+    n = Node(cfg)
+    assert n.read_doc({"id": "EXP-001"})["text"] == "hello"
+    assert "H-001" in n.read_doc({"id": "H-001"})["text"]

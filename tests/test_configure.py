@@ -96,6 +96,8 @@ def test_node_config_flow(tmp_path, monkeypatch, capsys):
     assert node_cli.main(["config", "set", "job_template", "not a list"]) == 1
     assert node_cli.main(["config", "set", "max_file", "1024"]) == 0
     assert node_cli.main(["config", "set", "harness_root", str(tmp_path)]) == 0
+    # a provisioned node has a real ~/.research-bridge/approve.json
+    assert node_cli.main(["config", "set", "approval_path", str(tmp_path / "none.json")]) == 0
     assert node_cli.main(["config", "set", "nope", "1"]) == 1
     from rb_node.config import load_config
     cfg = load_config()
