@@ -95,6 +95,9 @@ def test_node_config_flow(tmp_path, monkeypatch, capsys):
     assert node_cli.main(["config", "set", "job_template", tpl]) == 0
     assert node_cli.main(["config", "set", "job_template", "not a list"]) == 1
     assert node_cli.main(["config", "set", "max_file", "1024"]) == 0
+    assert node_cli.main(["config", "set", "allowed_gpus", "[4, 5, 6, 7]"]) == 0
+    for bad in ("[4, 4]", '["4"]', "[-1]", "[true]", "4"):
+        assert node_cli.main(["config", "set", "allowed_gpus", bad]) == 1
     assert node_cli.main(["config", "set", "harness_root", str(tmp_path)]) == 0
     # a provisioned node has a real ~/.research-bridge/approve.json
     assert node_cli.main(["config", "set", "approval_path", str(tmp_path / "none.json")]) == 0
@@ -102,13 +105,20 @@ def test_node_config_flow(tmp_path, monkeypatch, capsys):
     from rb_node.config import load_config
     cfg = load_config()
     assert cfg.job_template[-1] == "{config}" and cfg.max_file == 1024
+    assert cfg.allowed_gpus == [4, 5, 6, 7]
     capsys.readouterr()
     assert node_cli.main(["config", "check"]) == 1
     out = capsys.readouterr().out
     assert "job_template" not in out and "harness_root" not in out
+    assert "allowed_gpus" not in out
     assert "approval verifier missing" in out
 
 
 def test_node_check_template_placeholder():
     probs = nc.node_check({"job_template": ["python", "train.py"]})
     assert any("{config}" in p for p in probs)
+
+
+def test_node_check_reports_empty_allowed_gpus():
+    assert any("allowed_gpus is empty" in p for p in nc.node_check({}))
+    assert not any("allowed_gpus" in p for p in nc.node_check({"allowed_gpus": [4]}))

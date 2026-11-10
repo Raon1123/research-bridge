@@ -105,6 +105,10 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
     want = types[key]
     if key == "withheld_source" and value in (None, ""):
         value = None
+    elif key == "allowed_gpus":
+        if not (isinstance(value, list) and len(set(value)) == len(value) and all(
+                isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in value)):
+            raise ConfigError("allowed_gpus needs a JSON list of distinct GPU indices, e.g. '[4, 5]'")
     elif want is list:
         if not (isinstance(value, list) and all(isinstance(v, str) for v in value)):
             raise ConfigError("%s needs a JSON list of strings, e.g. '[\"a\", \"b\"]'" % key)
@@ -132,6 +136,8 @@ def node_check(data: Dict[str, Any]) -> List[str]:
         probs.append("job_template is empty: job_submit is refused (no_job_template)")
     elif not any(k in a for a in tpl for k in ("{config}", "{config_dir}", "{config_stem}")):
         probs.append("job_template has no {config}, {config_dir} or {config_stem} placeholder")
+    if not cfg.allowed_gpus:
+        probs.append("allowed_gpus is empty: job_submit is refused (no_allowed_gpus)")
     if not cfg.harness_root:
         probs.append("harness_root is empty: harness push/pull are refused (no_harness_root)")
     elif not Path(cfg.harness_root).is_dir():

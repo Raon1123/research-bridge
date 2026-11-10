@@ -44,6 +44,7 @@ Start from `deploy/node.json.example`. Paths come only from this file; the hub c
 | `withheld_source` | File with withheld patterns: a JSON list, `{"patterns": [...]}` or `{"families": [{"patterns": [...]}]}`. YAML is not parsed (no PyYAML); with a YAML file only the fallback patterns apply. |
 | `claude_bin` | Absolute path of the Claude CLI. |
 | `job_template` | argv list with a `{config}` placeholder, for example `["uv", "run", "pretrain.py", "--config", "{config}"]`. Empty means `submit_job` is refused with `no_job_template`. The node's owner sets it. |
+| `allowed_gpus` | GPU indices a bridge job may use: the node owner's GPUs, for example `[4, 5, 6, 7]`. Empty means `submit_job` is refused with `no_allowed_gpus` and `run-job` starts nothing. A GPU outside the list, or more than one GPU, is refused with `invalid`. |
 | `max_file` | Attachment cap in bytes (default 50 MB). |
 | `mailbox_root`, `audit_path` | Under `~/.research-bridge/`. |
 | `harness_root` | The node's `~/.claude`. Empty means harness push and pull are refused (`no_harness_root`). |
@@ -94,7 +95,9 @@ Record the results (with placeholders) in `docs/provisioning.md` §Results.
 
 ## 8. Budget enforcement
 
-An approved job's queue file wraps the template command in `rb-node run-job --gpus ... --gpu-hours ...`. The wrapper sets `CUDA_VISIBLE_DEVICES` to exactly those GPUs and stops the job at wall time `gpu_hours / len(gpus)` (status `budget_exceeded`). Cancel requests are polled every 10 s. The node's own queue runner still assigns workers to GPUs; the wrapper narrows what the job sees.
+An approved job's queue file wraps the template command in `rb-node run-job --gpus ... --gpu-hours ...`. The wrapper stops the job at wall time `gpu_hours / len(gpus)` (status `budget_exceeded`). Cancel requests are polled every 10 s.
+
+Which GPU the job gets: the node's queue runner has one worker per GPU and exports that GPU as `CUDA_VISIBLE_DEVICES`. A job queued through the bridge asks for one GPU from `allowed_gpus`, and the wrapper runs it on the GPU of the worker that claimed it, which can differ from the index in the request (the job record and the `job_finished` event then carry `gpus_used`). The wrapper starts nothing on a GPU outside `allowed_gpus`: the job ends as `failed` with reason `gpu_not_allowed` and exit code 126. Run from the console without a worker, the wrapper sets `CUDA_VISIBLE_DEVICES` to the `--gpus` value.
 
 ## 9. Upgrading and removing
 

@@ -16,6 +16,8 @@
   "withheld_source": "/home/<NODE_USER>/.research-bridge/withheld-patterns.json",
   "claude_bin": "/home/<NODE_USER>/.local/bin/claude",
   "job_template": [],
+  "_allowed_gpus_note": "GPU indices that belong to the node owner, e.g. [4, 5, 6, 7]. Empty: job_submit is refused (no_allowed_gpus) and run-job launches nothing.",
+  "allowed_gpus": [],
   "max_file": 52428800,
   "mailbox_root": "/home/<NODE_USER>/.research-bridge/mailbox",
   "audit_path": "/home/<NODE_USER>/.research-bridge/audit.jsonl",

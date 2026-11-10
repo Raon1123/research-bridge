@@ -62,7 +62,16 @@ def _str(args: dict, name: str) -> str:
     return v
 
 
-def validate_budget(args: dict, known_gpus: Optional[Set[int]]) -> None:
+def allowed_set(value: Any) -> Set[int]:
+    """allowed_gpus from node.json as a set; anything malformed counts as empty (fail closed)."""
+    if not isinstance(value, list) or not all(
+            isinstance(g, int) and not isinstance(g, bool) and g >= 0 for g in value):
+        return set()
+    return set(value)
+
+
+def validate_budget(args: dict, known_gpus: Optional[Set[int]],
+                    allowed_gpus: Optional[Set[int]] = None) -> None:
     gpus = args.get("gpus")
     if not isinstance(gpus, list) or not gpus or not all(
             isinstance(g, int) and not isinstance(g, bool) and g >= 0 for g in gpus):
@@ -71,6 +80,14 @@ def validate_budget(args: dict, known_gpus: Optional[Set[int]]) -> None:
         raise _invalid("gpus must be distinct")
     if known_gpus and not set(gpus) <= known_gpus:
         raise _invalid("unknown gpu index")
+    if allowed_gpus is not None:
+        if not set(gpus) <= allowed_gpus:
+            raise _invalid("gpu not in the node's allowed_gpus (%s)"
+                           % ",".join(str(g) for g in sorted(allowed_gpus)))
+        # The queue runner gives each job one GPU (one worker per GPU), so a job that asks for
+        # several would take GPUs that other workers are using.
+        if len(gpus) > 1:
+            raise _invalid("multi-GPU jobs are not supported: the queue runs one GPU per job")
     h = args.get("gpu_hours")
     if isinstance(h, bool) or not isinstance(h, (int, float)) or not (0 < h <= MAX_GPU_HOURS):
         raise _invalid("gpu_hours must satisfy 0 < gpu_hours <= %d" % MAX_GPU_HOURS)
@@ -142,9 +159,12 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     sha = _str(args, "config_sha256")
     if os.path.splitext(config_name)[1].lower() not in CONFIG_EXT:
         raise _invalid("config must be one of %s" % ", ".join(CONFIG_EXT))
-    validate_budget(args, known_gpus)
     if not cfg.job_template:
         raise ProtocolError("no_job_template", "node has no job_template configured")
+    allowed = allowed_set(cfg.allowed_gpus)
+    if not allowed:
+        raise ProtocolError("no_allowed_gpus", "node has no allowed_gpus configured")
+    validate_budget(args, known_gpus, allowed)
     config_path = _finalize_config(cfg, mb, job_id, config_name, sha)
     gpus = args["gpus"]
     argv = ["rb-node", "run-job", "--gpus", ",".join(str(g) for g in gpus),

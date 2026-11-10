@@ -29,6 +29,9 @@ class NodeConfig:
     withheld_source: Optional[str] = DEFAULT_TRM + "/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml"
     claude_bin: str = field(default_factory=lambda: _home("~/.local/bin/claude"))
     job_template: List[str] = field(default_factory=list)  # argv with {config} placeholder
+    # GPU indices a bridge job may run on (the node owner's GPUs). Empty -> job_submit refused
+    # (no_allowed_gpus) and run-job launches nothing. Set from the node console only.
+    allowed_gpus: List[int] = field(default_factory=list)
     max_file: int = 50 * 1024 * 1024
     mailbox_root: str = _home(DEFAULT_RB + "/mailbox")
     audit_path: str = _home(DEFAULT_RB + "/audit.jsonl")

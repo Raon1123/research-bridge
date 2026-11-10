@@ -23,3 +23,6 @@ id_ed25519*
 *.pem
 *.key
 uv.lock
+
+# Local command audit log (real paths)
+logs/
