@@ -82,7 +82,8 @@ def summary(cfg: Any, node: str) -> dict:
     """The `nodes` tool's view of one node (design 6.8). `stale` depends on `last_ok_at` only."""
     st = read_status(cfg, node)
     keys = ("ok", "error", "stage", "last_attempt_at", "last_ok_at", "node_seen_at",
-            "node_version", "protocol", "withheld_extra")
+            "node_version", "protocol", "withheld_extra", "hub_withheld_extra",
+            "hub_withheld_rejected")
     out = {"synced": st is not None}  # type: dict
     for k in keys:
         out[k] = st.get(k) if st else None

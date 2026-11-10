@@ -21,6 +21,7 @@ from . import board, configure, jobs, server, store, threads
 from .client import RemoteError, TransportError, normalize_hello
 from .config import default_root
 from .threads import read_status, status_path, summary  # noqa: F401  (re-exported readers)
+from rb_node.withheld import Withheld
 
 SCHEMA = 1
 CODE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -113,6 +114,17 @@ def _log(stage: str, exc: BaseException) -> None:
     sys.stderr.write("sync: %s failed: %s\n" % (stage, type(exc).__name__))
 
 
+def _hub_withheld(cfg: Any) -> Dict[str, Optional[int]]:
+    """State of the hub's withheld pattern file now: usable extra patterns and rejected ones.
+    Both None when the state cannot be read."""
+    try:
+        wh = Withheld.load(Path(cfg.withheld_patterns_file))
+        return {"hub_withheld_extra": int(wh.extra_count), "hub_withheld_rejected": int(wh.rejected_count)}
+    except Exception as exc:
+        _log("withheld", exc)
+        return {"hub_withheld_extra": None, "hub_withheld_rejected": None}
+
+
 def run_pass(cfg: Any, node: str) -> dict:
     """One pass for one node. Never raises; returns the final status dict."""
     t0 = time.time()
@@ -129,6 +141,7 @@ def run_pass(cfg: Any, node: str) -> dict:
           "withheld_extra": prev.get("withheld_extra"), "node_seen_at": prev.get("node_seen_at"),
           "tree_head": prev.get("tree_head"), "tree_dirty": prev.get("tree_dirty"),
           "git_error": prev.get("git_error"), "duration_s": 0.0}  # type: Dict[str, Any]
+    st.update(_hub_withheld(cfg))
     try:
         _write_status(cfg, node, st)
     except Exception as exc:

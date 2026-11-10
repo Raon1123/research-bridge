@@ -626,6 +626,7 @@ def test_nodes_status_from_sync_file(synced):
     out = server.nodes()["status"]["n1"]
     assert out["synced"] is True and out["ok"] is True and out["stale"] is False
     assert out["undelivered"] == 1 and out["node_seen_at"] and out["last_ok_at"]
+    assert out["hub_withheld_extra"] == 0 and out["hub_withheld_rejected"] == 0
     server.poll("n1")
     assert server.nodes()["status"]["n1"]["undelivered"] == 0
 
@@ -887,3 +888,14 @@ def test_node_answering_with_another_jobs_queue_file_returns_job_to_pending(env,
     assert rec["status"] == "pending_approval" and not rec.get("approving")
     assert not rec.get("approved_at") and not rec.get("result")
     assert [r["id"] for r in env["ledger"].pending_jobs()] == [jid]
+
+
+def test_nodes_summary_tolerates_status_file_without_hub_fields(env):
+    from rb_host import sync
+    path = sync.status_path(server.load_cfg(), "n1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"schema": 1, "node": "n1", "ok": True,
+                                "last_ok_at": "2026-11-01T00:00:00Z"}), encoding="utf-8")
+    out = server.nodes()["status"]["n1"]
+    assert out["synced"] is True and out["hub_withheld_extra"] is None
+    assert out["hub_withheld_rejected"] is None

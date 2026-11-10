@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[1]
 STATE_MD = "---\nphase: S5\ntrack: ARG\nupdated: 2026-11-02\n---\n# State\n"
 KEYS = {"schema", "node", "last_attempt_at", "last_ok_at", "ok", "error", "stage", "new_items",
         "rejected", "rejected_ids", "board", "node_version", "protocol", "withheld_extra", "node_seen_at",
-        "tree_head", "tree_dirty", "git_error", "duration_s"}
+        "hub_withheld_extra", "hub_withheld_rejected", "tree_head", "tree_dirty", "git_error", "duration_s"}
 ALIAS = "ssh-alias-marker"
 
 
@@ -532,3 +532,14 @@ def test_clashing_inbound_id_is_named_in_status_and_line(env, capsys):
     assert _status(env)["rejected_ids"] == [mid]
     assert sync.run(None, 0) == 0
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["rejected_ids"] == [mid]
+
+
+def test_status_records_hub_pattern_file_state(env):
+    env["wp"].write_text(json.dumps({"patterns": ["usable_one_", "(", "usable_two_"]}), encoding="utf-8")
+    st = sync.run_pass(env["cfg"], "n1")
+    assert st["hub_withheld_extra"] == 2 and st["hub_withheld_rejected"] == 1
+    saved = json.loads(sync.status_path(env["cfg"], "n1").read_text(encoding="utf-8"))
+    assert saved["hub_withheld_extra"] == 2 and saved["hub_withheld_rejected"] == 1
+    env["wp"].unlink()  # missing file: no usable extra pattern, nothing rejected
+    st = sync.run_pass(env["cfg"], "n1")
+    assert st["hub_withheld_extra"] == 0 and st["hub_withheld_rejected"] == 0

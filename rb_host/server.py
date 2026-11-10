@@ -43,7 +43,9 @@ def nodes() -> dict:
     never ran; the fields below are then null), `ok`, `error` (a code), `stage`, `last_attempt_at`,
     `last_ok_at`, `age_s`, `stale` (no successful pass in the last 900 s), `node_seen_at` (latest
     successful contact with the node), `node_version`, `protocol`, `withheld_extra` (0 means the
-    node loaded no pattern file) and `undelivered` (stored replies that no `poll` has returned yet).
+    node loaded no pattern file), `hub_withheld_extra` and `hub_withheld_rejected` (usable and
+    non-compiling patterns in the hub's own pattern file at the last pass; null in a status file
+    written before these fields existed) and `undelivered` (stored replies that no `poll` has returned yet).
     """
     cfg = load_cfg()
     names = sorted(cfg.nodes)
