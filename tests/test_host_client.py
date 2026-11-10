@@ -111,7 +111,7 @@ def test_get_file_killed_mid_transfer(node, tmp_path):
 
 def test_agent_locked(tmp_path, monkeypatch):
     from rb_host import sshenv
-    monkeypatch.setattr(sshenv, "identity_file", lambda alias: None)
+    monkeypatch.setattr(sshenv, "identity_file", lambda alias, n=None: None)
     monkeypatch.setattr(sshenv, "agent_rc", lambda sock: 2)
     script = tmp_path / "fakessh.py"
     script.write_text(

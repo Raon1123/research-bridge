@@ -525,6 +525,26 @@ def test_invalid_host_json_one_line_error(argv, monkeypatch, capsys, tmp_path):
     assert "not valid JSON" in out and len(out.strip().splitlines()) == 1
 
 
+@pytest.mark.parametrize("text", ['{"data_root": 5}', '{"nodes": ["x"]}', '{"nodes": {"n1": "x"}}',
+                                  '{"board": 3}'])
+@pytest.mark.parametrize("argv", [["pending"], ["sync"], ["web", "serve"], ["share", "build"],
+                                  ["board", "show"]])
+def test_wrong_type_host_json_one_line_error(argv, text, monkeypatch, capsys, tmp_path):
+    p = tmp_path / "host.json"
+    p.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("RB_HOST_CONFIG", str(p))
+    assert cli.main(argv) == 1
+    out = capsys.readouterr().out
+    assert "wrong types" in out and len(out.strip().splitlines()) == 1
+
+
+def test_agent_with_directory_as_host_json(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path))
+    from rb_host import setup
+    assert setup.agent_main(None) == 1
+    assert len(capsys.readouterr().out.strip().splitlines()) == 1
+
+
 def test_board_show_works_without_host_json(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "none" / "host.json"))
     monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))

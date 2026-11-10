@@ -81,7 +81,7 @@ def classify(code: Optional[int], stderr: str, alias: str, node: str,
                 "node_refused_key", "%s refused the key" % alias,
                 "%s (authorized_keys line and from=); --hub-from may be wrong if a router "
                 "translates addresses" % NODE_DOCTOR)
-            key = sshenv.identity_file(alias)
+            key = sshenv.identity_file(alias, sshenv.key_names(node))
             if key is not None and sshenv.key_unencrypted(key):
                 return refused
             rc = sshenv.agent_rc(sock)
@@ -135,7 +135,7 @@ class NodeClient:
     def __enter__(self) -> "NodeClient":
         extra = self.env
         if self.default_argv and self.env is None:
-            self.agent_sock = sshenv.agent_socket(self.alias)
+            self.agent_sock = sshenv.agent_socket(self.alias, sshenv.key_names(self.node))
             if self.agent_sock is not None:
                 extra = {"SSH_AUTH_SOCK": str(self.agent_sock)}
         env = None

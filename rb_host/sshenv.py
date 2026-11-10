@@ -228,7 +228,8 @@ def key_unencrypted(key: Path) -> bool:
     return run(["ssh-keygen", "-y", "-P", "", "-f", str(key)])[0] == 0
 
 
-def agent_socket(alias: Optional[str] = None) -> Optional[Path]:
+def agent_socket(alias: Optional[str] = None,
+                 names: Optional[Sequence[str]] = None) -> Optional[Path]:
     hit = _cache.get(alias)
     if hit is not None and time.monotonic() - hit[0] < CACHE_S:
         return hit[1]
@@ -239,7 +240,7 @@ def agent_socket(alias: Optional[str] = None) -> Optional[Path]:
             answering.append((sock, fps))
     chosen = answering[0][0] if answering else None
     if alias and answering:
-        key = identity_file(alias)
+        key = identity_file(alias, names)
         fp = fingerprint(Path(str(key) + ".pub")) if key is not None else None
         if fp:
             for sock, fps in answering:

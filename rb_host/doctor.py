@@ -311,7 +311,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
             res.append(_ok(id_, "key for %s has no passphrase" % alias, n))
             loaded_ok[alias] = True
             return
-        asock = sshenv.agent_socket(alias)
+        asock = sshenv.agent_socket(alias, sshenv.key_names(n))
         fp = sshenv.fingerprint(Path(str(key) + ".pub"))
         if asock is None or fp is None or fp not in sshenv.agent_fingerprints(asock):
             res.append(_bad(id_, level, "key for %s is not in the agent%s" % (alias, tail), nxt, n))

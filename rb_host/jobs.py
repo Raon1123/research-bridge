@@ -47,7 +47,7 @@ def ledger_for(cfg: HostConfig) -> Ledger:
 
 def connect(cfg: HostConfig, node: str) -> NodeClient:
     """Client factory; tests replace it. Creating the client does not connect."""
-    return NodeClient(cfg.alias(node))
+    return NodeClient(cfg.alias(node), node=node)
 
 
 def _sha(path: Path) -> str:

@@ -140,6 +140,32 @@ def test_agent_socket_prefers_socket_holding_alias_key(tmp_path, socks, monkeypa
     assert sshenv.agent_socket("rb-node1") == b
 
 
+def test_agent_socket_with_custom_alias_uses_node_key_names(tmp_path, socks, monkeypatch):
+    a = tmp_path / "run" / "gcr" / "ssh"
+    b = tmp_path / "run" / "openssh_agent"
+    socks(a)
+    socks(b)
+    monkeypatch.setattr(sshenv, "user_home", lambda: tmp_path / "home")
+
+    def table(argv, env):
+        if argv[:2] == ["ssh", "-G"]:
+            return 0, "hostname h\nidentityfile ~/.ssh/research-bridge/node1_ed25519\n", ""
+        if argv[0] == "ssh-keygen":
+            return 0, "256 SHA256:WANT comment (ED25519)\n", ""
+        if argv[0] == "ssh-add":
+            if env.get("SSH_AUTH_SOCK") == str(b):
+                return 0, "256 SHA256:WANT c (ED25519)\n", ""
+            return 0, "256 SHA256:OTHER c (ED25519)\n", ""
+        return 127, "", ""
+
+    monkeypatch.setattr(sshenv, "run", _fake_run(table))
+    names = sshenv.key_names("node1")
+    for alias in ("lab", "rb-lab"):
+        sshenv.forget()
+        assert sshenv.identity_file(alias, names) is not None
+        assert sshenv.agent_socket(alias, names) == b
+
+
 def test_agent_socket_none_when_nothing_answers(tmp_path, socks, monkeypatch):
     socks(tmp_path / "run" / "gcr" / "ssh")
     monkeypatch.setattr(sshenv, "run", _fake_run(lambda a, e: (2, "", "")))

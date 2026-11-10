@@ -649,7 +649,7 @@ def main(a: Args) -> int:
 def agent_main(node: Optional[str]) -> int:
     try:
         cfg = jobs.load_cfg()
-    except (FileNotFoundError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         print(configure.host_json_error(exc))
         return 1
     names = [node] if node else sorted(cfg.nodes)

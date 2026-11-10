@@ -445,7 +445,7 @@ def test_run_host_json_nodes_not_a_mapping(env, capsys):
     env["host"].write_text(json.dumps({"nodes": ["n1"], "data_root": str(env["root"])}),
                            encoding="utf-8")
     assert sync.run(None, 0) == 1  # a failed pass is reported, not a traceback
-    assert '"ok": false' in capsys.readouterr().out
+    assert "wrong types" in capsys.readouterr().out
 
 
 def test_run_host_json_unreadable(env, capsys):

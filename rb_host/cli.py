@@ -177,7 +177,7 @@ def _git_status(args: argparse.Namespace) -> int:
         if not name:
             print("error: --node is required")
             return 1
-        with NodeClient(cfg.alias(name)) as c:
+        with NodeClient(cfg.alias(name), node=name) as c:
             res = c.call("git_status")
     except (ValueError, RemoteError, TransportError) as exc:
         print("error: %s" % exc)

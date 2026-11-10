@@ -181,10 +181,10 @@ class Hub:
         raise AssertionError("unmodelled interactive command: %r" % (a,))
 
     # -- higher-level replacements ----------------------------------------
-    def agent_socket(self, alias=None):
+    def agent_socket(self, alias=None, names=None):
         live = [Path(s) for s, f in self.agents.items() if f is not None]
         if alias and live:
-            key = sshenv.identity_file(alias)
+            key = sshenv.identity_file(alias, names)
             if key is not None and Path(str(key) + ".pub").is_file():
                 want = self.pub_fp(key)
                 for s in live:

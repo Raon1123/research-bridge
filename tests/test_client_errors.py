@@ -17,7 +17,7 @@ SECRET = "alice@203.0.113.9 /home/alice"
 
 def fake_local(monkeypatch, key=KEY, unencrypted=False, rc=2, fps=(), fp="SHA256:WANT"):
     calls = []
-    monkeypatch.setattr(sshenv, "identity_file", lambda a: key)
+    monkeypatch.setattr(sshenv, "identity_file", lambda a, n=None: key)
     monkeypatch.setattr(sshenv, "key_unencrypted", lambda k: unencrypted)
 
     def agent_rc(sock):
@@ -153,7 +153,7 @@ def test_client_passes_discovered_socket_to_child(monkeypatch, tmp_path):
     script.write_text("import os, sys\nsys.stderr.write(os.environ['SSH_AUTH_SOCK'] + '\\n')\n"
                       "sys.stderr.flush()\nsys.exit(3)\n")
     sock = tmp_path / "agent.sock"
-    monkeypatch.setattr(sshenv, "agent_socket", lambda alias=None: sock)
+    monkeypatch.setattr(sshenv, "agent_socket", lambda alias=None, names=None: sock)
     monkeypatch.setattr(client, "default_argv", lambda alias: [sys.executable, str(script)])
     with NodeClient("x") as c:
         assert c.agent_sock == sock
@@ -163,7 +163,7 @@ def test_client_passes_discovered_socket_to_child(monkeypatch, tmp_path):
 
 
 def test_explicit_env_or_argv_skips_discovery(monkeypatch):
-    def boom(alias=None):
+    def boom(alias=None, names=None):
         raise AssertionError("discovery ran")
 
     monkeypatch.setattr(sshenv, "agent_socket", boom)
@@ -198,7 +198,7 @@ def test_normalize_hello_bad_values():
 def test_failure_forgets_cached_socket(monkeypatch, tmp_path):
     fake_local(monkeypatch)
     forgot = []
-    monkeypatch.setattr(sshenv, "forget", lambda alias=None: forgot.append(alias))
+    monkeypatch.setattr(sshenv, "forget", lambda alias=None, names=None: forgot.append(alias))
     script = tmp_path / "ssh.py"
     script.write_text("import sys\nsys.stderr.write('u@h: Permission denied (publickey).\\n')\n"
                       "sys.exit(255)\n")
@@ -231,6 +231,6 @@ def test_cannot_start_ssh(monkeypatch):
 
 
 def test_default_ssh_spawn_blocked_in_tests(monkeypatch):
-    monkeypatch.setattr(sshenv, "agent_socket", lambda alias=None: None)
+    monkeypatch.setattr(sshenv, "agent_socket", lambda alias=None, names=None: None)
     with pytest.raises(AssertionError):
         NodeClient("rb-node1").__enter__()

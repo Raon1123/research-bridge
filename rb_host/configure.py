@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from rb_node.configure import ConfigError, git_exposure, read_json, write_json
 
+from . import config
 from .config import default_root, default_withheld
 
 REPO = Path(__file__).resolve().parent.parent
@@ -197,19 +198,7 @@ def mcp_registered(checkout: Path) -> Tuple[bool, str]:
     return True, ""
 
 
-def wrong_types(data: Any) -> List[str]:
-    """Problems with the types of the keys of a parsed host.json (empty when all are fine)."""
-    if not isinstance(data, dict):
-        return ["the top level must be an object"]
-    bad = []  # type: List[str]
-    nodes = data.get("nodes")
-    if nodes is not None and (not isinstance(nodes, dict)
-                              or not all(isinstance(v, dict) for v in nodes.values())):
-        bad.append("nodes must be an object whose values are objects")
-    for key in ("data_root", "withheld_patterns_file"):
-        if key in data and not isinstance(data[key], str):
-            bad.append("%s must be a string" % key)
-    return bad
+wrong_types = config.wrong_types
 
 
 HOST_SETUP_HINT = "run: rb setup --node NAME --host HOST --user USER"
@@ -220,6 +209,9 @@ def host_json_error(exc: Exception) -> str:
     path = host_path()
     if isinstance(exc, FileNotFoundError):
         return "error: no usable host.json at %s; %s" % (path, HOST_SETUP_HINT)
+    if isinstance(exc, config.WrongTypes):
+        return "error: no usable host.json at %s (%s); fix or move it, then %s" % (
+            path, str(exc).replace("\n", " "), HOST_SETUP_HINT)
     if isinstance(exc, OSError):
         return "error: no usable host.json at %s (cannot be read: %s); %s" % (
             path, (exc.strerror or type(exc).__name__).replace("\n", " "), HOST_SETUP_HINT)
