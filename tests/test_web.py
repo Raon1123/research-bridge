@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from rb_host import cli, jobs, threads, web
+from rb_host import cli, jobs, threads, web, webaccess
 from rb_host.client import NodeClient
 from rb_host.config import HostConfig
 from rb_host.ledger import Ledger
@@ -114,6 +114,10 @@ def srv(cfg):
     s = web.make_server(cfg, "127.0.0.1", 0)
     t = threading.Thread(target=s.serve_forever, daemon=True)
     t.start()
+    # sign in with a real key, as a browser does; req() then sends the cookie
+    token, _secs = webaccess.redeem(cfg, webaccess.issue_key(cfg, 10, 12))
+    s.cookie = "%s=%s" % (web.cookie_name(s.server_address[1]), token)
+    s.token = token
     try:
         yield s
     finally:
@@ -122,7 +126,7 @@ def srv(cfg):
         t.join(5)
 
 
-def req(srv, target, method="GET", host="default", extra=""):
+def req(srv, target, method="GET", host="default", extra="", cookie="auto"):
     port = srv.server_address[1]
     with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
         msg = "%s %s HTTP/1.1\r\n" % (method, target)
@@ -130,6 +134,10 @@ def req(srv, target, method="GET", host="default", extra=""):
             host = "127.0.0.1:%d" % port
         if host is not None:
             msg += "Host: %s\r\n" % host
+        if cookie == "auto":
+            cookie = getattr(srv, "cookie", None)
+        if cookie:
+            msg += "Cookie: %s\r\n" % cookie
         msg += extra + "Connection: close\r\n\r\n"
         s.sendall(msg.encode("latin-1"))
         data = b""
@@ -186,7 +194,7 @@ def test_loopback_host_names_accepted(srv):
     port = srv.server_address[1]
     for host in ("localhost:%d" % port, "LOCALHOST:%d" % port, "[::1]:%d" % port,
                  "127.0.0.1:%d" % port):
-        assert req(srv, "/healthz", host=host)[0] == 200
+        assert req(srv, "/healthz", host=host, cookie=None)[0] == 200
 
 
 def test_only_get_and_head(srv):
@@ -214,7 +222,7 @@ def test_all_routes_render(srv):
         assert code == 200 and headers["content-type"].startswith("text/html"), route
     code, headers, body = req(srv, "/healthz")
     data = json.loads(body)
-    assert code == 200 and data["ok"] is True and isinstance(data["ledger_mtime_ns"], int)
+    assert code == 200 and data == {"ok": True}
     assert headers["content-type"].startswith("application/json")
     _c, _h, index = req(srv, "/")
     assert 'http-equiv="refresh" content="30"' in index
@@ -474,3 +482,164 @@ def test_removed_path_shows_no_path_even_with_cache(cfg, srv):
     page = req(srv, "/nodes")[2]
     assert page.count("no path configured") == 3
     assert "OLD-CACHED-PHASE" not in page
+
+
+# -- access control ------------------------------------------------------------------------
+NEED = 'access key required: run "rb web key" in a hub terminal and open the address it prints'
+
+
+def test_every_protected_route_needs_a_session(srv):
+    for route in ROUTES[:-1] + ["/thread/unknown-id", "/thread/follow-1"]:
+        for method in ("GET", "HEAD"):
+            code, headers, body = req(srv, route, method=method, cookie=None)
+            assert code == 401, (route, method)
+            assert headers["content-type"] == "text/plain; charset=utf-8"
+            assert body == (NEED if method == "GET" else ""), route
+        assert req(srv, route)[0] in (200, 404)
+    assert req(srv, "/thread/unknown-id")[0] == 404  # with a session the id lookup shows
+    assert req(srv, "/healthz", cookie=None)[0] == 200
+    assert req(srv, "/nope", cookie=None)[0] == 404  # routes that do not exist stay 404
+    assert req(srv, "/", host="evil.example", cookie=None)[0] == 403  # Host check is first
+    assert req(srv, "/", method="POST", cookie=None)[0] == 405
+
+
+def test_bad_cookies_are_ignored(srv):
+    port = srv.server_address[1]
+    good = srv.token
+    for c in ("rb_web_%d=%s" % (port + 1, good), "other=%s" % good, "rb_web_%d=" % port,
+              "rb_web_%d=short" % port, "rb_web_%d=%s" % (port, "A" * 43), "\x01\x02;;==",
+              "rb_web_%d=%s=" % (port, good + "!")):
+        assert req(srv, "/", cookie=c)[0] == 401, c
+    assert req(srv, "/", cookie="x=1; rb_web_%d=%s" % (port, good))[0] == 200
+
+
+def test_enter_sets_cookie_and_redirects(cfg, srv):
+    key = webaccess.issue_key(cfg, 10, 2)
+    code, h, body = req(srv, "/enter?key=" + key, cookie=None)
+    assert code == 303 and h["location"] == "/" and body == ""
+    port = srv.server_address[1]
+    m = re.fullmatch(r"rb_web_%d=([A-Za-z0-9_-]{20,128}); HttpOnly; SameSite=Strict; Path=/; "
+                     r"Max-Age=7200" % port, h["set-cookie"])
+    assert m, h["set-cookie"]
+    assert "secure" not in h["set-cookie"].lower()
+    assert h["cache-control"] == "no-store" and h["x-content-type-options"] == "nosniff"
+    assert h["referrer-policy"] == "no-referrer"
+    assert req(srv, "/", cookie="rb_web_%d=%s" % (port, m.group(1)), host=None)[0] == 403
+    assert req(srv, "/", cookie="rb_web_%d=%s" % (port, m.group(1)))[0] == 200
+    # single use
+    code, _h, body = req(srv, "/enter?key=" + key, cookie=None)
+    assert (code, body) == (401, NEED)
+
+
+def test_enter_failures_and_head(cfg, srv):
+    key = webaccess.issue_key(cfg, 10, 12)
+    for target in ("/enter", "/enter?", "/enter?key=", "/enter?key=short", "/enter?other=" + key,
+                   "/enter?key=%s&key=%s" % (key, key), "/enter?key=" + key + "!",
+                   "/enter?key=" + "A" * 43):
+        code, _h, body = req(srv, target, cookie=None)
+        assert (code, body) == (401, NEED), target
+    # HEAD never redeems; the key still works afterwards
+    assert req(srv, "/enter?key=" + key, method="HEAD", cookie=None)[0] == 401
+    assert req(srv, "/enter?key=" + key, cookie=None)[0] == 303
+    assert req(srv, "/enter?key=x", host="evil.example", cookie=None)[0] == 403
+
+
+def test_expired_session_is_refused(cfg, srv, monkeypatch):
+    assert req(srv, "/")[0] == 200
+    real = time.time
+    monkeypatch.setattr(webaccess, "_now", lambda: real() + 13 * 3600)
+    assert req(srv, "/")[0] == 401
+
+
+def test_log_never_has_key_token_or_cookie(cfg, srv, capfd):
+    key = webaccess.issue_key(cfg, 10, 12)
+    capfd.readouterr()
+    code, h, _b = req(srv, "/enter?key=" + key, cookie=None)
+    token = re.search(r"=([^;]+);", h["set-cookie"]).group(1)
+    assert code == 303 and req(srv, "/", cookie="%s=%s" % (web.cookie_name(
+        srv.server_address[1]), token))[0] == 200
+    assert req(srv, "/enter?key=" + key, cookie=None)[0] == 401
+    err = capfd.readouterr().err
+    assert "GET enter 303" in err and "GET index 200" in err
+    for secret in (key, token, srv.token):
+        assert secret not in err
+
+
+def test_require_key_false_is_not_reachable_from_cli():
+    src = (REPO / "rb_host" / "cli.py").read_text(encoding="utf-8")
+    assert "require_key" not in src
+    assert "require_key" not in (REPO / "rb_host" / "web.py").read_text(
+        encoding="utf-8").split("def cli_main")[1]
+
+
+def test_require_key_false_serves_without_session(cfg):
+    s = web.make_server(cfg, "127.0.0.1", 0, require_key=False)
+    t = threading.Thread(target=s.serve_forever, daemon=True)
+    t.start()
+    try:
+        assert req(s, "/")[0] == 200
+    finally:
+        s.shutdown()
+        s.server_close()
+        t.join(5)
+
+
+# -- rb web key ------------------------------------------------------------------------------
+@pytest.fixture
+def hostjson(cfg, tmp_path, monkeypatch):
+    host = tmp_path / "ok-host.json"
+    host.write_text(json.dumps({"nodes": {"n1": {"alias": "x"}}, "data_root": cfg.data_root}),
+                    encoding="utf-8")
+    monkeypatch.setenv("RB_HOST_CONFIG", str(host))
+    return host
+
+
+def test_cli_web_key_output(cfg, hostjson, capsys):
+    assert cli.main(["web", "key"]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 3
+    m = re.fullmatch(r"http://127\.0\.0\.1:8767/enter\?key=([A-Za-z0-9_-]{43})", lines[0])
+    assert m
+    assert "works once" in lines[1] and "10 minutes" in lines[1]
+    assert "12 hours" in lines[2]
+    assert webaccess.counts(cfg) == (1, 0)
+    assert webaccess.redeem(cfg, m.group(1)) is not None
+    assert cli.main(["web", "key", "--port", "9000", "--minutes", "60",
+                     "--session-hours", "168"]) == 0
+    out = capsys.readouterr().out
+    assert ":9000/enter?key=" in out and "60 minutes" in out and "168 hours" in out
+
+
+@pytest.mark.parametrize("flags", [["--minutes", "0"], ["--minutes", "61"],
+                                   ["--session-hours", "0"], ["--session-hours", "169"],
+                                   ["--port", "0"], ["--port", "70000"]])
+def test_cli_web_key_range_errors(cfg, hostjson, capsys, flags):
+    assert cli.main(["web", "key"] + flags) == 1
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 1 and lines[0].startswith("error:")
+    assert webaccess.counts(cfg) == (0, 0)
+
+
+def test_cli_web_key_revoke_and_status(cfg, hostjson, capsys):
+    webaccess.issue_key(cfg, 10, 12)
+    webaccess.issue_key(cfg, 10, 12)
+    webaccess.redeem(cfg, webaccess.issue_key(cfg, 10, 12))
+    assert cli.main(["web", "key", "--status"]) == 0
+    assert capsys.readouterr().out.strip() == "2 pending key(s), 1 live session(s)"
+    assert cli.main(["web", "key", "--revoke"]) == 0
+    assert capsys.readouterr().out.strip() == "revoked 2 pending key(s) and 1 session(s)"
+    assert webaccess.counts(cfg) == (0, 0)
+
+
+def test_cli_web_key_without_host_json(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "missing" / "host.json"))
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "emptyroot"))
+    for argv in (["web", "key"], ["web", "key", "--status"], ["web", "key", "--revoke"]):
+        assert cli.main(argv) == 1
+        lines = capsys.readouterr().out.strip().splitlines()
+        assert len(lines) == 1 and lines[0].startswith("error: no usable host.json")
+
+
+def test_mcp_tools_unchanged_by_web_key():
+    src = (REPO / "rb_host" / "server.py").read_text(encoding="utf-8")
+    assert "webaccess" not in src

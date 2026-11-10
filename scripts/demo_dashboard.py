@@ -37,7 +37,7 @@ sys.path.insert(1, str(REPO / "vault-export" / "dashboard"))
 
 # rb_host is imported before the page modules: they put the installed checkout on sys.path,
 # and the modules already imported from this repository win.
-from rb_host import board, jobs, server, sync, web  # noqa: E402
+from rb_host import board, jobs, server, sync, web, webaccess  # noqa: E402
 from rb_host.client import NodeClient  # noqa: E402
 from rb_node import approval  # noqa: E402
 from rb_node.mailbox import Mailbox  # noqa: E402
@@ -224,6 +224,12 @@ def start(root: Path, port: int, web_port: int) -> Tuple[http.server.ThreadingHT
     return srv, web_srv
 
 
+def hub_page_address(web_srv: http.server.HTTPServer) -> str:
+    """Issue a one-time key (60 minutes) and return the address that opens the hub page."""
+    key = webaccess.issue_key(jobs.load_cfg(), 60, 12)
+    return "http://127.0.0.1:%d/enter?key=%s" % (web_srv.server_address[1], key)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8799)
@@ -243,8 +249,8 @@ def main() -> int:
         print("demo data: %s" % root, flush=True)
         print("open http://127.0.0.1:%d/board and /rb/pending (passphrase: %s)" % (
             srv.server_address[1], PASSPHRASE), flush=True)
-        print("hub page: http://127.0.0.1:%d/ (also /threads, /jobs, /nodes)"
-              % web_srv.server_address[1], flush=True)
+        print("hub page: %s (opens once within 60 minutes; then /threads, /jobs, /nodes)"
+              % hub_page_address(web_srv), flush=True)
         srv.serve_forever()
     except KeyboardInterrupt:
         pass

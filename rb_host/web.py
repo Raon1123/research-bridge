@@ -2,7 +2,8 @@
 
 Shows stored conversations, job records, pending approvals and the sync state. A request reads
 files (the ledger through `threads.load`, stored bodies, the sync status file, the board cache)
-and writes nothing, opens no node connection and starts no process. Stdlib HTTP server on
+and writes nothing (except `/enter`, which consumes an access key in `web/access.json`), opens no node connection and starts no process. Every route except /healthz needs a session
+cookie obtained with a one-time key (`rb_host.webaccess`). Stdlib HTTP server on
 loopback; GET and HEAD only; no script, no form, no external resource. This module imports
 neither `mcp` nor `rb_host.server` nor `rb_host.board` at module level (`board` is loaded on the
 first /nodes request).
@@ -12,19 +13,21 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import os
 import re
 import sys
+import time
+import urllib.parse
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from rb_node.withheld import Withheld
 
-from . import configure, jobs, threads
+from . import configure, jobs, threads, webaccess
 
 DEFAULT_PORT = 8767
-ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
+ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|enter|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
 CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; form-action 'none'; "
        "base-uri 'none'; frame-ancestors 'none'")
 LOOPBACK_BINDS = ("127.0.0.1",)
@@ -38,7 +41,8 @@ STYLE = ("body{font-family:system-ui,sans-serif;margin:16px;max-width:1200px}"
          ".banner{background:#fff3cd;padding:4px 8px;margin:4px 0}"
          ".rec{border-top:1px solid #bbb;margin-top:12px}")
 _NAMES = {"": "index", "threads": "threads", "jobs": "jobs", "nodes": "nodes",
-          "healthz": "healthz"}
+          "healthz": "healthz", "enter": "enter"}
+NEED_KEY = 'access key required: run "rb web key" in a hub terminal and open the address it prints'
 
 
 # -- addressing ---------------------------------------------------------------------------
@@ -373,19 +377,16 @@ def _thread_page(cfg: Any, wh: Withheld, anyid: str) -> Tuple[int, str, bytes]:
     return 200, "text/html; charset=utf-8", _page("Thread", "".join(parts), 60)
 
 
-def _healthz(cfg: Any) -> bytes:
-    try:
-        mt = os.stat(str(jobs.ledger_for(cfg).path)).st_mtime_ns  # type: Optional[int]
-    except OSError:
-        mt = None
-    return json.dumps({"ok": True, "ledger_mtime_ns": mt}).encode("utf-8")
+def _healthz() -> bytes:
+    """Liveness only: this route needs no session, so it carries no data of the hub."""
+    return json.dumps({"ok": True}).encode("utf-8")
 
 
 def render(cfg: Any, route: str, arg: Optional[str]) -> Tuple[int, str, bytes]:
     """(status, content type, body) for one route. Reads files only."""
     html_type = "text/html; charset=utf-8"
     if route == "healthz":
-        return 200, "application/json; charset=utf-8", _healthz(cfg)
+        return 200, "application/json; charset=utf-8", _healthz()
     wh = Withheld.load(Path(cfg.withheld_patterns_file))
     if route == "index":
         return 200, html_type, _index(cfg, wh)
@@ -421,6 +422,36 @@ class _Handler(BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(body)
 
+    def _session_ok(self) -> bool:
+        try:
+            jar = SimpleCookie()
+            jar.load(self.headers.get("Cookie") or "")
+            morsel = jar.get(cookie_name(self.server.server_address[1]))  # type: ignore[attr-defined]
+            token = morsel.value if morsel is not None else None
+        except Exception:
+            return False
+        return webaccess.session_ok(self.server.cfg, token)  # type: ignore[attr-defined]
+
+    def _enter(self, raw: str, head: bool) -> None:
+        """GET /enter?key=...: exchange a one-time key for a session cookie. HEAD never does."""
+        keys = []  # type: List[str]
+        if not head and "?" in raw:
+            keys = [v for k, v in urllib.parse.parse_qsl(raw.split("?", 1)[1].split("#")[0],
+                                                          keep_blank_values=True) if k == "key"]
+        got = webaccess.redeem(self.server.cfg, keys[0]) if len(keys) == 1 else None  # type: ignore[attr-defined]
+        if got is None:
+            return self._plain(401, NEED_KEY, head)
+        token, seconds = got
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Set-Cookie", "%s=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%d"
+                         % (cookie_name(self.server.server_address[1]), token, seconds))  # type: ignore[attr-defined]
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+
     def _serve(self, head: bool) -> None:
         host = (self.headers.get("Host") or "").lower()
         if host not in self.server.allowed:  # type: ignore[attr-defined]
@@ -429,6 +460,10 @@ class _Handler(BaseHTTPRequestHandler):
         route, arg = route_of(raw)
         if route == "other" or self.path.split("?", 1)[0] != raw.split("?", 1)[0]:
             return self._plain(404, "not found", head)
+        if route == "enter":
+            return self._enter(raw, head)
+        if route != "healthz" and self.server.require_key and not self._session_ok():  # type: ignore[attr-defined]
+            return self._plain(401, NEED_KEY, head)
         try:
             status, ctype, data = render(self.server.cfg, route, arg)  # type: ignore[attr-defined]
         except Exception:
@@ -497,11 +532,21 @@ def check_bind(bind: str, port: int) -> None:
         raise ValueError("--port must be between 0 and 65535")
 
 
-def make_server(cfg: Any, bind: str = "127.0.0.1", port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
-    """Build (do not start) the page server. Only a loopback bind is accepted."""
+def cookie_name(port: int) -> str:
+    """Cookies are not separated by port, so the port is part of the name."""
+    return "rb_web_%d" % port
+
+
+def make_server(cfg: Any, bind: str = "127.0.0.1", port: int = DEFAULT_PORT,
+                require_key: bool = True) -> ThreadingHTTPServer:
+    """Build (do not start) the page server. Only a loopback bind is accepted.
+
+    `require_key=False` serves every route without a session. It exists only for tests that are
+    about rendering; no command-line flag or config key reaches it."""
     check_bind(bind, port)
     srv = _Server((bind, port), _Handler)
     srv.cfg = cfg  # type: ignore[attr-defined]
+    srv.require_key = require_key  # type: ignore[attr-defined]
     srv.allowed = allowed_hosts(srv.server_address[1])  # type: ignore[attr-defined]
     return srv
 
@@ -518,7 +563,48 @@ def serve(cfg: Any, bind: str, port: int) -> None:
         srv.server_close()
 
 
+def key_main(args: argparse.Namespace) -> int:
+    """rb web key: issue a one-time access key, or revoke everything, or show counts."""
+    if args.revoke or args.status:
+        cfg = configure.host_cfg()
+        if cfg is None:
+            return 1
+        if args.revoke:
+            k, n = webaccess.revoke_all(cfg)
+            print("revoked %d pending key(s) and %d session(s)" % (k, n))
+        else:
+            k, n = webaccess.counts(cfg)
+            print("%d pending key(s), %d live session(s)" % (k, n))
+        return 0
+    lo, hi = webaccess.KEY_MINUTES
+    if not lo <= args.minutes <= hi:
+        print("error: --minutes must be between %d and %d" % (lo, hi))
+        return 1
+    lo, hi = webaccess.SESSION_HOURS
+    if not lo <= args.session_hours <= hi:
+        print("error: --session-hours must be between %d and %d" % (lo, hi))
+        return 1
+    if not 1 <= args.port <= 65535:
+        print("error: --port must be between 1 and 65535")
+        return 1
+    cfg = configure.host_cfg()
+    if cfg is None:
+        return 1
+    try:
+        key = webaccess.issue_key(cfg, args.minutes, args.session_hours)
+    except OSError as exc:
+        print("error: cannot write the access file (%s)" % (exc.strerror or type(exc).__name__))
+        return 1
+    expires = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + args.minutes * 60))
+    print("http://127.0.0.1:%d/enter?key=%s" % (args.port, key))
+    print("the key works once and expires at %s (%d minutes)" % (expires, args.minutes))
+    print("the browser session then lasts %d hours" % args.session_hours)
+    return 0
+
+
 def cli_main(args: argparse.Namespace) -> int:
+    if args.action == "key":
+        return key_main(args)
     try:
         check_bind(args.bind, args.port)
     except ValueError as exc:
