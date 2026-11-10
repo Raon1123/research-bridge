@@ -1,88 +1,192 @@
 #!/bin/sh
 # Install or update rb_node on THIS machine (the experiment node) from a research-bridge checkout.
-# Safe by default: copies code, writes the wrapper, creates node.json, records the git commit that
-# was installed. It prints the authorized_keys lines and edits ~/.ssh/authorized_keys only with
-# --apply-authorized-keys. See docs/manual/node-setup.md.
+# Copies code into a release directory and swaps a symlink, writes the wrapper, creates node.json,
+# creates the mailbox directories and records the git commit that was installed. It prints the
+# authorized_keys lines and edits ~/.ssh/authorized_keys only with --apply-authorized-keys, on a
+# terminal, after a y/N answer. Everything that edits a file or derives a value is in
+# `python3 -m rb_node.install` (tested in Python). See docs/manual/node-setup.md.
+# Needs GNU coreutils `mv -T` (the node is Linux).
 set -eu
 
 SRC=$(cd "$(dirname "$0")/.." && pwd)
-TRM=""; PUBKEY=""; HARNESS_PUBKEY=""; SUBNET=""; APPLY=0; UPDATE=0; DRY=0
+ROOT=""; HUBKEY=""; HUBKEYFILE=""; HARNESSKEY=""; HARNESSKEYFILE=""; FROM=""; WFILE=""
+APPLY=0; UPDATE=0; DRY=0
+
 usage() {
-  cat <<USAGE
-usage: scripts/node-install.sh [--trm-root DIR] [--update] [--dry-run]
-         [--hub-pubkey FILE --harness-pubkey FILE --hub-subnet CIDR [--apply-authorized-keys]]
-  --trm-root DIR       research tree (sets node.json trm_root; default keeps node.json / ~/project/trm)
-  --update             git pull --ff-only in this checkout first (never pushes)
-  --hub-pubkey FILE    hub's bridge public key   (for the serve-remote line)
-  --harness-pubkey FILE hub's harness public key (for the harness-receive line)
-  --hub-subnet CIDR    value for from="..." (the hub's address or subnet)
-  --apply-authorized-keys  append the two lines (backup first); without it they are only printed
+  cat <<'USAGE'
+usage: scripts/node-install.sh [--research-root DIR] [--update] [--dry-run]
+         [--hub-key 'ssh-ed25519 AAAA...' | --hub-pubkey FILE]
+         [--harness-key '...' | --harness-pubkey FILE] [--hub-from ADDR]
+         [--withheld-file FILE] [--apply-authorized-keys]
+  --research-root DIR      research tree on this node (alias --trm-root); sets node.json trm_root
+                           and the paths derived from it. Without it node.json is kept; with no
+                           node.json you are asked once on a terminal, else give this flag.
+  --hub-key KEY            hub bridge public key, inline (the serve-remote line)
+  --hub-pubkey FILE        the same, from a file
+  --harness-key KEY        hub harness public key, inline (the harness-receive line)
+  --harness-pubkey FILE    the same, from a file
+  --hub-from ADDR          value for from="...": addresses or CIDR ranges, comma-separated
+                           (alias --hub-subnet)
+  --withheld-file FILE     withheld pattern file (JSON); validated, copied to
+                           ~/.research-bridge/withheld-patterns.json, set as withheld_source.
+                           Replacing a different file needs a terminal and a y answer.
+  --apply-authorized-keys  show the change to ~/.ssh/authorized_keys and apply it after y/N on a
+                           terminal (backup first); without a terminal the lines are only printed
+  --update                 git pull --ff-only in this checkout first (never pushes)
+  --dry-run                print every action, write nothing
+  -h, --help               this text
 USAGE
 }
+
+need() { [ "$1" -ge 2 ] || { usage >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --trm-root) TRM=$2; shift 2;; --update) UPDATE=1; shift;; --dry-run) DRY=1; shift;;
-    --hub-pubkey) PUBKEY=$2; shift 2;; --harness-pubkey) HARNESS_PUBKEY=$2; shift 2;;
-    --hub-subnet) SUBNET=$2; shift 2;; --apply-authorized-keys) APPLY=1; shift;;
-    -h|--help) usage; exit 0;; *) usage >&2; exit 2;;
+    --research-root|--trm-root) need $#; ROOT=$2; shift 2;;
+    --hub-key) need $#; HUBKEY=$2; shift 2;;
+    --hub-pubkey) need $#; HUBKEYFILE=$2; shift 2;;
+    --harness-key) need $#; HARNESSKEY=$2; shift 2;;
+    --harness-pubkey) need $#; HARNESSKEYFILE=$2; shift 2;;
+    --hub-from|--hub-subnet) need $#; FROM=$2; shift 2;;
+    --withheld-file) need $#; WFILE=$2; shift 2;;
+    --apply-authorized-keys) APPLY=1; shift;;
+    --update) UPDATE=1; shift;;
+    --dry-run) DRY=1; shift;;
+    -h|--help) usage; exit 0;;
+    *) usage >&2; exit 2;;
   esac
 done
-run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
 
-command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
-python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' \
+run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
+say() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else echo "$*"; fi; }
+
+# -- prerequisites ---------------------------------------------------------------------------
+PY=$(command -v python3 || true)
+[ -n "$PY" ] || { echo "python3 not found" >&2; exit 1; }
+"$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' \
   || { echo "python3 >= 3.8 required" >&2; exit 1; }
 command -v git >/dev/null || { echo "git not found" >&2; exit 1; }
 command -v pdftotext >/dev/null || echo "note: pdftotext missing; pdf files will be denied"
-
-if [ "$UPDATE" = 1 ]; then run git -C "$SRC" pull --ff-only; fi
+command -v claude >/dev/null || echo "note: claude not found on PATH; the responder needs claude_bin"
 
 DEST="$HOME/.local/share/research-bridge"
 BIN="$HOME/.local/bin"
 RB="$HOME/.research-bridge"
-run mkdir -p "$DEST" "$BIN" "$RB"
-run chmod 700 "$RB"
-
-# Code: replace rb_node/ wholesale so removed modules do not linger. LF endings come from git.
-run rm -rf "$DEST/rb_node"
-run cp -r "$SRC/rb_node" "$DEST/rb_node"
-run find "$DEST/rb_node" -name __pycache__ -prune -exec rm -rf {} +
-
-if [ "$DRY" = 1 ]; then echo "[dry-run] write $BIN/rb-node"; else
-  cat > "$BIN/rb-node" <<'WRAP'
-#!/bin/sh
-PYTHONPATH="$HOME/.local/share/research-bridge" exec python3 -m rb_node.cli "$@"
-WRAP
-  chmod 755 "$BIN/rb-node"
-fi
+NODEJSON=${RB_NODE_CONFIG:-$RB/node.json}
 RBN="$BIN/rb-node"
+pyinst() { PYTHONPATH="$SRC" "$PY" -m rb_node.install "$@"; }
 
-if [ "$DRY" = 0 ]; then
-  [ -f "$RB/node.json" ] || "$RBN" config init
-  [ -z "$TRM" ] || "$RBN" config set trm_root "$(cd "$TRM" && pwd)"
-  CL=$(command -v claude || true)
-  [ -z "$CL" ] || "$RBN" config set claude_bin "$CL"
-  "$RBN" install-record "$SRC"       # git commit/branch/dirty of what was installed
+# Decide the research root before anything is written.
+case "$ROOT" in "~"*) ROOT="$HOME${ROOT#"~"}";; esac
+if [ -z "$ROOT" ] && [ ! -f "$NODEJSON" ]; then
+  if [ -t 0 ] && [ -t 1 ]; then
+    printf 'Research tree on this node: '
+    read -r ROOT
+    case "$ROOT" in "~"*) ROOT="$HOME${ROOT#"~"}";; esac
+    [ -n "$ROOT" ] || { echo "give --research-root DIR" >&2; exit 2; }
+  else
+    echo "no node.json yet: give --research-root DIR" >&2
+    exit 2
+  fi
+fi
+if [ -n "$ROOT" ]; then
+  [ -d "$ROOT" ] || { echo "research root is not a directory: $ROOT" >&2; exit 2; }
+  ROOT=$(cd "$ROOT" && pwd)
 fi
 
-# authorized_keys lines (forced commands, restrict, from=)
-if [ -n "$PUBKEY" ] && [ -n "$HARNESS_PUBKEY" ] && [ -n "$SUBNET" ]; then
-  k1=$(cut -d' ' -f1,2 "$PUBKEY"); k2=$(cut -d' ' -f1,2 "$HARNESS_PUBKEY")
-  L1="restrict,from=\"$SUBNET\",command=\"$BIN/rb-node serve-remote\" $k1 research-bridge-hub"
-  L2="restrict,from=\"$SUBNET\",command=\"$BIN/rb-node harness-receive\" $k2 research-bridge-harness"
-  echo "--- authorized_keys lines ---"; echo "$L1"; echo "$L2"
-  if [ "$APPLY" = 1 ] && [ "$DRY" = 0 ]; then
-    AK="$HOME/.ssh/authorized_keys"; mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$AK"
-    cp "$AK" "$AK.bak.$(date +%Y%m%d%H%M%S)"
-    for L in "$L1" "$L2"; do grep -qxF "$L" "$AK" || echo "$L" >> "$AK"; done
-    chmod 600 "$AK"; echo "appended to $AK (backup kept)"
+# -- --update --------------------------------------------------------------------------------
+if [ "$UPDATE" = 1 ]; then
+  if git -C "$SRC" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
+    run git -C "$SRC" pull --ff-only
+  else
+    echo "no upstream for this branch; installing the current checkout"
+  fi
+fi
+
+# -- code: release directory, then an atomic symlink swap -------------------------------------
+STAMP="$(date +%Y%m%d%H%M%S)-$$"
+REL="$DEST/releases/$STAMP"
+run mkdir -p "$REL" "$BIN" "$RB"
+run chmod 700 "$RB"
+run cp -R "$SRC/rb_node" "$REL/rb_node"
+run find "$REL/rb_node" -name __pycache__ -prune -exec rm -rf {} +
+if [ -d "$DEST/rb_node" ] && [ ! -L "$DEST/rb_node" ]; then
+  # first run over a plain directory: one moment without code, on this run only
+  run mkdir -p "$DEST/releases/legacy"
+  run rm -rf "$DEST/releases/legacy/rb_node"
+  run mv "$DEST/rb_node" "$DEST/releases/legacy/rb_node"
+fi
+run rm -f "$DEST/rb_node.new"
+run ln -s "releases/$STAMP/rb_node" "$DEST/rb_node.new"
+run mv -T "$DEST/rb_node.new" "$DEST/rb_node"
+if [ "$DRY" = 0 ]; then
+  # keep the two newest releases (by mtime) and the one in use; "legacy" is never pruned
+  INUSE=$(readlink "$DEST/rb_node" | cut -d/ -f2)
+  ls -1t "$DEST/releases" | grep -v '^legacy$' | tail -n +3 | while read -r old; do
+    [ "$old" = "$INUSE" ] || rm -rf "$DEST/releases/$old"
+  done
+fi
+
+# -- wrapper with the absolute python found now -----------------------------------------------
+if [ "$DRY" = 1 ]; then
+  echo "[dry-run] write $RBN (python $PY)"
+else
+  cat > "$RBN.new" <<WRAP
+#!/bin/sh
+PYTHONPATH="\$HOME/.local/share/research-bridge" exec $PY -m rb_node.cli "\$@"
+WRAP
+  chmod 755 "$RBN.new"
+  mv -f "$RBN.new" "$RBN"
+fi
+
+# -- node.json --------------------------------------------------------------------------------
+if [ ! -f "$NODEJSON" ]; then run "$RBN" config init; fi
+if [ -n "$ROOT" ]; then run "$RBN" config set trm_root "$ROOT"; fi
+if [ "$DRY" = 0 ]; then
+  CB=$("$RBN" config show | "$PY" -c 'import json,sys; print(json.load(sys.stdin).get("claude_bin") or "")')
+  if ! { [ -n "$CB" ] && [ -f "$CB" ] && [ -x "$CB" ]; }; then
+    CL=$(command -v claude || true)
+    if [ -n "$CL" ]; then "$RBN" config set claude_bin "$CL"; fi
   fi
 else
-  echo "authorized_keys: give --hub-pubkey, --harness-pubkey and --hub-subnet to print the lines"
+  echo "[dry-run] set claude_bin only when the current value is not an executable file"
 fi
 
-if [ "$DRY" = 0 ]; then
-  echo "--- node.json check ---"; "$RBN" config check || true
-  echo "--- git state ---"; "$RBN" git-status
+if [ -n "$WFILE" ]; then
+  if [ "$DRY" = 1 ]; then
+    pyinst withheld --file "$WFILE" --dry-run || exit 1
+  else
+    pyinst withheld --file "$WFILE" || { echo "withheld file refused; stopping" >&2; exit 1; }
+  fi
+fi
+
+# -- mailbox, install record ------------------------------------------------------------------
+if [ "$DRY" = 1 ]; then
+  echo "[dry-run] create mailbox in, out, state, state/acked (mode 700)"
+  echo "[dry-run] rb-node install-record $SRC"
+else
+  pyinst mailbox
+  "$RBN" install-record "$SRC"
+fi
+
+# -- authorized_keys --------------------------------------------------------------------------
+if { [ -n "$HUBKEY" ] || [ -n "$HUBKEYFILE" ]; } && [ -n "$FROM" ]; then
+  set -- authorized-keys --hub-from "$FROM" --bindir "$BIN"
+  [ -z "$HUBKEY" ] || set -- "$@" --hub-key "$HUBKEY"
+  [ -z "$HUBKEYFILE" ] || set -- "$@" --hub-pubkey "$HUBKEYFILE"
+  [ -z "$HARNESSKEY" ] || set -- "$@" --harness-key "$HARNESSKEY"
+  [ -z "$HARNESSKEYFILE" ] || set -- "$@" --harness-pubkey "$HARNESSKEYFILE"
+  [ "$APPLY" = 0 ] || set -- "$@" --apply
+  [ "$DRY" = 0 ] || set -- "$@" --dry-run
+  pyinst "$@"
+else
+  echo "authorized_keys: give --hub-key (or --hub-pubkey) and --hub-from to print the lines"
+fi
+
+# -- host key fingerprints, then the doctor ---------------------------------------------------
+pyinst fingerprints
+if [ "$DRY" = 1 ]; then
+  echo "[dry-run] rb-node doctor"
+else
+  "$RBN" doctor || true
 fi
 echo "Next (you, on this console): rb-node approve-key set"

@@ -1,4 +1,5 @@
-# Append to ~/.ssh/authorized_keys on node1. Replace <LAPTOP_SUBNET> and <PUBKEY>.
-# <LAPTOP_SUBNET> candidates: <LAPTOP_WIFI_SUBNET> (Wi-Fi) or <LAPTOP_ETH_SUBNET> / <LAPTOP_ETH_SUBNET> (Ethernet).
-restrict,from="<LAPTOP_SUBNET>",command="/home/<NODE_USER>/.local/bin/rb-node serve-remote" ssh-ed25519 <PUBKEY> research-bridge-laptop
-restrict,from="<LAPTOP_SUBNET>",command="/home/<NODE_USER>/.local/bin/rb-node harness-receive" ssh-ed25519 <PUBKEY> research-bridge-harness
+# Lines for ~/.ssh/authorized_keys on the node. scripts/node-install.sh --apply-authorized-keys
+# writes these after showing them (backup first, y/N on a terminal).
+# <HUB_ADDR>: the hub's address or subnet. The two keys must differ (AGENTS.md hard rule 9).
+restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node serve-remote" ssh-ed25519 <PUBKEY> research-bridge-hub
+restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness-receive" ssh-ed25519 <PUBKEY> research-bridge-harness
