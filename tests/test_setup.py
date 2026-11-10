@@ -589,3 +589,12 @@ def test_setup_host_json_wrong_types_one_line(hub, capsys, tmp_path, body):
     assert "wrong types" in out and "rb setup" in out
     assert len([ln for ln in out.splitlines() if ln.startswith("error:")]) == 1
     assert hub.names("interactive") == [] and hub.asks == []
+
+
+def test_host_key_scan_uses_what_ssh_reports(hub, capsys):
+    _ready_for_hostkey(hub)
+    args = ["setup", "--node", "node1", "--host", "<NODE_HOST>", "--port", "2300", "--user",
+            "<NODE_USER>"]
+    cli.main(args)
+    assert hub.keyscan_calls and hub.keyscan_calls[-1][:2] == ("<NODE_HOST>", 2222)
+    assert "scanning what ssh uses" in capsys.readouterr().out

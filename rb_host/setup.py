@@ -323,14 +323,24 @@ def step_ssh_config(a: Args) -> str:
 
 def step_host_key(a: Args, keys_generated: bool) -> str:
     cfg = dict(_ssh(a, a.alias))
-    cfg["hostname"] = [a.host]
-    cfg["port"] = [str(a.port)]
+    host, port = a.host, a.port
+    if _defined(cfg, a.alias):  # scan what ssh will connect to, not what the command line says
+        host = cfg["hostname"][0]
+        try:
+            port = int((cfg.get("port") or ["22"])[0])
+        except ValueError:
+            port = a.port
+        if host.lower() != a.host.lower() or port != a.port:
+            _say("note: ssh uses %s port %d for %s, not %s port %d; scanning what ssh uses"
+                 % (host, port, a.alias, a.host, a.port))
+    cfg["hostname"] = [host]
+    cfg["port"] = [str(port)]
     if sshenv.known_host(cfg):
         _say("known_hosts already has an entry for %s" % a.alias)
         return "skipped"
     hashed = (cfg.get("hashknownhosts") or ["no"])[0].lower() == "yes"
     flags = ("-H " if hashed else "")
-    scan_cmd = "ssh-keyscan -t ed25519 %s-p %d %s" % (flags, a.port, a.host)
+    scan_cmd = "ssh-keyscan -t ed25519 %s-p %d %s" % (flags, port, host)
     if a.print_only:
         _say("no known_hosts entry for %s yet; after the node command has run, setup would scan once "
              "(%s), show the fingerprint and ask" % (a.alias, scan_cmd))
@@ -340,7 +350,7 @@ def step_host_key(a: Args, keys_generated: bool) -> str:
              "then run: rb setup --node %s" % a.node)
         return "printed"
     files = sshenv.known_hosts_files(cfg)
-    kind, data = sshenv.keyscan(a.host, a.port, hashed)
+    kind, data = sshenv.keyscan(host, port, hashed)
     if not data:
         _say("could not read the host key; check that %s is reachable" % a.alias)
         return "printed"
@@ -348,17 +358,11 @@ def step_host_key(a: Args, keys_generated: bool) -> str:
     if not fps:
         _say("the scan of %s could not be fingerprinted, so there is nothing to compare; nothing "
              "was written. Check that %s is reachable and rerun rb setup --node %s"
-             % (a.alias, a.host, a.node))
+             % (a.alias, host, a.node))
         return "printed"
     _say("scanned host key of %s (%s):" % (a.alias, kind))
     for fp in fps:
         _say("  " + fp)
-    ssh_host = (_ssh(a, a.alias).get("hostname") or [""])[0]
-    ssh_port = (_ssh(a, a.alias).get("port") or [""])[0]
-    if _defined(_ssh(a, a.alias), a.alias) and (ssh_host.lower() != a.host.lower()
-                                                or ssh_port != str(a.port)):
-        _say("note: ssh uses %s port %s for %s, not %s port %d; the scan used the values you gave"
-             % (ssh_host, ssh_port, a.alias, a.host, a.port))
     key_alias = (_ssh(a, a.alias).get("hostkeyalias") or [""])[0]
     if key_alias:
         if hashed:
