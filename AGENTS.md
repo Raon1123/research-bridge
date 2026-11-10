@@ -8,7 +8,7 @@ research-bridge is one SSH-key-authenticated channel between the **hub** and an 
 
 - messages with file attachments between hub Claude sessions and server Claude sessions;
 - masked reading of server hypothesis (H-xxx) and experiment (EXP-xxx) documents;
-- job submission with a budget (GPU ids and GPU-hours chosen by the user), approved in two steps;
+- job submission with a budget (one GPU from the node's `allowed_gpus` and GPU-hours, chosen by the user), approved in two steps;
 - a manual, staging-only harness sync channel;
 - display of all of it in two places: the read-only hub page (`rb web serve`, loopback port 8767 on the hub, reached from the laptop through an SSH local forward) and, on the laptop only, the 8765 dashboard and the session browser (vault side). The 8765 dashboard is not present on the hub. Routes of both and the forward command: `docs/session-dashboard.md`.
 

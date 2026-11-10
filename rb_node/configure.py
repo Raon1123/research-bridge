@@ -105,6 +105,10 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
     want = types[key]
     if key == "withheld_source" and value in (None, ""):
         value = None
+    elif key == "allowed_gpus":
+        if not (isinstance(value, list) and len(set(value)) == len(value) and all(
+                isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in value)):
+            raise ConfigError("allowed_gpus needs a JSON list of distinct GPU indices, e.g. '[4, 5]'")
     elif want is list:
         if not (isinstance(value, list) and all(isinstance(v, str) for v in value)):
             raise ConfigError("%s needs a JSON list of strings, e.g. '[\"a\", \"b\"]'" % key)

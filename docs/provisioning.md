@@ -49,6 +49,31 @@ Run only after every B2 row holds. Use test text that names no withheld series.
 
 ## Results
 
+### Node-local checks (2026-11-10, run on node1's console)
+
+The hub was not involved. The B3 live run (message, `read_doc`, job through `rb approve`) is still to do; see `docs/HANDOFF.md`.
+
+| Check | Result |
+|---|---|
+| Test suite on node1 (Python 3.12) | 345 passed |
+| `rb-node config check` | One item: `harness_root` is empty |
+| Installed code against the checkout | Identical; install record clean |
+| Hydra by-name template, `--cfg job` (composition only, no training), config with `defaults: [cfg_pretrain, _self_]` | Composes; the tree's `arch` group resolves; the submitted key is present |
+| Same, config without a `defaults` list | Composes to the submitted keys only (the base config is not inherited) |
+| Same, config named like the tree's own primary config | The submitted file is ignored; the tree's file is loaded, no error |
+| Same, after the fix: the config stored as `rbjob-<32 hex>.yaml` (the name `job_submit` now gives it) | Composes; the submitted key is present |
+| Same, `.yml` and `.json` | `Cannot find primary config`; exit 1. `job_submit` now refuses these for a by-name template |
+| PM-02: `rb-node respond` in a minimal non-login environment (`env -i`, system `PATH`), Claude CLI 2.1.322, scratch mailbox and scratch tree | Two queued messages answered in one run; the scratch audit log shows `local.inbox_read` and `local.reply` for each. One asked for a shell command: the reply declined |
+| PM-02: the `claude` argv of `rb_node/spawn.py` run by hand in the same environment, output kept, message asking to create a file by any tool | Claude exit code 0, empty stderr, `--setting-sources ""` accepted, result `success`; reply sent through `reply`; no file was created. The session declined without calling a tool, so this does not show a tool call being blocked |
+| `run-job`, GPU outside `allowed_gpus` (scratch config) | Nothing launched; `failed`, reason `gpu_not_allowed`, exit 126 |
+| `run-job`, GPU 5 requested under a worker that exports GPU 6 (scratch config) | Job sees `CUDA_VISIBLE_DEVICES=6`; record has `gpus_used: [6]` |
+| `run-job`, worker on a GPU outside `allowed_gpus` (scratch config) | Nothing launched; `gpu_not_allowed` |
+| `run-job --gpus 4 --gpu-hours 0.001 --job-id rbtest-20261110 -- sleep 60` (real node config) | Stopped after 3.7 s (budget 3.6 s), no process left; a `job_finished` event is in the node outbox for the hub's next `poll` |
+
+Not covered by these checks: delivery over SSH, the forced command, masking on `poll`, approval with the passphrase, and a job claimed by the real queue runner.
+
+### Live run (plan Step 8)
+
 As of 2026-11-10: not run.
 
 (Fill in after the run: date, who ran each row, outcome per row, deviations. Then write the postmortem of the first live run.)

@@ -82,7 +82,8 @@ Edit it on the node console only, with `rb-node config` (no bridge operation rea
 | `queue_dir` | path | `<trm_root>/scripts/queue` | Queue root (`jobs/`, `processing/`, `done/`, `failed/`). |
 | `withheld_source` | path or `null` | `~/.research-bridge/withheld-patterns.json` | Withheld pattern file (§4.3). `null` or `""` means none: only the five fallback patterns apply. The file does not exist after `config init`, and the doctor fails until you install one. |
 | `claude_bin` | path | `~/.local/bin/claude` | Absolute path of the Claude CLI for the responder. |
-| `job_template` | list of strings | `[]` | argv with a `{config}` placeholder, for example `["uv", "run", "pretrain.py", "--config", "{config}"]`. Empty means `job_submit` is refused (`no_job_template`). Set by the node's owner. |
+| `job_template` | list of strings | `[]` | argv with a config placeholder (`{config}`, `{config_dir}` or `{config_stem}`, §4.1.1), for example `["uv", "run", "pretrain.py", "--config", "{config}"]`. Empty means `job_submit` is refused (`no_job_template`). Set by the node's owner. |
+| `allowed_gpus` | list of integers | `[]` | GPU indices a bridge job may use: the node owner's GPUs, for example `[4, 5, 6, 7]`. Empty means `job_submit` is refused (`no_allowed_gpus`) and `run-job` starts nothing. A GPU outside the list, or more than one GPU, is refused with `invalid`. Set by the node's owner. |
 | `max_file` | positive integer | 52428800 (50 MB) | Attachment cap in bytes. |
 | `mailbox_root` | path | `~/.research-bridge/mailbox` | Mailbox (`in/`, `out/`, `state/`). |
 | `audit_path` | path | `~/.research-bridge/audit.jsonl` | Audit log (no message bodies). |
@@ -92,6 +93,14 @@ Edit it on the node console only, with `rb-node config` (no bridge operation rea
 | `harness_root` | path | `""` | The node's `~/.claude` for the harness channel. Empty means harness push and pull are refused (`no_harness_root`). |
 
 Setting `trm_root` also updates `queue_dir`, the queue entry of `write_roots` and an old default `withheld_source` if they still have the values derived from the previous root.
+
+### 4.1.1 `job_template` placeholders
+
+The config is stored as `rbjob-<job_id><ext>` under the mailbox state directory. `{config}` is the stored config's path, `{config_dir}` its directory and `{config_stem}` its name without the extension. The last two are for a loader that finds the config by name, such as Hydra (`--config-dir {config_dir} --config-name {config_stem}`). With such a template:
+
+- only `.yaml` configs are accepted (Hydra does not find `.yml` or `.json` by name);
+- the submitted file is the whole primary config, so it must list the tree's base config in `defaults` (for example `defaults: [cfg_pretrain, _self_]`) to inherit it;
+- the node stores the submitted file as `rbjob-<job_id>.yaml` and passes that name, not the submitted one. The tree's own config directory is searched first, so a file stored under a name the tree also uses would be ignored without an error.
 
 ### 4.2 Approval passphrase (user runs, on the node console)
 
@@ -174,7 +183,8 @@ Read-only: it creates no directory and writes no audit record. Output is `[ok|wa
 | `withheld` | fail if the file is missing, unreadable, not valid JSON, empty, or has patterns that do not compile; warn if `withheld_source` is unset | Only the five fallback patterns apply (or the file is broken). | `scripts/node-install.sh --withheld-file FILE` or `rb-node config set withheld_source PATH` |
 | `approval` | fail | The verifier is missing or unreadable: every `job_submit` and `job_cancel` is refused. | `rb-node approve-key set` |
 | `approval_path` | fail | `approval_path` is inside a read or write root, where the hub could reach it. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
-| `job_template` | warn if empty, fail if it has no `{config}` | Jobs are refused (`no_job_template`) or cannot receive their config file. | `rb-node config set job_template '[...,"{config}"]'` |
+| `job_template` | warn if empty, fail if it has none of `{config}`, `{config_dir}`, `{config_stem}` | Jobs are refused (`no_job_template`) or cannot receive their config file. | `rb-node config set job_template '[...,"{config}"]'` |
+| `allowed_gpus` | warn if empty | `allowed_gpus` is empty or malformed: every `job_submit` is refused (`no_allowed_gpus`). | `rb-node config set allowed_gpus '[4, 5, 6, 7]'` (your own GPU indices) |
 | `claude_bin` | warn | The responder cannot start; messages wait for a live session. | `rb-node config set claude_bin PATH` |
 | `pdftotext` | warn | pdf files are denied. | install `poppler-utils` |
 | `ak_bridge` | fail | `authorized_keys` has no `serve-remote` line, or it lacks `restrict` or `from=`, or its command path is not an absolute existing executable. The hub will be refused (`node_refused_key`). | `scripts/node-install.sh --hub-key '...' --hub-from ADDR --apply-authorized-keys` |
@@ -190,7 +200,9 @@ The hub's `rb doctor` runs a short online version over SSH (hub manual §10.2) f
 
 ## 8. Budget enforcement
 
-An approved job's queue file wraps the template command in `rb-node run-job --gpus ... --gpu-hours ...`. The wrapper sets `CUDA_VISIBLE_DEVICES` to exactly those GPUs and stops the job at wall time `gpu_hours / len(gpus)` (status `budget_exceeded`). Cancel requests are polled every 10 s. The node's own queue runner still assigns workers to GPUs; the wrapper narrows what the job sees. `job_submit` pins the research tree's `HEAD` in `state/git/<job_id>.json`; `run-job` records `git_submit` and `git_start` in the job record, and the `job_finished` event carries `git_head`.
+An approved job's queue file wraps the template command in `rb-node run-job --gpus ... --gpu-hours ...`. The wrapper stops the job at wall time `gpu_hours / len(gpus)` (status `budget_exceeded`). Cancel requests are polled every 10 s. `job_submit` pins the research tree's `HEAD` in `state/git/<job_id>.json`; `run-job` records `git_submit` and `git_start` in the job record, and the `job_finished` event carries `git_head`.
+
+Which GPU the job gets: the node's queue runner has one worker per GPU and exports that GPU as `CUDA_VISIBLE_DEVICES`. A job queued through the bridge asks for one GPU from `allowed_gpus`, and the wrapper runs it on the GPU of the worker that claimed it, which can differ from the index in the request (the job record and the `job_finished` event then carry `gpus_used`). The wrapper starts nothing on a GPU outside `allowed_gpus`: the job ends as `failed` with reason `gpu_not_allowed` and exit code 126. Run from the console without a worker, the wrapper sets `CUDA_VISIBLE_DEVICES` to the `--gpus` value.
 
 ## 9. Updating and removing
 
@@ -248,7 +260,7 @@ An unknown flag prints the usage and exits 2.
 
 The hub sends `hello` first. A node of protocol 2 (`rb_node` 0.2.0 and later) answers with `node`, `version`, `withheld_extra` (patterns loaded from the file, besides the fallback), `protocol` (the number 2), `ops` (the sorted list of operations it serves) and `state`, a map of booleans and counts without any path or pattern text; a node of the older code omits `protocol` and `state`, and the hub treats it as protocol 1. A node whose `node.json` is missing or invalid still answers `hello` with `state.configured` false and `ops` `["hello"]`, and answers every other operation with `not_configured`.
 
-`state` keys: `configured`, `approval_verifier`, `job_template_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected` (patterns that do not compile), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. The other operations: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`.
+`state` keys: `configured`, `approval_verifier`, `job_template_set`, `allowed_gpus_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected` (patterns that do not compile), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. The other operations: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`.
 
 ### 12.1 Differences between the documents and the code
 

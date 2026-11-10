@@ -97,16 +97,20 @@ alias rb='uv run --directory ~/research-bridge --extra host rb'
    ```
    rb-node approve-key set
    ```
-   작업을 실행하려면 노드에 작업 하나의 명령줄도 필요하다. 설정 파일 경로가 들어갈 자리에는 `{config}`를 쓴다. 값은 프로젝트마다 다르며, 알려진 내용은 `docs/projects/` 아래 해당 프로젝트 페이지에 기록돼 있다. 이 값이 없으면 노드는 작업 제출을 거부한다(`no_job_template`).
+   작업을 실행하려면 노드에 작업 하나의 명령줄도 필요하다. 설정 파일 경로가 들어갈 자리에는 `{config}`를 쓴다(Hydra처럼 이름으로 config를 찾는 로더를 위해 `{config_dir}`와 `{config_stem}`도 쓸 수 있다. [노드 매뉴얼](docs/manual/node-setup.ko.md) §4.1.1 참조). 값은 프로젝트마다 다르며, 알려진 내용은 `docs/projects/` 아래 해당 프로젝트 페이지에 기록돼 있다. 이 값이 없으면 노드는 작업 제출을 거부한다(`no_job_template`).
    ```
    rb-node config set job_template '["...", "{config}"]'
+   ```
+   노드에는 브리지 작업이 쓸 수 있는 GPU 인덱스, 즉 본인의 GPU도 필요하다. 작업 하나는 이 목록에서 GPU 하나를 쓴다. 목록이 비어 있으면 노드는 모든 작업 제출을 거부한다(`no_allowed_gpus`).
+   ```
+   rb-node config set allowed_gpus '[4, 5, 6, 7]'
    ```
 7. **허브 터미널: 호스트 키.** `rb setup`은 `Host` 블록에서 호스트, 포트, 사용자를 가져와 노드의 호스트 키를 한 번 스캔하고, 지문을 보여 주며, `node-install.sh`가 출력한 같은 종류의 줄과 같은지 묻는다. `y`이면 `~/.ssh/known_hosts`에 추가한다. 다르면 `n`으로 답하고 접속하지 않는다. 마지막 스테이지(9번)는 이어서 `rb doctor`를 실행하며, 이때 접속해 `hello`를 보낸다.
    ```
    rb setup --node node1
    ```
 8. **허브 터미널: MCP 서버.** `rb setup`이 출력한 `claude mcp add-json --scope user research-bridge '...'` 줄(8번 스테이지)을 붙여 넣는다(항목이 없는 동안 `rb doctor`가 `mcp_entry` 아래에 다시 출력한다). 이 항목은 `uv run --directory <checkout> --extra host python -m rb_host.server`를 실행한다. 그다음 새 Claude 세션을 시작한다. MCP 서버는 세션이 시작될 때 로드되기 때문이다.
-9. **허브 터미널: 확인.** 마지막 줄이 `summary: N ok, N warn, 0 fail`이 될 때까지 반복하며, 문제마다 `next:` 줄의 명령으로 고친다. 보통 남는 경고는 `local_json`(harness 경로 매핑에만 필요하다), 아래 서비스를 설치하기 전의 `service_sync`와 `service_web`, `job_template`을 설정하기 전의 `node_job_template`이다. `node_withheld`는 경고일 뿐이지만, `read_doc`, `send_message`, `poll`을 쓰거나 `rb sync`를 실행하거나 아래 타이머를 켜기 전에 `node loaded N pattern(s)`로 표시돼야 한다([문제 해결](#문제-해결) 참조).
+9. **허브 터미널: 확인.** 마지막 줄이 `summary: N ok, N warn, 0 fail`이 될 때까지 반복하며, 문제마다 `next:` 줄의 명령으로 고친다. 보통 남는 경고는 `local_json`(harness 경로 매핑에만 필요하다), 아래 서비스를 설치하기 전의 `service_sync`와 `service_web`, `job_template`과 `allowed_gpus`를 설정하기 전의 `node_job_template`과 `node_allowed_gpus`이다. `node_withheld`는 경고일 뿐이지만, `read_doc`, `send_message`, `poll`을 쓰거나 `rb sync`를 실행하거나 아래 타이머를 켜기 전에 `node loaded N pattern(s)`로 표시돼야 한다([문제 해결](#문제-해결) 참조).
    ```
    rb doctor
    ```
@@ -172,7 +176,7 @@ rb reject <job_id>
 scripts/node-install.sh --update
 ```
 
-이 스크립트는 `git pull --ff-only`를 실행하고, 코드를 새 릴리스로 설치하고, 한 번의 이름 변경(rename)으로 그 릴리스로 전환한다. `node.json`, 패턴 파일, 승인 검증값, `authorized_keys`는 유지되고, 최신 릴리스 두 개가 디스크에 남는다. 허브는 체크아웃에서 `git pull`과 `uv sync --extra host`로 업데이트한 뒤 허브의 모든 Claude 세션을 재시작한다. 옛 코드로 시작한 MCP 서버 프로세스는 새 `rb sync`가 아직 전달되지 않은 것으로 저장한 항목을 돌려주지 못하기 때문이다. 같은 노드를 poll하는 다른 데이터 루트(예: 노트북의 MCP 서버)가 없는지 확인한 뒤에만 `rb sync`를 실행하거나 `rb-sync.timer`를 켠다. 허브는 노드의 버전을 `rb doctor --node node1`(`node runs X`, `node runs X, hub has Y`, 또는 `node code X predates protocol 2`와 함께 `next: on the node: scripts/node-install.sh --update`), `nodes` 도구, 허브 페이지에 보여 준다. `rb git-status --node node1`은 설치된 커밋과 연구 트리의 git 상태를 더한다. 0.2.0 이전의 노드 코드에는 `rb-node doctor`가 없고 승인 검증값, `job_template`, 응답기를 보고하지 않는다. 허브는 이 항목을 `unknown (node code predates protocol 2)`로 표시한다.
+이 스크립트는 `git pull --ff-only`를 실행하고, 코드를 새 릴리스로 설치하고, 한 번의 이름 변경(rename)으로 그 릴리스로 전환한다. `node.json`, 패턴 파일, 승인 검증값, `authorized_keys`는 유지되고, 최신 릴리스 두 개가 디스크에 남는다. 허브는 체크아웃에서 `git pull`과 `uv sync --extra host`로 업데이트한 뒤 허브의 모든 Claude 세션을 재시작한다. 옛 코드로 시작한 MCP 서버 프로세스는 새 `rb sync`가 아직 전달되지 않은 것으로 저장한 항목을 돌려주지 못하기 때문이다. 같은 노드를 poll하는 다른 데이터 루트(예: 노트북의 MCP 서버)가 없는지 확인한 뒤에만 `rb sync`를 실행하거나 `rb-sync.timer`를 켠다. 허브는 노드의 버전을 `rb doctor --node node1`(`node runs X`, `node runs X, hub has Y`, 또는 `node code X predates protocol 2`와 함께 `next: on the node: scripts/node-install.sh --update`), `nodes` 도구, 허브 페이지에 보여 준다. `rb git-status --node node1`은 설치된 커밋과 연구 트리의 git 상태를 더한다. 0.2.0 이전의 노드 코드에는 `rb-node doctor`가 없고 승인 검증값, `job_template`, `allowed_gpus`, 응답기를 보고하지 않는다. 허브는 이 항목을 `unknown (node code predates protocol 2)`로 표시한다.
 
 ## 문제 해결
 
@@ -202,7 +206,7 @@ scripts/node-install.sh --update
 
 ## 다른 연구 프로젝트에 쓰기
 
-노드 하나는 현재 연구 프로젝트 하나를 담당한다. 그 루트, 읽을 수 있는 디렉터리, 대기열, `job_template`, 패턴 파일은 노드 콘솔에서 `rb-node config set`으로 설정하는 `node.json` 키이다. 새 프로젝트를 기술하려면 [docs/projects/TEMPLATE.md](docs/projects/TEMPLATE.md)를 `docs/projects/<name>.md`로 복사한다. [docs/projects/trm.md](docs/projects/trm.md)가 첫 번째 예이다. 두 번째 노드는 `rb setup --node NAME ...`을 다시 실행해 연결하며, 노드마다 자기 키와 별칭을 가진다. 노드 하나에서 여러 프로젝트를 다루는 기능과 결과 기록이 있는 실험 요청은 설계만 있고 구현되지 않았다: [project profiles](docs/design/2026-11-10-project-profiles.md), [experiment records](docs/design/2026-11-10-experiment-records.md).
+노드 하나는 현재 연구 프로젝트 하나를 담당한다. 그 루트, 읽을 수 있는 디렉터리, 대기열, `job_template`, `allowed_gpus`, 패턴 파일은 노드 콘솔에서 `rb-node config set`으로 설정하는 `node.json` 키이다. 새 프로젝트를 기술하려면 [docs/projects/TEMPLATE.md](docs/projects/TEMPLATE.md)를 `docs/projects/<name>.md`로 복사한다. [docs/projects/trm.md](docs/projects/trm.md)가 첫 번째 예이다. 두 번째 노드는 `rb setup --node NAME ...`을 다시 실행해 연결하며, 노드마다 자기 키와 별칭을 가진다. 노드 하나에서 여러 프로젝트를 다루는 기능과 결과 기록이 있는 실험 요청은 설계만 있고 구현되지 않았다: [project profiles](docs/design/2026-11-10-project-profiles.md), [experiment records](docs/design/2026-11-10-experiment-records.md).
 
 ## 문서
 

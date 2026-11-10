@@ -465,6 +465,10 @@ def online(cfg: HostConfig, node: str) -> List[Result]:
     res.append(_unknown("node_job_template", protocol, "job_template_set", "warn",
                         "job_template is set", "job_template not set: jobs are refused",
                         "on the node: rb-node config set job_template '[...,\"{config}\"]'", state, node))
+    res.append(_unknown("node_allowed_gpus", protocol, "allowed_gpus_set", "warn",
+                        "allowed_gpus is set", "allowed_gpus not set: jobs are refused",
+                        "on the node: rb-node config set allowed_gpus '[4, 5, 6, 7]' (your own GPU indices)",
+                        state, node))
     res.append(_unknown("node_responder", protocol, "claude_bin_found", "warn", "claude found",
                         "claude not found on the node: messages wait for a live session", doc, state, node))
     res.append(_unknown("node_queue", protocol, "queue_dir_exists", "warn", "queue directory exists",

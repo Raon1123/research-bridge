@@ -280,7 +280,8 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `node_version` | warn | 노드가 허브와 다른 버전을 실행하거나, protocol 2 이전의 코드다. | 노드에서: `scripts/node-install.sh --update` |
 | `node_withheld` | 패턴 파일이 설정돼 있는데 패턴을 하나도 로드하지 못했거나 컴파일되지 않는 패턴이 있으면 fail(protocol 2). 파일이 설정되지 않았거나 노드가 오래됐으면 warn | 노드가 내장 패턴 다섯 개만 적용하거나 파일이 손상됐다. 오래된 노드(protocol 1)는 컴파일 전에 패턴을 세므로 warn보다 좋아질 수 없다. | 노드에서: `rb-node doctor` |
 | `node_approval` | fail(protocol 2), warn(오래된 노드) | 노드에 승인 verifier가 없다. 모든 `job_submit`과 `job_cancel`이 `not_authorized`로 거부된다. | 노드에서: `rb-node approve-key set` |
-| `node_job_template` | warn | `job_template`이 비어 있거나 `{config}`가 없다. 작업이 `no_job_template`으로 거부된다. | 노드에서: `rb-node config set job_template '[...,"{config}"]'` |
+| `node_job_template` | warn | `job_template`이 비어 있거나 config 자리표시자(`{config}`, `{config_dir}`, `{config_stem}`)가 없다. 작업이 `no_job_template`으로 거부된다. | 노드에서: `rb-node config set job_template '[...,"{config}"]'` |
+| `node_allowed_gpus` | warn | 노드의 `allowed_gpus`가 비어 있다. 작업이 `no_allowed_gpus`로 거부된다. | 노드에서: `rb-node config set allowed_gpus '[4, 5, 6, 7]'`(본인 GPU 인덱스) |
 | `node_responder` | warn | `claude_bin`이 노드의 실행 파일이 아니다. 메시지는 실시간 세션을 기다린다. | 노드에서: `rb-node doctor` |
 | `node_queue` | warn | 노드에 큐 디렉터리가 없다. | 노드에서: `rb-node doctor` |
 

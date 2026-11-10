@@ -67,7 +67,16 @@ def _str(args: dict, name: str) -> str:
     return v
 
 
-def validate_budget(args: dict, known_gpus: Optional[Set[int]]) -> None:
+def allowed_set(value: Any) -> Set[int]:
+    """allowed_gpus from node.json as a set; anything malformed counts as empty (fail closed)."""
+    if not isinstance(value, list) or not all(
+            isinstance(g, int) and not isinstance(g, bool) and g >= 0 for g in value):
+        return set()
+    return set(value)
+
+
+def validate_budget(args: dict, known_gpus: Optional[Set[int]],
+                    allowed_gpus: Optional[Set[int]] = None) -> None:
     gpus = args.get("gpus")
     if not isinstance(gpus, list) or not gpus or not all(
             isinstance(g, int) and not isinstance(g, bool) and g >= 0 for g in gpus):
@@ -76,6 +85,14 @@ def validate_budget(args: dict, known_gpus: Optional[Set[int]]) -> None:
         raise _invalid("gpus must be distinct")
     if known_gpus and not set(gpus) <= known_gpus:
         raise _invalid("unknown gpu index")
+    if allowed_gpus is not None:
+        if not set(gpus) <= allowed_gpus:
+            raise _invalid("gpu not in the node's allowed_gpus (%s)"
+                           % ",".join(str(g) for g in sorted(allowed_gpus)))
+        # The queue runner gives each job one GPU (one worker per GPU), so a job that asks for
+        # several would take GPUs that other workers are using.
+        if len(gpus) > 1:
+            raise _invalid("multi-GPU jobs are not supported: the queue runs one GPU per job")
     h = args.get("gpu_hours")
     if isinstance(h, bool) or not isinstance(h, (int, float)) or not (0 < h <= MAX_GPU_HOURS):
         raise _invalid("gpu_hours must satisfy 0 < gpu_hours <= %d" % MAX_GPU_HOURS)
@@ -99,6 +116,10 @@ def _finalize_config(cfg: NodeConfig, mb: Mailbox, job_id: str, config_name: str
     """Verify the uploaded config (msg_id job-<id>) and move it to its stored path.
 
     The upload is deliberately not committed through msg_commit (no responder trigger).
+    It is stored as rbjob-<job_id><ext>, not under the submitted name: a loader that finds the
+    config by name (Hydra --config-name) searches the research tree's own config directory
+    first, so a submitted file named like one of the tree's configs would be ignored without
+    an error and the job would run the tree's file.
     """
     msg_id = "job-" + job_id
     msg_dir = mb.root / "in" / _check_id(msg_id)
@@ -124,7 +145,7 @@ def _finalize_config(cfg: NodeConfig, mb: Mailbox, job_id: str, config_name: str
         mb.commit_part(msg_id, "in", entry["name"], entry["sha256"])
     dest_dir = mb.root / "state" / "configs" / job_id
     _mkdir(dest_dir)
-    dest = dest_dir / entry["name"]
+    dest = dest_dir / ("rbjob-%s%s" % (job_id, os.path.splitext(config_name)[1]))
     os.replace(str(att / entry["name"]), str(dest))
     return dest
 
@@ -148,15 +169,24 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     sha = _str(args, "config_sha256")
     if os.path.splitext(config_name)[1].lower() not in CONFIG_EXT:
         raise _invalid("config must be one of %s" % ", ".join(CONFIG_EXT))
-    validate_budget(args, known_gpus)
     if not cfg.job_template:
         raise ProtocolError("no_job_template", "node has no job_template configured")
+    if (any("{config_stem}" in t for t in cfg.job_template)
+            and os.path.splitext(config_name)[1] != ".yaml"):  # case matters to Hydra
+        # {config_stem} is for loaders that find the config by name (Hydra --config-name),
+        # and Hydra only finds <name>.yaml: .yml and .json would be queued and fail at start.
+        raise _invalid("config must be .yaml: this node's job_template loads it by name")
+    allowed = allowed_set(cfg.allowed_gpus)
+    if not allowed:
+        raise ProtocolError("no_allowed_gpus", "node has no allowed_gpus configured")
+    validate_budget(args, known_gpus, allowed)
     config_path = _finalize_config(cfg, mb, job_id, config_name, sha)
     gpus = args["gpus"]
     launcher = spawn.launcher_argv()
     argv = launcher + ["run-job", "--gpus", ",".join(str(g) for g in gpus),
                        "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
-    argv += [t.replace("{config}", str(config_path)) for t in cfg.job_template]
+    argv += [t.replace("{config}", str(config_path)).replace("{config_dir}", str(config_path.parent))
+             .replace("{config_stem}", config_path.stem) for t in cfg.job_template]
     git = gitinfo.repo_state(Path(cfg.trm_root))  # pinned at submit; run-job records the start state
     _mkdir(state / "git")
     _write_json(state / "git" / (job_id + ".json"), git)

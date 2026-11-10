@@ -14,11 +14,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__, approval, gitinfo, spawn
 from .config import NodeConfig, config_path, expand_paths
+from .jobs import allowed_set
 from .withheld import Withheld
 
 Check = namedtuple("Check", "id level message fix")  # level in ("ok", "warn", "fail")
 
 STUCK_NEW_S = 600
+CONFIG_PLACEHOLDERS = ("{config}", "{config_dir}", "{config_stem}")  # any one gives the job its config
 
 
 def _which(name: str) -> Optional[str]:
@@ -45,7 +47,8 @@ def state(cfg: NodeConfig, withheld: Withheld) -> dict:
         "configured": True,
         "approval_verifier": verifier,
         "job_template_set": bool(cfg.job_template)
-        and any("{config}" in str(a) for a in cfg.job_template),
+        and any(p in str(a) for a in cfg.job_template for p in CONFIG_PLACEHOLDERS),
+        "allowed_gpus_set": bool(allowed_set(cfg.allowed_gpus)),
         "withheld_source_set": bool(withheld.source_set),
         "withheld_loaded": withheld.extra_count,
         "withheld_rejected": withheld.rejected_count,
@@ -72,6 +75,9 @@ def _coerce(data: dict) -> Tuple[NodeConfig, List[str]]:
         v, d = data[f.name], getattr(default, f.name)
         if f.name == "withheld_source":
             good = v is None or isinstance(v, str)
+        elif f.name == "allowed_gpus":
+            good = isinstance(v, list) and all(
+                isinstance(e, int) and not isinstance(e, bool) and e >= 0 for e in v)
         elif isinstance(d, list):
             good = isinstance(v, list) and all(isinstance(e, str) for e in v)
         elif isinstance(d, bool):
@@ -157,12 +163,20 @@ def config_checks(data: Optional[dict], path: Optional[Path] = None) -> List[Che
                          "job_template is empty: job_submit is refused (no_job_template)",
                          "rb-node config set job_template "
                          "'[\"uv\",\"run\",\"train.py\",\"--config\",\"{config}\"]'"))
-    elif not any("{config}" in a for a in tpl):
-        out.append(Check("job_template", "fail", "job_template has no {config} placeholder",
+    elif not any(p in a for a in tpl for p in CONFIG_PLACEHOLDERS):
+        out.append(Check("job_template", "fail",
+                         "job_template has no {config}, {config_dir} or {config_stem} placeholder",
                          "rb-node config set job_template "
                          "'[\"uv\",\"run\",\"train.py\",\"--config\",\"{config}\"]'"))
     else:
-        out.append(_ok("job_template", "job_template has a {config} placeholder"))
+        out.append(_ok("job_template",
+                       "job_template has a {config}, {config_dir} or {config_stem} placeholder"))
+    if allowed_set(cfg.allowed_gpus):
+        out.append(_ok("allowed_gpus", "allowed_gpus lists %d GPU(s)" % len(allowed_set(cfg.allowed_gpus))))
+    else:
+        out.append(Check("allowed_gpus", "warn",
+                         "allowed_gpus is empty: job_submit is refused (no_allowed_gpus)",
+                         "rb-node config set allowed_gpus '[4, 5, 6, 7]' (your own GPU indices)"))
     cb = cfg.claude_bin
     if os.path.isfile(cb) and os.access(cb, os.X_OK):
         out.append(_ok("claude_bin", "claude is executable"))

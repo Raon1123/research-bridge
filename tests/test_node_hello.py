@@ -13,7 +13,8 @@ from rb_node.protocol import encode
 from rb_node.remote import Node
 from test_remote import call, cfg  # noqa: F401  (cfg is a fixture)
 
-STATE_KEYS = {"configured", "approval_verifier", "job_template_set", "withheld_source_set",
+STATE_KEYS = {"configured", "approval_verifier", "job_template_set", "allowed_gpus_set",
+              "withheld_source_set",
               "withheld_loaded", "withheld_rejected", "harness_root_set", "claude_bin_found",
               "queue_dir_exists", "python"}
 
@@ -136,3 +137,11 @@ def test_hello_job_template_set_needs_config_placeholder(hcfg):
     assert hello(hcfg)["state"]["job_template_set"] is True
     hcfg.job_template = []
     assert hello(hcfg)["state"]["job_template_set"] is False
+    hcfg.job_template = ["python", "train.py", "--config-name", "{config_stem}"]
+    assert hello(hcfg)["state"]["job_template_set"] is True
+
+
+def test_hello_allowed_gpus_set(hcfg):
+    for value, want in (([], False), ([4, 5], True), (["4"], False), ([True], False), (None, False)):
+        hcfg.allowed_gpus = value
+        assert hello(hcfg)["state"]["allowed_gpus_set"] is want, value

@@ -278,7 +278,8 @@ Prints one line per check, grouped by node: `<level> <id>  <message>`, and under
 | `node_version` | warn | The node runs another version than the hub, or code before protocol 2. | on the node: `scripts/node-install.sh --update` |
 | `node_withheld` | fail (protocol 2) when a pattern file is set but loaded no pattern or has patterns that do not compile; warn when no file is set or the node is old | The node applies only the five built-in patterns, or its file is broken. An old node (protocol 1) counts patterns before compiling, so it is never better than warn. | on the node: `rb-node doctor` |
 | `node_approval` | fail (protocol 2), warn (old node) | No approval verifier on the node: every `job_submit` and `job_cancel` is refused with `not_authorized`. | on the node: `rb-node approve-key set` |
-| `node_job_template` | warn | `job_template` is empty or lacks `{config}`: jobs are refused with `no_job_template`. | on the node: `rb-node config set job_template '[...,"{config}"]'` |
+| `node_job_template` | warn | `job_template` is empty or lacks a config placeholder (`{config}`, `{config_dir}` or `{config_stem}`): jobs are refused with `no_job_template`. | on the node: `rb-node config set job_template '[...,"{config}"]'` |
+| `node_allowed_gpus` | warn | `allowed_gpus` is empty on the node: jobs are refused with `no_allowed_gpus`. | on the node: `rb-node config set allowed_gpus '[4, 5, 6, 7]'` (your own GPU indices) |
 | `node_responder` | warn | `claude_bin` is not an executable on the node: messages wait for a live session. | on the node: `rb-node doctor` |
 | `node_queue` | warn | The queue directory is missing on the node. | on the node: `rb-node doctor` |
 

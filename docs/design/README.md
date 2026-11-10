@@ -35,6 +35,7 @@ Each document carries one status line at the top. Update it in place and keep th
 | 2026-11-10 | [Unattended sync and the hub page](2026-11-10-sync-and-hub-page.md) | draft; implementation on branch `claude/review-optimize-2026-11-10` |
 | 2026-11-10 | [Project profiles](2026-11-10-project-profiles.md) | draft (design only) |
 | 2026-11-10 | [Experiment requests and result records](2026-11-10-experiment-records.md) | draft (design only) |
+| 2026-11-10 | [Node GPU allowlist and worker-assigned GPU](2026-11-10-allowed-gpus.md) | draft; implemented on branch `claude/node-allowed-gpus` |
 
 The first design stays at `docs/superpowers/specs/` because the plan and `AGENTS.md` refer to that path. New designs go in this directory.
 

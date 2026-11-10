@@ -338,7 +338,8 @@ def test_online_against_old_node_stand_in(monkeypatch, tmp_path, node):
     res = doctor.online(_cfg(tmp_path), "node1")
     by = {r.id: r for r in res}
     assert by["reachable"].level == "ok" and "protocol 1" in by["reachable"].message
-    for k in ("node_approval", "node_job_template", "node_responder", "node_queue"):
+    for k in ("node_approval", "node_job_template", "node_allowed_gpus", "node_responder",
+              "node_queue"):
         assert by[k].level == "warn" and "unknown" in by[k].message
 
 
@@ -373,6 +374,7 @@ def _online(monkeypatch, tmp_path, result=None, exc=None):
 
 def _p2(**state):
     st = {"configured": True, "approval_verifier": True, "job_template_set": True,
+          "allowed_gpus_set": True,
           "withheld_source_set": True, "withheld_loaded": 12, "withheld_rejected": 0,
           "harness_root_set": False, "claude_bin_found": True, "queue_dir_exists": True,
           "python": "3.8.20"}
@@ -386,15 +388,16 @@ OLD = {"node": "n", "version": "0.1.0", "withheld_extra": 5}
 
 def test_online_protocol2_all_ok(monkeypatch, tmp_path):
     res = _online(monkeypatch, tmp_path, _p2())
-    assert [r.level for r in res] == ["ok"] * 7
+    assert [r.level for r in res] == ["ok"] * 8
     assert [r.id for r in res] == ["reachable", "node_version", "node_withheld", "node_approval",
-                                   "node_job_template", "node_responder", "node_queue"]
+                                   "node_job_template", "node_allowed_gpus", "node_responder", "node_queue"]
 
 
 def test_online_old_node_reports_unknown_not_fail(monkeypatch, tmp_path):
     res = by_id(_online(monkeypatch, tmp_path, OLD))
     assert res["node_version"][0].level == "warn"
-    for k in ("node_approval", "node_job_template", "node_responder", "node_queue"):
+    for k in ("node_approval", "node_job_template", "node_allowed_gpus", "node_responder",
+              "node_queue"):
         assert res[k][0].level == "warn" and "unknown (node code predates protocol 2)" in res[k][0].message
     w = res["node_withheld"][0]
     assert w.level == "warn" and "counted before compiling" in w.message
@@ -435,6 +438,12 @@ def test_online_protocol2_approval_missing_is_fail(monkeypatch, tmp_path):
     assert res["node_job_template"][0].level == "warn"
 
 
+def test_online_allowed_gpus_not_set_warns(monkeypatch, tmp_path):
+    res = by_id(_online(monkeypatch, tmp_path, _p2(allowed_gpus_set=False)))
+    r = res["node_allowed_gpus"][0]
+    assert r.level == "warn" and "jobs are refused" in r.message and "allowed_gpus" in r.next
+
+
 def test_online_not_configured_node(monkeypatch, tmp_path):
     hello = {"node": "n", "version": "0.2.0", "withheld_extra": 0, "protocol": 2, "ops": ["hello"],
              "state": {"configured": False}}
@@ -449,7 +458,8 @@ def test_online_state_missing_keys_unknown(monkeypatch, tmp_path):
     hello = {"node": "n", "version": rb_node.__version__, "withheld_extra": 0, "protocol": 2,
              "ops": ["hello"], "state": {"configured": True}}
     res = by_id(_online(monkeypatch, tmp_path, hello))
-    for k in ("node_approval", "node_job_template", "node_responder", "node_queue"):
+    for k in ("node_approval", "node_job_template", "node_allowed_gpus", "node_responder",
+              "node_queue"):
         assert res[k][0].level == "warn" and "unknown" in res[k][0].message
 
 

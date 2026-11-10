@@ -65,7 +65,8 @@ def make_full(home, tmp_path, monkeypatch):
     data = {"trm_root": str(trm), "queue_dir": str(trm / "scripts/queue"),
             "write_roots": [str(mb / "in") + "/", str(trm / "scripts/queue/jobs")],
             "withheld_source": str(patterns), "claude_bin": str(claude),
-            "job_template": ["uv", "run", "train.py", "--config", "{config}"]}
+            "job_template": ["uv", "run", "train.py", "--config", "{config}"],
+            "allowed_gpus": [4, 5]}
     full = {**NodeConfig(trm_root=str(trm)).__dict__, **data}
     path = rb / "node.json"
     path.write_text(json.dumps(full), encoding="utf-8")
@@ -171,6 +172,21 @@ def test_job_template_empty_warn_missing_placeholder_fail(home):
     _, cfg = write_cfg(home, job_template=["python", "train.py"])
     c = by_id(doctor.config_checks(cfg))["job_template"]
     assert c.level == "fail" and "{config}" in c.message
+    for ph in ("{config_dir}", "{config_stem}"):  # a loader that finds the config by name
+        _, cfg = write_cfg(home, job_template=["python", "train.py", "--config-name", ph])
+        assert by_id(doctor.config_checks(cfg))["job_template"].level == "ok"
+
+
+def test_allowed_gpus_empty_warns_and_list_is_ok(home):
+    _, cfg = write_cfg(home, allowed_gpus=[])
+    c = by_id(doctor.config_checks(cfg))["allowed_gpus"]
+    assert c.level == "warn" and "no_allowed_gpus" in c.message and "allowed_gpus" in c.fix
+    _, cfg = write_cfg(home, allowed_gpus=[4, 5])
+    assert by_id(doctor.config_checks(cfg))["allowed_gpus"].level == "ok"
+    _, cfg = write_cfg(home, allowed_gpus=[4, "5"])  # wrong type: named, and treated as empty
+    checks = by_id(doctor.config_checks(cfg))
+    assert checks["allowed_gpus"].level == "warn"
+    assert "allowed_gpus" in checks["config_keys"].message
 
 
 def ak_cfg(home, text):

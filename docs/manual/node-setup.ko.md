@@ -84,7 +84,8 @@ python 경로는 설치 시점에 찾은 절대 경로이며(여기서는 예로
 | `queue_dir` | path | `<trm_root>/scripts/queue` | 큐 루트(`jobs/`, `processing/`, `done/`, `failed/`). |
 | `withheld_source` | path or `null` | `~/.research-bridge/withheld-patterns.json` | Withheld 패턴 파일(§4.3). `null` 또는 `""`는 없음을 뜻하며, 이때는 fallback 패턴 다섯 개만 적용된다. `config init` 직후에는 이 파일이 없으며, 하나를 설치할 때까지 doctor가 fail로 보고한다. |
 | `claude_bin` | path | `~/.local/bin/claude` | responder가 쓰는 Claude CLI의 절대 경로. |
-| `job_template` | list of strings | `[]` | `{config}` 자리표시자가 있는 argv. 예: `["uv", "run", "pretrain.py", "--config", "{config}"]`. 비어 있으면 `job_submit`이 거부된다(`no_job_template`). 노드 소유자가 설정한다. |
+| `job_template` | list of strings | `[]` | config 자리표시자(`{config}`, `{config_dir}`, `{config_stem}` 중 하나, §4.1.1)가 있는 argv. 예: `["uv", "run", "pretrain.py", "--config", "{config}"]`. 비어 있으면 `job_submit`이 거부된다(`no_job_template`). 노드 소유자가 설정한다. |
+| `allowed_gpus` | list of integers | `[]` | 브리지 작업이 쓸 수 있는 GPU 인덱스, 즉 노드 소유자의 GPU. 예: `[4, 5, 6, 7]`. 비어 있으면 `job_submit`은 `no_allowed_gpus`로 거부되고 `run-job`은 아무것도 시작하지 않는다. 목록 밖의 GPU나 둘 이상의 GPU는 `invalid`로 거부된다. 노드 소유자가 설정한다. |
 | `max_file` | positive integer | 52428800 (50 MB) | 첨부 파일 크기 상한(바이트). |
 | `mailbox_root` | path | `~/.research-bridge/mailbox` | 메일함(`in/`, `out/`, `state/`). |
 | `audit_path` | path | `~/.research-bridge/audit.jsonl` | 감사 로그(메시지 본문 없음). |
@@ -94,6 +95,14 @@ python 경로는 설치 시점에 찾은 절대 경로이며(여기서는 예로
 | `harness_root` | path | `""` | 하네스 채널용 노드의 `~/.claude`. 비어 있으면 하네스 push와 pull이 거부된다(`no_harness_root`). |
 
 `trm_root`를 설정하면, 이전 루트에서 파생된 값을 아직 그대로 가지고 있는 `queue_dir`, `write_roots`의 큐 항목, 예전 기본 `withheld_source`도 함께 갱신된다.
+
+### 4.1.1 `job_template` placeholders
+
+`job_template` 자리표시자(config는 mailbox state 디렉터리 아래 `rbjob-<job_id><ext>`로 저장된다): `{config}`는 저장된 config의 경로, `{config_dir}`는 그 디렉터리, `{config_stem}`은 확장자를 뺀 이름이다. 뒤의 둘은 Hydra처럼 config를 이름으로 찾는 로더를 위한 것이다(`--config-dir {config_dir} --config-name {config_stem}`). 이런 template에서는:
+
+- `.yaml` config만 받는다(Hydra는 `.yml`이나 `.json`을 이름으로 찾지 못한다).
+- 제출한 파일이 primary config 전체가 되므로, 기본 config를 물려받으려면 `defaults`에 넣어야 한다(예: `defaults: [cfg_pretrain, _self_]`).
+- 노드는 제출한 파일을 `rbjob-<job_id>.yaml`로 저장하고, 제출한 이름이 아니라 그 이름을 넘긴다. 연구 트리의 config 디렉터리를 먼저 찾기 때문에, 트리도 쓰는 이름으로 저장된 파일은 오류 없이 무시된다.
 
 ### 4.2 Approval passphrase (user runs, on the node console)
 
@@ -176,7 +185,8 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 | `withheld` | 파일이 없거나, 읽을 수 없거나, 유효한 JSON이 아니거나, 비어 있거나, 컴파일되지 않는 패턴이 있으면 fail. `withheld_source`가 설정되지 않았으면 warn | fallback 패턴 다섯 개만 적용된다(또는 파일이 손상됐다). | `scripts/node-install.sh --withheld-file FILE` 또는 `rb-node config set withheld_source PATH` |
 | `approval` | fail | verifier가 없거나 읽을 수 없다. 모든 `job_submit`과 `job_cancel`이 거부된다. | `rb-node approve-key set` |
 | `approval_path` | fail | `approval_path`가 읽기 또는 쓰기 루트 안에 있어서 허브가 닿을 수 있다. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
-| `job_template` | 비어 있으면 warn, `{config}`가 없으면 fail | 작업이 거부되거나(`no_job_template`) config 파일을 받을 수 없다. | `rb-node config set job_template '[...,"{config}"]'` |
+| `job_template` | 비어 있으면 warn, `{config}`, `{config_dir}`, `{config_stem}` 중 어느 것도 없으면 fail | 작업이 거부되거나(`no_job_template`) config 파일을 받을 수 없다. | `rb-node config set job_template '[...,"{config}"]'` |
+| `allowed_gpus` | 비어 있으면 warn | `allowed_gpus`가 비었거나 형식이 틀렸다. 모든 `job_submit`이 `no_allowed_gpus`로 거부된다. | `rb-node config set allowed_gpus '[4, 5, 6, 7]'`(본인 GPU 인덱스) |
 | `claude_bin` | warn | responder를 시작할 수 없다. 메시지는 살아 있는 세션을 기다린다. | `rb-node config set claude_bin PATH` |
 | `pdftotext` | warn | pdf 파일이 거부된다. | `poppler-utils` 설치 |
 | `ak_bridge` | fail | `authorized_keys`에 `serve-remote` 줄이 없거나, `restrict` 또는 `from=`이 없거나, 명령 경로가 존재하는 실행 파일의 절대 경로가 아니다. 허브가 거부된다(`node_refused_key`). | `scripts/node-install.sh --hub-key '...' --hub-from ADDR --apply-authorized-keys` |
@@ -192,7 +202,9 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 ## 8. Budget enforcement
 
-승인된 작업의 큐 파일은 템플릿 명령을 `rb-node run-job --gpus ... --gpu-hours ...`로 감싼다. 래퍼는 `CUDA_VISIBLE_DEVICES`를 정확히 그 GPU들로 설정하고, 작업을 벽시계 시간 `gpu_hours / len(gpus)`에서 멈춘다(상태 `budget_exceeded`). 취소 요청은 10초마다 확인한다. 노드의 자체 큐 runner는 여전히 worker를 GPU에 배정하며, 래퍼는 작업이 보는 범위를 좁힐 뿐이다. `job_submit`은 연구 트리의 `HEAD`를 `state/git/<job_id>.json`에 고정한다. `run-job`은 작업 기록에 `git_submit`과 `git_start`를 남기고, `job_finished` 이벤트는 `git_head`를 싣는다.
+승인된 작업의 큐 파일은 템플릿 명령을 `rb-node run-job --gpus ... --gpu-hours ...`로 감싼다. 래퍼는 작업을 벽시계 시간 `gpu_hours / len(gpus)`에서 멈춘다(상태 `budget_exceeded`). 취소 요청은 10초마다 확인한다. `job_submit`은 연구 트리의 `HEAD`를 `state/git/<job_id>.json`에 고정한다. `run-job`은 작업 기록에 `git_submit`과 `git_start`를 남기고, `job_finished` 이벤트는 `git_head`를 싣는다.
+
+작업이 받는 GPU: 노드의 큐 러너는 GPU마다 worker를 하나씩 두고 그 GPU를 `CUDA_VISIBLE_DEVICES`로 내보낸다. 브리지로 큐에 넣는 작업은 `allowed_gpus` 중 GPU 하나를 요청하며, wrapper는 그 작업을 집은 worker의 GPU에서 실행한다. 이 GPU는 요청한 인덱스와 다를 수 있고, 그때 작업 기록과 `job_finished` 이벤트에 `gpus_used`가 들어간다. wrapper는 `allowed_gpus` 밖의 GPU에서는 아무것도 시작하지 않는다. 그 작업은 사유 `gpu_not_allowed`, 종료 코드 126의 `failed`로 끝난다. worker 없이 콘솔에서 실행하면 wrapper는 `CUDA_VISIBLE_DEVICES`를 `--gpus` 값으로 설정한다.
 
 ## 9. Updating and removing
 
@@ -250,7 +262,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 허브는 `hello`를 가장 먼저 보낸다. protocol 2 노드(`rb_node` 0.2.0 이상)는 `node`, `version`, `withheld_extra`(fallback 외에 파일에서 로드한 패턴 수), `protocol`(숫자 2), `ops`(처리하는 연산의 정렬된 목록), `state`로 답한다. `state`는 경로나 패턴 텍스트가 없는 불리언과 개수의 맵이다. 이전 코드의 노드는 `protocol`과 `state`를 생략하며, 허브는 이를 protocol 1로 본다. `node.json`이 없거나 유효하지 않은 노드도 `state.configured`를 false로, `ops`를 `["hello"]`로 하여 `hello`에 답하고, 다른 모든 연산에는 `not_configured`로 답한다.
 
-`state` 키: `configured`, `approval_verifier`, `job_template_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected`(컴파일되지 않는 패턴), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. 그 밖의 연산: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`.
+`state` 키: `configured`, `approval_verifier`, `job_template_set`, `allowed_gpus_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected`(컴파일되지 않는 패턴), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. 그 밖의 연산: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`.
 
 ### 12.1 Differences between the documents and the code
 

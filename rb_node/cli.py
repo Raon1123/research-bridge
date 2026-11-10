@@ -161,6 +161,7 @@ def _approve_key(rest: List[str]) -> int:
 def _run_job(args: List[str]) -> int:
     from pathlib import Path
     from .config import load_config
+    from .jobs import allowed_set
     from .run_job import run_job
     if "--" not in args:
         sys.stderr.write("rb-node run-job: missing -- before command\n")
@@ -181,8 +182,12 @@ def _run_job(args: List[str]) -> int:
     if not argv or not gpus or ns.gpu_hours <= 0:
         sys.stderr.write("rb-node run-job: invalid arguments\n")
         return 2
+    # The queue worker exports its GPU as CUDA_VISIBLE_DEVICES; a single index is that assignment.
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    assigned = int(visible) if visible.isdigit() else None
     return run_job(gpus, ns.gpu_hours, ns.job_id, argv, Path(cfg.mailbox_root) / "state",
-                   trm_root=Path(cfg.trm_root))
+                   trm_root=Path(cfg.trm_root), allowed_gpus=allowed_set(cfg.allowed_gpus),
+                   assigned_gpu=assigned)
 
 
 def _git_status() -> int:

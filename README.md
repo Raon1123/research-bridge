@@ -95,16 +95,20 @@ Replace `~/research-bridge` with the directory where you cloned in step 1. `rb-n
    ```
    rb-node approve-key set
    ```
-   To run jobs, the node also needs the command line for one job, with `{config}` where the config path goes. The value is project-specific; the project's page under `docs/projects/` records what is known about it. Without it the node refuses job submissions (`no_job_template`).
+   To run jobs, the node also needs the command line for one job, with `{config}` where the config path goes (`{config_dir}` and `{config_stem}` are also available, for a loader that finds the config by name; see [node manual](docs/manual/node-setup.md) §4.1.1). The value is project-specific; the project's page under `docs/projects/` records what is known about it. Without it the node refuses job submissions (`no_job_template`).
    ```
    rb-node config set job_template '["...", "{config}"]'
+   ```
+   The node also needs the GPU indices a bridge job may use, that is, your own GPUs. A job takes one GPU from this list. With an empty list the node refuses every job submission (`no_allowed_gpus`).
+   ```
+   rb-node config set allowed_gpus '[4, 5, 6, 7]'
    ```
 7. **Hub terminal: host key.** `rb setup` takes host, port and user from the `Host` block, scans the node's host key once, shows the fingerprint and asks whether it equals the line of the same type that `node-install.sh` printed; `y` appends it to `~/.ssh/known_hosts`. If they differ, answer `n` and do not connect. Its last stage (stage 9) then runs `rb doctor`, which connects and sends `hello`.
    ```
    rb setup --node node1
    ```
 8. **Hub terminal: MCP server.** Paste the `claude mcp add-json --scope user research-bridge '...'` line that `rb setup` printed (stage 8) (`rb doctor` prints it again under `mcp_entry` while it is missing). The entry runs `uv run --directory <checkout> --extra host python -m rb_host.server`. Then start a new Claude session: MCP servers load when a session starts.
-9. **Hub terminal: check.** Repeat until the last line reads `summary: N ok, N warn, 0 fail`, fixing each problem with the command on its `next:` line. Warnings that normally remain: `local_json` (only the harness path mapping needs it), `service_sync` and `service_web` until you install the services below, `node_job_template` until `job_template` is set. `node_withheld` is only a warning, but it must read `node loaded N pattern(s)` before anyone uses `read_doc`, `send_message` or `poll`, runs `rb sync`, or enables the timer below (see [Troubleshooting](#troubleshooting)).
+9. **Hub terminal: check.** Repeat until the last line reads `summary: N ok, N warn, 0 fail`, fixing each problem with the command on its `next:` line. Warnings that normally remain: `local_json` (only the harness path mapping needs it), `service_sync` and `service_web` until you install the services below, `node_job_template` and `node_allowed_gpus` until `job_template` and `allowed_gpus` are set. `node_withheld` is only a warning, but it must read `node loaded N pattern(s)` before anyone uses `read_doc`, `send_message` or `poll`, runs `rb sync`, or enables the timer below (see [Troubleshooting](#troubleshooting)).
    ```
    rb doctor
    ```
@@ -170,7 +174,7 @@ On the node console, in the checkout:
 scripts/node-install.sh --update
 ```
 
-It runs `git pull --ff-only`, installs the code as a new release and switches to it in one rename; `node.json`, the pattern file, the approval verifier and `authorized_keys` are kept, and the two newest releases stay on disk. Update the hub with `git pull` and `uv sync --extra host` in its checkout, then restart every Claude session on the hub: an MCP server process started on the old code cannot return the items that the new `rb sync` stores as not yet delivered. Make sure no other data root (for example the laptop's MCP server) polls the same node, and only then run `rb sync` or enable `rb-sync.timer`. The hub shows the node's version in `rb doctor --node node1` (`node runs X`, `node runs X, hub has Y`, or `node code X predates protocol 2`, with `next: on the node: scripts/node-install.sh --update`), in the `nodes` tool and on the hub page; `rb git-status --node node1` adds the installed commit and the git state of the research tree. Node code before 0.2.0 has no `rb-node doctor` and does not report its approval verifier, `job_template` or responder; the hub shows those as `unknown (node code predates protocol 2)`.
+It runs `git pull --ff-only`, installs the code as a new release and switches to it in one rename; `node.json`, the pattern file, the approval verifier and `authorized_keys` are kept, and the two newest releases stay on disk. Update the hub with `git pull` and `uv sync --extra host` in its checkout, then restart every Claude session on the hub: an MCP server process started on the old code cannot return the items that the new `rb sync` stores as not yet delivered. Make sure no other data root (for example the laptop's MCP server) polls the same node, and only then run `rb sync` or enable `rb-sync.timer`. The hub shows the node's version in `rb doctor --node node1` (`node runs X`, `node runs X, hub has Y`, or `node code X predates protocol 2`, with `next: on the node: scripts/node-install.sh --update`), in the `nodes` tool and on the hub page; `rb git-status --node node1` adds the installed commit and the git state of the research tree. Node code before 0.2.0 has no `rb-node doctor` and does not report its approval verifier, `job_template`, `allowed_gpus` or responder; the hub shows those as `unknown (node code predates protocol 2)`.
 
 ## Troubleshooting
 
@@ -200,7 +204,7 @@ When `rb agent` or `rb setup` cannot start an agent it prints one of: `no usable
 
 ## Using it for another research project
 
-A node serves one research project today: its root, readable directories, queue, `job_template` and pattern file are `node.json` keys set with `rb-node config set` on the node console. To describe a new project, copy [docs/projects/TEMPLATE.md](docs/projects/TEMPLATE.md) to `docs/projects/<name>.md`; [docs/projects/trm.md](docs/projects/trm.md) is the first one. A second node is linked by running `rb setup --node NAME ...` again; each node has its own keys and aliases. Several projects on one node, and experiment requests with result records, are designed but not built: [project profiles](docs/design/2026-11-10-project-profiles.md), [experiment records](docs/design/2026-11-10-experiment-records.md).
+A node serves one research project today: its root, readable directories, queue, `job_template`, `allowed_gpus` and pattern file are `node.json` keys set with `rb-node config set` on the node console. To describe a new project, copy [docs/projects/TEMPLATE.md](docs/projects/TEMPLATE.md) to `docs/projects/<name>.md`; [docs/projects/trm.md](docs/projects/trm.md) is the first one. A second node is linked by running `rb setup --node NAME ...` again; each node has its own keys and aliases. Several projects on one node, and experiment requests with result records, are designed but not built: [project profiles](docs/design/2026-11-10-project-profiles.md), [experiment records](docs/design/2026-11-10-experiment-records.md).
 
 ## Documentation
 

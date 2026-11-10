@@ -38,6 +38,7 @@ def env(tmp_path, monkeypatch):
         "mailbox_root": str(mb),
         "audit_path": str(tmp_path / "rb" / "audit.jsonl"),
         "job_template": ["echo", "{config}"],
+        "allowed_gpus": [0],
         "approval_path": str(tmp_path / "rb" / "approve.json"),
     }
     # a fast KDF for tests; the laptop's lower bound is lowered to match
