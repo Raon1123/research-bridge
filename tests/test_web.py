@@ -297,6 +297,14 @@ def test_withheld_banner_when_file_gives_no_usable_pattern(cfg, srv, text):
     assert "no usable pattern" in req(srv, "/")[2].lower()
 
 
+def test_withheld_banner_when_some_patterns_do_not_compile(cfg, srv):
+    Path(cfg.withheld_patterns_file).write_text('{"patterns": ["(", "usable_extra_"]}',
+                                                encoding="utf-8")
+    body = req(srv, "/")[2].lower()
+    assert "1 pattern(s) in the withheld pattern file do not compile and are ignored" in body
+    assert "no usable pattern" not in body and "only the five" not in body
+
+
 def test_withheld_banner_when_node_has_no_extra_patterns(cfg, srv):
     p = Path(cfg.data_root) / "sync" / "n1.json"
     st = json.loads(p.read_text(encoding="utf-8"))

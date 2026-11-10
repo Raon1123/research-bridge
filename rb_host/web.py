@@ -124,9 +124,12 @@ def _banners(cfg: Any, wh: Withheld) -> str:
     if wh.source_error:
         out.append("Withheld pattern file is %s: only the five built-in patterns are applied "
                    "to what this page shows." % wh.source_error)
-    elif wh.extra_count == 0 or wh.rejected_count:
+    elif wh.extra_count == 0:
         out.append("Withheld pattern file gives no usable pattern (%d rejected): only the five "
                    "built-in patterns are applied to what this page shows."
+                   % wh.rejected_count)
+    elif wh.rejected_count:
+        out.append("%d pattern(s) in the withheld pattern file do not compile and are ignored."
                    % wh.rejected_count)
     for n in sorted(cfg.nodes):
         st = threads.read_status(cfg, n)
