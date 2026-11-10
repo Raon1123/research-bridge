@@ -465,3 +465,40 @@ def test_run_pass_survives_bad_status_read(env, monkeypatch):
     monkeypatch.setattr(sync, "read_status", boom)
     st = sync.run_pass(env["cfg"], "n1")  # must not raise
     assert isinstance(st, dict)
+
+
+# -- old node (protocol 1) stand-in -------------------------------------------------------
+def _use_old_node(env, monkeypatch):
+    from oldnode import SERVE_OLD
+
+    def connect(cfg, node):
+        env["conns"] += 1
+        return Rec(NodeClient(ALIAS, ssh_argv=SERVE_OLD, env=env["nenv"]), env["conns"], env)
+    monkeypatch.setattr(jobs, "connect", connect)
+
+
+def test_old_node_stand_in_answers_like_the_old_node(env):
+    from oldnode import SERVE_OLD
+    with NodeClient(ALIAS, ssh_argv=SERVE_OLD, env=env["nenv"]) as c:
+        assert set(c.call("hello")) == {"node", "version", "withheld_extra"}
+        with pytest.raises(RemoteError) as ei:
+            c.call("no_such_op")
+        assert ei.value.code == "unknown_op"
+
+
+def test_sync_pass_against_old_node_records_protocol_1(env, monkeypatch):
+    _use_old_node(env, monkeypatch)
+    _reply(env)
+    st = sync.run_pass(env["cfg"], "n1")
+    assert st["ok"] is True, st
+    got = _status(env)
+    assert got["protocol"] == 1 and got["new_items"] == 1 and got["node_version"] == "0.1.0"
+
+
+def test_mcp_nodes_after_old_node_pass(env, monkeypatch):
+    _use_old_node(env, monkeypatch)
+    sync.run_pass(env["cfg"], "n1")
+    res = server.nodes()
+    assert res["nodes"] == ["n1"]
+    s = res["status"]["n1"]
+    assert s["synced"] is True and s["ok"] is True and s["protocol"] == 1

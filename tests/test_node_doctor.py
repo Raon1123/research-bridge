@@ -24,7 +24,7 @@ def by_id(checks):
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
-    h.mkdir()
+    h.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(h))
     monkeypatch.setattr(doctor, "_which", lambda name: None)
     return h

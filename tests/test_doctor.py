@@ -271,13 +271,14 @@ def test_online_missing_alias_in_entry_is_a_fail_not_a_traceback(hub, tmp_path, 
     assert doctor.main("node1", offline_only=False) == 1
 
 
-from test_host_client import SERVE, node  # noqa: E402,F401  (local subprocess node fixture)
+from test_host_client import node  # noqa: E402,F401  (local subprocess node fixture)
+from oldnode import SERVE_OLD  # noqa: E402
 
 
-def test_online_against_real_old_node_code(monkeypatch, tmp_path, node):
-    """The rb_node in this tree is the old node (no protocol key): the doctor must read it as protocol 1."""
+def test_online_against_old_node_stand_in(monkeypatch, tmp_path, node):
+    """tests/oldnode.py answers hello without a protocol key: the doctor must read it as protocol 1."""
     monkeypatch.setattr(doctor, "_connect",
-                        lambda cfg, n: client.NodeClient("x", ssh_argv=SERVE, env=node["env"]))
+                        lambda cfg, n: client.NodeClient("x", ssh_argv=SERVE_OLD, env=node["env"]))
     res = doctor.online(_cfg(tmp_path), "node1")
     by = {r.id: r for r in res}
     assert by["reachable"].level == "ok" and "protocol 1" in by["reachable"].message

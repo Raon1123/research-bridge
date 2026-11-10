@@ -109,7 +109,7 @@ def test_hub_from_validated():
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
-    h.mkdir()
+    h.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(h))
     monkeypatch.delenv("RB_NODE_CONFIG", raising=False)
     return h
@@ -305,7 +305,7 @@ def sh_env(tmp_path):
     hk.mkdir()
     (hk / "ssh_host_ed25519_key.pub").write_text("x", encoding="utf-8")
     home = tmp_path / "home"
-    home.mkdir()
+    home.mkdir(exist_ok=True)
     tree = tmp_path / "tree"
     tree.mkdir()
     env = {"HOME": str(home),
