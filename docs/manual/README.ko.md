@@ -47,7 +47,7 @@ Claude session ──stdio MCP── hub (rb-host-mcp, rb CLI, ledger, rb sync t
 
 ## 매뉴얼의 표기 규칙
 
-- 자리표시자는 비공개 값을 대신한다. `node1`(노드 이름), `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`(노드의 주소, SSH 포트, 로그인 이름), `<HUB_ADDR>`(노드가 보는 허브의 주소), `<HUB_SUBNET>`(허브의 네트워크 범위), `<HUB_HOST>`(노트북에서 허브에 로그인할 때 쓰는 이름)이다. 실제 값은 git이 무시하는 `private/placeholders.md`에 보관하며 커밋하지 않는다(`docs/CONTRIBUTING.md` §3).
+- 자리표시자는 비공개 값을 대신한다. `node1`(노드 이름), `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`(노드의 주소, SSH 포트, 로그인 이름), `<HUB_ADDR>`(노드가 보는 허브의 주소), `<HUB_SUBNET>`(허브의 네트워크 범위), `<HUB_HOST>`(노트북에서 허브 페이지로 SSH 포워드할 때 허브에 로그인하는 이름), `<NODE_HOME>`(노드 사용자의 홈 디렉터리), `<HUB_HOME>`(허브에서 harness 파일에 경로가 나타나는 홈 디렉터리; `local.example.json`), `<LAPTOP_LAN_IP>`(노트북 자신의 주소로, `docs/session-dashboard.md`의 8765 대시보드에만 쓴다), `<SHARED_KEY>`(노드의 옛 공유 키)이다. 이 목록이 유일한 목록이며 다른 문서는 이것을 가리킨다. 실제 값은 git이 무시하는 `private/placeholders.md`에 보관하며 커밋하지 않는다(`docs/CONTRIBUTING.md` §3).
 - "허브 터미널"과 "노드 콘솔"은 사람이 그 기계에서 열어 둔 터미널을 뜻한다. `y/N`이나 passphrase를 묻는 명령은 터미널 없이는 실행을 거부하므로 Claude 세션이 실행할 수 없다. `AGENTS.md`는 노드의 모든 명령을 사용자가 직접 실행하거나 승인하도록 요구한다.
 - 런타임은 uv만 쓴다. 허브 매뉴얼의 `rb ...`는 메인 체크아웃에서 `uv run --extra host rb ...`를 뜻한다. 사람은 평범한 명령을 입력하고, 세션은 셸 명령 앞에 `rtk`를 붙인다.
 - 영어 파일이 기준이다. `.ko.md` 파일은 번역이며, 둘이 다르면 영어 파일을 따른다. 같은 변경에서 둘 다 갱신한다.

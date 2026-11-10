@@ -26,14 +26,14 @@ Not done or not verified:
 - SSH errors carry a code and the next command (`no_agent`, `agent_empty`, `key_not_loaded`, `node_refused_key`, `host_key_unknown`, `host_key_changed`, `unknown_alias`, `unreachable`, `timeout`, `closed`). The MCP server finds the agent itself: no `SSH_AUTH_SOCK` in its entry, no session restart when the agent changes.
 - `rb sync` writes `<data_root>/sync/<node>.json`; items it stores are marked undelivered, so MCP `poll` still returns them. `send_message` keeps a masked copy of each sent body under `<data_root>/outbox/`.
 - Node: `scripts/node-install.sh` is the single node entry point; `rb-node doctor`; `rb-node link [DIR] [--apply]`; `hello` protocol 2 with a `state` object; defect fixes. Removed: `scripts/hub-connect.sh`, `scripts/hub-agent.sh`, `scripts/trm-link.sh`.
-- Designs (`docs/design/`, 2026-11-10): setup and diagnosis, sync and hub page (both built here); project profiles, experiment records (design only). Project facts: `docs/projects/trm.md`.
-- Tests: 760 passed on 2026-11-10 at commit bef535b with the working tree of that day (Linux hub, Python 3.12).
+- Designs (`docs/design/`, 2026-11-10): setup and diagnosis, sync and hub page (both implemented here; both design documents keep the status draft until the user accepts them); project profiles, experiment records (design only). Project facts: `docs/projects/trm.md`.
+- Tests: 760 passed on 2026-11-10 at commit fb5ccc2 (Linux hub, Python 3.12); later commits on the branch are not covered by this count.
 
 ## Next actions
 
 ### Only the user, at a terminal
 
-1. Decide push and merge (decision 1). The node gets code with `git pull`, and `rb setup` and `rb service install` should run from the main checkout (setup warns in a worktree; the units call the `rb` of the installing environment). Then, on the hub, in the main checkout: `git pull` and `uv sync --extra host`.
+1. Decide push and merge (decision 1). The node gets code with `git pull`, and `rb setup` and `rb service install` should run from the main checkout (setup warns in a worktree; the units call the `rb` of the installing environment). Then, on the hub, in the main checkout: `git pull` and `uv sync --extra host`. Then restart every Claude session on the hub before the first `rb sync`: an MCP server started on the old code never returns the items the new `rb sync` stores as not yet delivered.
 2. Hub terminal: `rb doctor --offline`. If `withheld_hub` is not ok, copy the session-calendar withheld pattern file from the laptop to `<data_root>/withheld_patterns.json` (the path `withheld_patterns_file` in `host.json` names).
 3. Node, with your own login (not the `rb-node1` alias, whose key runs only the forced command): copy the same file to `~/withheld-patterns.json`.
 4. Node console, in the node's research-bridge checkout:

@@ -24,7 +24,7 @@ Each row must hold. If one does not, stop and write a postmortem (`docs/postmort
 | 1 | user, hub terminal | `ssh rb-node1` (type nothing, then Ctrl-D) | No shell prompt. Protocol output only. |
 | 2 | user, hub terminal | `ssh rb-node1 cat /etc/passwd` | Nothing from `cat`; no passwd contents. The forced command ignores the requested command. |
 | 3 | user, hub terminal | `ssh rb-node1-harness ls` | `rb-node harness-receive: unknown command`, exit status 1. |
-| 4 | user, own login | log in to the node with `<SHARED_KEY>` | A normal shell (the old key is unrestricted until decision 5 of the triage file). Record that the two bridge keys, not this one, are restricted. |
+| 4 | user, own login | log in to the node with `<SHARED_KEY>` | Record whether it gives a normal shell or a restricted one; this is not recorded yet (decision 5 of the triage file). The two bridge keys are the ones that must be restricted. |
 | 5 | user, node console | `rb-node doctor` | `ak_bridge` ok (`serve-remote line N is restricted`), `ak_harness` ok, `withheld` ok (`N pattern(s) loaded besides the fallback`), `approval` ok. No `fail` line. |
 | 6 | user, hub terminal | `rb doctor --node node1` | No `fail` line; `known_host`, `ssh_options`, `reachable`, `node_withheld`, `node_approval` ok. |
 | 7 | user, node console | `claude -p 'Say ok.' --tools Read,Grep,Glob --setting-sources ""` then `echo $?` | A short answer and `0`. If the Claude command line rejects `--setting-sources ""`, every responder run ends in `responder_failed` (`2026-11-03-whole-branch-review.md` PM-02). |

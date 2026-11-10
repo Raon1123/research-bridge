@@ -49,7 +49,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 
 - Reading pages with `GET` is fine. Do not `POST` to `/rb/approve` or `/todo/toggle`: approval is the user's step (hard rule 1, PM-04 in `docs/postmortems/2026-11-03-whole-branch-review.md`).
 - Do not edit vault `dashboard/` files directly. Change the copy in `vault-export/dashboard/`, test it with `tests/test_rb_pending.py` / `tests/test_rb_board.py`, and hand the user the apply and restart steps.
-- Do not write the LAN address into this repository; it is public. Use `<LAPTOP_LAN_IP>` for the laptop and `<HUB_ADDR>` for the hub.
+- Do not write the LAN address into this repository; it is public. Use `<LAPTOP_LAN_IP>` for the laptop, `<HUB_HOST>` for the name you log in to the hub with, and `<HUB_ADDR>` only for the address the node sees the hub as.
 
 ## The hub page (port 8767)
 
@@ -59,7 +59,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 |---|---|
 | Start | in a hub terminal, `rb web serve [--port 8767] [--bind 127.0.0.1]` (a session needs the user's go-ahead, `AGENTS.md` "Ask the user before"), or as the systemd user unit `rb-web.service` that `rb service install` writes (the user installs it; `rb service status` shows its state) |
 | Address | `http://127.0.0.1:8767/` on the hub. The server accepts only the bind address `127.0.0.1`; any other value ends with `error: --bind accepts only 127.0.0.1; from another machine use: ssh -N -L PORT:127.0.0.1:PORT <hub>` |
-| From the laptop | an SSH local forward through the user's own login to the hub, then the same port in the browser: `ssh -N -L 8767:127.0.0.1:8767 <HUB_ADDR>` and `http://localhost:8767/`. Use the same port number on both sides: the page accepts only the `Host` headers `127.0.0.1:P`, `localhost:P` and `[::1]:P` for the port it listens on, so a forward to a different local port answers 403 |
+| From the laptop | an SSH local forward through the user's own login to the hub, then the same port in the browser: `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>` and `http://localhost:8767/`. Use the same port number on both sides: the page accepts only the `Host` headers `127.0.0.1:P`, `localhost:P` and `[::1]:P` for the port it listens on, so a forward to a different local port answers 403 |
 | Methods | `GET` and `HEAD` only; anything else answers 405 |
 | Needs | a usable `host.json` (otherwise one error line, `rb setup` is named as the next command) |
 

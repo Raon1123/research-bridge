@@ -28,7 +28,7 @@ Each document carries one status line at the top. Update it in place and keep th
 | Date | Document | Status |
 |---|---|---|
 | 2026-10-27 | [research-bridge design](../superpowers/specs/2026-10-27-research-bridge-design.md) | user-approved; built through Task 12 (hashes in the ledger predate the 2026-11-02 rewrite of `main`) |
-| 2026-11-02 | [Unified research board](2026-11-02-unified-board.md) | draft, not user-approved; built: steps 3–5 (board module, `rb board` CLI, `/board` page patch in `vault-export/`) merged in PR 23 (merge commit 2bd8841); the vault copy of the patch is a pending user step (`docs/HANDOFF.md`, PM-03) |
+| 2026-11-02 | [Unified research board](2026-11-02-unified-board.md) | draft, not user-approved; built: steps 3–5 (board module, `rb board` CLI, `/board` page patch in `vault-export/`) merged in PR 23 (merge commit 2bd8841); the vault copy of the patch is a pending user step (`docs/issues/2026-11-10-triage.md`, issue N-16) |
 | 2026-11-03 | [Node-side job approval (SEC-01)](2026-11-03-node-side-approval.md) | draft, not user-approved; built: merged from branch `claude/sec-01-02-fixes` in PR 27 (merge commit 933edc3; `rb_node/approval.py`) |
 | 2026-11-06 | [Shared research status page](2026-11-06-shared-status-page.md) | built (steps 3–4, commits e68109a, 218d60a); steps 2, 5, 6 open |
 | 2026-11-10 | [Setup and diagnosis](2026-11-10-setup-and-diagnosis.md) | draft; implementation on branch `claude/review-optimize-2026-11-10` |

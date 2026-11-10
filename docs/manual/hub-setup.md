@@ -4,9 +4,9 @@ The hub runs `rb_host`: the MCP server (Model Context Protocol, the interface Cl
 
 ## How to read this manual
 
-- **Who runs a command.** "Hub terminal" means a terminal the user has open on the hub. Commands that ask a question (`y/N`, a passphrase) refuse to run without a terminal (stdin and stdout must both be a terminal), so a Claude session cannot run them. A session may run the forms marked "session-safe": `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config ...`, `rb web serve`, `rb board show`.
+- **Who runs a command.** "Hub terminal" means a terminal the user has open on the hub. Commands that ask a question (`y/N`, a passphrase) refuse to run without a terminal (stdin and stdout must both be a terminal), so a Claude session cannot run them. A session may run the forms marked "session-safe": `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config path`, `rb config show`, `rb config check`, `rb config mcp`, `rb board show`. The other `rb config` forms (`init`, `add-node`, `remove-node`, `set`, `local`) write `host.json` or `private/local.json` without asking, and `rb web serve` starts a process, so a session needs your go-ahead for them (`AGENTS.md`, "Ask the user before"); `rb doctor` without `--offline` and `rb sync` contact the node and need it too.
 - **How `rb` is run.** The runtime is managed by uv. In this manual `rb ...` stands for `uv run --extra host rb ...` run in the main checkout (or `.venv/bin/rb ...`). A session prefixes shell commands with `rtk`; people type the plain command.
-- **Placeholders.** `node1` is the node name used in examples. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>` are the node's address, SSH port and login name. `<HUB_ADDR>` is the hub's address as the node sees it; `<HUB_SUBNET>` is the hub's network range; `<HUB_HOST>` is a name by which you log in to the hub from the laptop. Real values go only in files that git ignores.
+- **Placeholders.** `node1` is the node name used in examples. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>` are the node's address, SSH port and login name. `<HUB_ADDR>` is the hub's address as the node sees it; `<HUB_SUBNET>` is the hub's network range; `<HUB_HOST>` is a name by which you log in to the hub from the laptop. The full list is in `docs/manual/README.md`. Real values go only in files that git ignores.
 - **Abbreviations.** SSH = Secure Shell. MCP = Model Context Protocol. TOFU = trust on first use (accepting a host key the first time it is seen). systemd = the Linux service manager; "user units" run under your account.
 
 ### Order of a first setup
@@ -103,7 +103,7 @@ Each step ends with `-> done`, `-> skipped`, `-> printed` or `-> failed: <reason
 ### 4.2 The two-pass first run
 
 1. Hub terminal: `rb setup --node node1 --host <NODE_HOST> --port <NODE_PORT> --user <NODE_USER>`. Steps 1 to 4 and 6 run; step 5 is deferred; step 7 prints the node command.
-2. Copy the hub withheld pattern file to `~/withheld-patterns.json` on the node (`scp`, hub to node), then run the printed command on the node console in a checkout of this repository (node manual §2). At its end it prints the node's host key fingerprints.
+2. Copy the hub withheld pattern file to `~/withheld-patterns.json` on the node (`scp`, hub to node). If `known_hosts` has no entry for the node yet, `scp` asks its own yes/no question and writes the entry, and step 5 of `rb setup` then skips its comparison (it finds the entry). Before you answer `yes`, compare the fingerprint `scp` shows with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the node console; answer `no` if they differ. Then run the printed command on the node console in a checkout of this repository (node manual §2). At its end it prints the node's host key fingerprints.
 3. Hub terminal: `rb setup --node node1`. Step 5 now shows the fingerprint it scanned. Answer `y` only if it equals the line of the same type that the node printed. If they differ, do not connect; check on the node console with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` and find the cause first.
 4. Run the MCP command from step 8 (§6).
 
@@ -203,7 +203,7 @@ Without a usable `host.json`, every `rb` command that needs it prints one line, 
 
 The real command carries your paths. `env` always has `RB_HOST_CONFIG` (absolute path of `host.json`) and has `RB_HOST_ROOT` only if the shell that ran `rb setup` had it set; run `rb setup` or `rb config mcp` in the same shell setting you use daily. The entry has no `SSH_AUTH_SOCK` (§4.3). An older entry that has one still works.
 
-`rb config mcp` prints the same entry as JSON. `rb doctor` check `mcp_entry` warns if the registered entry is missing, points at a missing path or a worktree, or differs from the one `rb setup` prints; remove it (`claude mcp remove research-bridge`) and register again.
+`rb config mcp` prints the same entry as JSON. `rb doctor` check `mcp_entry` warns if the registered entry is missing, points at a missing path or a worktree, or differs from the one `rb setup` prints; remove it (`claude mcp remove research-bridge`) and register again. It also warns (`from_worktree`) when this `rb` runs from a git worktree and the registered entry differs only in the checkout path; the next step is to run `rb` from the main checkout.
 
 A new Claude session then has exactly ten tools: `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `queue_status`, `gpu_status`, `submit_job`, `cancel_job`. A test pins this set. There is no approval tool: `submit_job` and `cancel_job` only write a `pending_approval` record and make no SSH call.
 
@@ -255,7 +255,7 @@ Prints one line per check, grouped by node: `<level> <id>  <message>`, and under
 | `alias` | fail | `ssh -G` shows no `Host` block for the node's bridge alias. | `rb setup --node NAME ...` |
 | `alias_harness` | warn | Same for the harness alias; only the harness channel is affected. | same |
 | `ssh_options` | warn | An alias lacks `IdentitiesOnly yes` or `StrictHostKeyChecking yes`, so other keys might be offered or an unknown host key accepted. | `rb setup --node NAME` |
-| `key_file` | fail | The bridge key file is missing, readable by group or others (mode), or has no `.pub`. | `rb setup --node NAME` / `chmod 600 KEY` / `ssh-keygen -y -f KEY > KEY.pub` |
+| `key_file` | fail | No `IdentityFile` named like a key `rb setup` generates is configured for the alias (`no bridge IdentityFile configured for <alias>`), or the bridge key file is missing, readable by group or others (mode), or has no `.pub`. | `rb setup --node NAME` / `chmod 600 KEY` / `ssh-keygen -y -f KEY > KEY.pub` |
 | `key_file_harness` | warn | Same for the harness key. | same |
 | `agent` | fail if some bridge key has a passphrase, else warn | No agent socket answers. | `rb agent` |
 | `key_loaded` | fail | The bridge key is not in the agent (a key without a passphrase counts as loaded). | `rb agent --node NAME` |
@@ -263,12 +263,12 @@ Prints one line per check, grouped by node: `<level> <id>  <message>`, and under
 | `agent_location` | warn | The key is only in an agent outside `$XDG_RUNTIME_DIR` (for example a forwarded agent); the timer and other shells cannot use it. | `rb agent --node NAME` |
 | `known_host` | fail | `known_hosts` has no entry for the node, so the strict SSH option refuses to connect. | `rb setup --node NAME` |
 | `withheld_hub` | fail | The hub pattern file is missing, not valid JSON, empty, or has patterns that do not compile (indexes are listed). Only the five built-in patterns apply. | copy the pattern file to the path shown (§3.1) |
-| `mcp_entry` | warn | The MCP server is not registered, points at a missing path or a worktree, or differs from the entry `rb setup` prints. | the `claude mcp add-json ...` command shown |
+| `mcp_entry` | warn | The MCP server is not registered, points at a missing path or a worktree, or differs from the entry `rb setup` prints. Also `from_worktree`: this `rb` runs from a git worktree and the entry differs only in its checkout path. | the `claude mcp add-json ...` command shown; for `from_worktree`, `run rb from the main checkout` |
 | `local_json` | warn | `private/local.json` is missing; only the harness path mapping needs it. | `rb config local --laptop-home ... --node-home ...` |
 | `service_sync` | warn | The sync timer is not installed or not active, or the systemd user manager is unavailable. | `rb service install` / `systemctl --user enable --now rb-sync.timer` |
 | `service_web` | warn | The page service is not installed or not active. | `rb service install` / `systemctl --user enable --now rb-web.service` |
 | `linger` | warn | Reported only if a unit is installed: user units stop when you log out. | `loginctl enable-linger <user>` (may need an administrator) |
-| `sync_status` | warn | Reported only if `sync/<node>.json` exists: no successful pass in the last 900 s, with the error code of the last attempt. | `rb sync --node NAME` |
+| `sync_status` | warn | Reported only if `sync/<node>.json` exists: no successful pass in the last 900 s, with the error code of the last attempt; or `a sync pass started N ago and never finished` (a pass recorded as running for more than 900 s). | `rb sync --node NAME` |
 
 ### 10.2 Online checks (one `hello` per node)
 
@@ -313,7 +313,7 @@ From 2026-11-05 this Linux server is the hub (user decision). Platform facts:
 
 - **Python:** 3.12 on the first Linux hub; the host side needs 3.10 or later. The node side stays compatible with 3.8.
 - **Data root:** `RB_HOST_ROOT` if set, else `~/.local/share/research-bridge` (§3). The Windows default `D:/raw/research-bridge` applies only on Windows.
-- **Keys:** `~/.ssh/research-bridge/` (directory mode 700, keys mode 600), unless `--keydir` or an existing `IdentityFile` says otherwise.
+- **Keys:** `~/.ssh/research-bridge/` (directory mode 700, keys mode 600), unless `--keydir` says otherwise. Only a key file with the name `rb setup` generates (`<node>_ed25519` for the bridge alias, `<node>_harness_ed25519` for the harness alias) counts as a bridge key. An alias whose `IdentityFile` has any other name makes `rb setup` create keys at the default path, and `rb doctor` and `rb agent` report `no bridge IdentityFile configured for <alias>`.
 - **Runtime directory:** agent sockets and the `rb-ssh-agent` live in `$XDG_RUNTIME_DIR` (normally `/run/user/<uid>`, mode 700). A shell without a login session may lack it; then `rb agent` stops with `no usable runtime directory for an ssh-agent socket`.
 - **`from=` on the node:** the hub's own address or subnet (`<HUB_ADDR>`, `<HUB_SUBNET>`), never the laptop's.
 - **Approval:** `rb approve` and `rb reject` in a hub terminal. The 8765 dashboard and its `/rb/approve` route are vault-side and are not installed here.
@@ -323,6 +323,8 @@ From 2026-11-05 this Linux server is the hub (user decision). Platform facts:
 ## 13. Unattended sync and the timer
 
 ### 13.1 `rb sync`
+
+After updating the hub with `git pull` and `uv sync --extra host`, restart every Claude session on the hub before the first `rb sync` or before enabling `rb-sync.timer`: an MCP server process started on the old code has no claim step, so it never returns the items that the new `rb sync` stores as not yet delivered. Also make sure no other data root (for example the laptop's MCP server) polls the same node.
 
     rb sync [--node NAME] [--watch SECONDS]
 
@@ -352,7 +354,7 @@ No unit holds `SSH_AUTH_SOCK`, a key path or a passphrase. The unit finds the ag
 
 ## 14. Hub page
 
-`rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767) serves a read-only page: conversations, job records, pending approvals and the sync state. A request reads files only; the page opens no node connection, starts no process and writes nothing. `--bind` accepts only `127.0.0.1`; any other value is refused with a message that names the SSH forward below. It is normally started by `rb-web.service` (§13.3). Session-safe: it changes nothing.
+`rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767) serves a read-only page: conversations, job records, pending approvals and the sync state. A request reads files only; the page opens no node connection, starts no process and writes nothing. `--bind` accepts only `127.0.0.1`; any other value is refused with a message that names the SSH forward below. It is normally started by `rb-web.service` (§13.3). It changes no data, but starting it is not session-safe: a session needs the user's go-ahead (`AGENTS.md`).
 
 | Route | Content | Refresh |
 |---|---|---|

@@ -6,9 +6,9 @@
 
 ## How to read this manual
 
-- **명령을 누가 실행하는가.** "허브 터미널"은 사용자가 허브에서 열어 둔 터미널을 뜻한다. 질문(`y/N`, passphrase)을 하는 명령은 터미널 없이는 실행을 거부하므로(stdin과 stdout이 모두 터미널이어야 한다) Claude 세션이 실행할 수 없다. 세션은 "session-safe"로 표시된 형태를 실행할 수 있다. `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config ...`, `rb web serve`, `rb board show`다.
+- **명령을 누가 실행하는가.** "허브 터미널"은 사용자가 허브에서 열어 둔 터미널을 뜻한다. 질문(`y/N`, passphrase)을 하는 명령은 터미널 없이는 실행을 거부하므로(stdin과 stdout이 모두 터미널이어야 한다) Claude 세션이 실행할 수 없다. 세션은 "session-safe"로 표시된 형태를 실행할 수 있다. `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config path`, `rb config show`, `rb config check`, `rb config mcp`, `rb board show`다. 그 밖의 `rb config` 형태(`init`, `add-node`, `remove-node`, `set`, `local`)는 묻지 않고 `host.json`이나 `private/local.json`을 쓰고, `rb web serve`는 프로세스를 시작하므로 세션은 사용자의 승인이 필요하다(`AGENTS.md`의 "Ask the user before"). 옵션 `--offline` 없는 `rb doctor`와 `rb sync`는 노드에 연결하므로 이것도 승인이 필요하다.
 - **`rb`를 실행하는 방법.** 런타임은 uv가 관리한다. 이 매뉴얼에서 `rb ...`는 메인 체크아웃에서 실행하는 `uv run --extra host rb ...`(또는 `.venv/bin/rb ...`)를 뜻한다. 세션은 셸 명령 앞에 `rtk`를 붙이고, 사람은 평범한 명령을 입력한다.
-- **자리표시자.** `node1`은 예시에 쓰는 노드 이름이다. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`는 노드의 주소, SSH 포트, 로그인 이름이다. `<HUB_ADDR>`는 노드가 보는 허브의 주소이고, `<HUB_SUBNET>`은 허브의 네트워크 범위이며, `<HUB_HOST>`는 노트북에서 허브에 로그인할 때 쓰는 이름이다. 실제 값은 git이 무시하는 파일에만 둔다.
+- **자리표시자.** `node1`은 예시에 쓰는 노드 이름이다. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`는 노드의 주소, SSH 포트, 로그인 이름이다. `<HUB_ADDR>`는 노드가 보는 허브의 주소이고, `<HUB_SUBNET>`은 허브의 네트워크 범위이며, `<HUB_HOST>`는 노트북에서 허브에 로그인할 때 쓰는 이름이다. 전체 목록은 `docs/manual/README.md`에 있다. 실제 값은 git이 무시하는 파일에만 둔다.
 - **약어.** SSH = Secure Shell. MCP = Model Context Protocol. TOFU = trust on first use(호스트 키를 처음 볼 때 받아들이는 방식). systemd = Linux 서비스 관리자이며, "user unit"은 사용자 계정으로 실행된다.
 
 ### Order of a first setup
@@ -105,7 +105,7 @@
 ### 4.2 The two-pass first run
 
 1. 허브 터미널: `rb setup --node node1 --host <NODE_HOST> --port <NODE_PORT> --user <NODE_USER>`. 1~4단계와 6단계가 실행되고, 5단계는 미뤄지며, 7단계가 노드 명령을 출력한다.
-2. 허브 withheld 패턴 파일을 노드의 `~/withheld-patterns.json`으로 복사한(`scp`, 허브에서 노드로) 뒤, 출력된 명령을 이 저장소의 체크아웃이 있는 노드 콘솔에서 실행한다(노드 매뉴얼 §2). 끝에서 노드의 호스트 키 지문을 출력한다.
+2. 허브 withheld 패턴 파일을 노드의 `~/withheld-patterns.json`으로 복사한다(`scp`, 허브에서 노드로). `known_hosts`에 노드 항목이 아직 없으면 `scp`가 자체적으로 yes/no를 묻고 항목을 기록하며, 그러면 `rb setup`의 5단계는 그 항목을 찾아 비교를 건너뛴다. `yes`라고 답하기 전에 `scp`가 보여 주는 지문을 노드 콘솔의 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 결과와 비교하고, 다르면 `no`로 답한다. 그다음 출력된 명령을 이 저장소의 체크아웃이 있는 노드 콘솔에서 실행한다(노드 매뉴얼 §2). 끝에서 노드의 호스트 키 지문을 출력한다.
 3. 허브 터미널: `rb setup --node node1`. 이제 5단계가 스캔한 지문을 보여 준다. 노드가 출력한 같은 종류의 줄과 같을 때만 `y`로 답한다. 다르면 연결하지 말고, 노드 콘솔에서 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`로 확인하여 먼저 원인을 찾는다.
 4. 8단계의 MCP 명령을 실행한다(§6).
 
@@ -205,7 +205,7 @@ Agent:
 
 실제 명령에는 사용자의 경로가 들어 있다. `env`에는 항상 `RB_HOST_CONFIG`(`host.json`의 절대 경로)가 있고, `RB_HOST_ROOT`는 `rb setup`을 실행한 셸에 설정돼 있었을 때만 있다. 평소 쓰는 셸 설정과 같은 셸에서 `rb setup`이나 `rb config mcp`를 실행한다. 항목에는 `SSH_AUTH_SOCK`이 없다(§4.3). 그것이 있는 옛 항목도 계속 동작한다.
 
-`rb config mcp`는 같은 항목을 JSON으로 출력한다. 등록된 항목이 없거나, 없는 경로나 worktree를 가리키거나, `rb setup`이 출력하는 항목과 다르면 `rb doctor`의 `mcp_entry` 검사가 경고한다. 그때는 항목을 제거하고(`claude mcp remove research-bridge`) 다시 등록한다.
+`rb config mcp`는 같은 항목을 JSON으로 출력한다. 등록된 항목이 없거나, 없는 경로나 worktree를 가리키거나, `rb setup`이 출력하는 항목과 다르면 `rb doctor`의 `mcp_entry` 검사가 경고한다. 그때는 항목을 제거하고(`claude mcp remove research-bridge`) 다시 등록한다. 이 `rb`가 git worktree에서 실행되고 등록된 항목이 체크아웃 경로만 다를 때도 경고(`from_worktree`)하며, 이때 다음 단계는 메인 체크아웃에서 `rb`를 실행하는 것이다.
 
 그러면 새 Claude 세션은 정확히 도구 열 개를 가진다. `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `queue_status`, `gpu_status`, `submit_job`, `cancel_job`이다. 테스트가 이 집합을 고정한다. 승인 도구는 없다. `submit_job`과 `cancel_job`은 `pending_approval` 레코드만 쓰고 SSH 호출은 하지 않는다.
 
@@ -257,7 +257,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `alias` | fail | `ssh -G`가 노드의 bridge 별칭에 대한 `Host` 블록을 보여 주지 않는다. | `rb setup --node NAME ...` |
 | `alias_harness` | warn | harness 별칭에 대해 같은 문제다. harness 채널만 영향을 받는다. | 같음 |
 | `ssh_options` | warn | 별칭에 `IdentitiesOnly yes` 또는 `StrictHostKeyChecking yes`가 없어서, 다른 키가 제시되거나 알 수 없는 호스트 키가 받아들여질 수 있다. | `rb setup --node NAME` |
-| `key_file` | fail | bridge 키 파일이 없거나, 그룹이나 다른 사용자가 읽을 수 있거나(모드), `.pub`이 없다. | `rb setup --node NAME` / `chmod 600 KEY` / `ssh-keygen -y -f KEY > KEY.pub` |
+| `key_file` | fail | 별칭에 `rb setup`이 생성하는 키 이름의 `IdentityFile`이 설정돼 있지 않거나(`no bridge IdentityFile configured for <alias>`), bridge 키 파일이 없거나, 그룹이나 다른 사용자가 읽을 수 있거나(모드), `.pub`이 없다. | `rb setup --node NAME` / `chmod 600 KEY` / `ssh-keygen -y -f KEY > KEY.pub` |
 | `key_file_harness` | warn | harness 키에 대해 같은 문제다. | 같음 |
 | `agent` | bridge 키 중 passphrase가 있는 것이 있으면 fail, 아니면 warn | 응답하는 agent 소켓이 없다. | `rb agent` |
 | `key_loaded` | fail | bridge 키가 agent에 없다(passphrase가 없는 키는 올라간 것으로 센다). | `rb agent --node NAME` |
@@ -265,12 +265,12 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `agent_location` | warn | 키가 `$XDG_RUNTIME_DIR` 밖의 agent(예: 포워딩된 agent)에만 있어서 타이머와 다른 셸이 쓸 수 없다. | `rb agent --node NAME` |
 | `known_host` | fail | `known_hosts`에 노드 항목이 없어서 엄격한 SSH 옵션이 연결을 거부한다. | `rb setup --node NAME` |
 | `withheld_hub` | fail | 허브 패턴 파일이 없거나, 유효한 JSON이 아니거나, 비어 있거나, 컴파일되지 않는 패턴이 있다(인덱스를 나열한다). 내장 패턴 다섯 개만 적용된다. | 패턴 파일을 표시된 경로로 복사한다(§3.1) |
-| `mcp_entry` | warn | MCP 서버가 등록되지 않았거나, 없는 경로나 worktree를 가리키거나, `rb setup`이 출력하는 항목과 다르다. | 표시된 `claude mcp add-json ...` 명령 |
+| `mcp_entry` | warn | MCP 서버가 등록되지 않았거나, 없는 경로나 worktree를 가리키거나, `rb setup`이 출력하는 항목과 다르다. `from_worktree`는 이 `rb`가 git worktree에서 실행되고 항목이 체크아웃 경로만 다른 경우다. | 표시된 `claude mcp add-json ...` 명령. `from_worktree`는 `run rb from the main checkout` |
 | `local_json` | warn | `private/local.json`이 없다. harness 경로 매핑에만 필요하다. | `rb config local --laptop-home ... --node-home ...` |
 | `service_sync` | warn | 동기화 타이머가 설치되지 않았거나 활성이 아니거나, systemd user manager를 쓸 수 없다. | `rb service install` / `systemctl --user enable --now rb-sync.timer` |
 | `service_web` | warn | 페이지 서비스가 설치되지 않았거나 활성이 아니다. | `rb service install` / `systemctl --user enable --now rb-web.service` |
 | `linger` | warn | unit이 설치돼 있을 때만 보고된다. 로그아웃하면 user unit이 멈춘다. | `loginctl enable-linger <user>` (관리자가 필요할 수 있다) |
-| `sync_status` | warn | `sync/<node>.json`이 있을 때만 보고된다. 최근 900초 동안 성공한 한 번이 없으며, 마지막 시도의 오류 코드를 함께 보여 준다. | `rb sync --node NAME` |
+| `sync_status` | warn | `sync/<node>.json`이 있을 때만 보고된다. 최근 900초 동안 성공한 한 번이 없으며, 마지막 시도의 오류 코드를 함께 보여 준다. 또는 `a sync pass started N ago and never finished`(900초를 넘게 실행 중으로 기록된 pass). | `rb sync --node NAME` |
 
 ### 10.2 Online checks (one `hello` per node)
 
@@ -315,7 +315,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
 - **Python:** 첫 Linux 허브에서는 3.12이며, 허브 쪽은 3.10 이상이 필요하다. 노드 쪽은 3.8과의 호환을 유지한다.
 - **데이터 루트:** `RB_HOST_ROOT`가 설정돼 있으면 그 값이고, 아니면 `~/.local/share/research-bridge`다(§3). Windows 기본값 `D:/raw/research-bridge`는 Windows에서만 적용된다.
-- **키:** `~/.ssh/research-bridge/`(디렉터리 모드 700, 키 모드 600). `--keydir`나 기존 `IdentityFile`이 달리 지정하면 그 값을 따른다.
+- **키:** `~/.ssh/research-bridge/`(디렉터리 모드 700, 키 모드 600). `--keydir`가 달리 지정하면 그 값을 따른다. `rb setup`이 생성하는 이름의 키 파일(bridge 별칭은 `<node>_ed25519`, harness 별칭은 `<node>_harness_ed25519`)만 bridge 키로 인정한다. 별칭의 `IdentityFile`이 다른 이름이면 `rb setup`은 기본 경로에 키를 새로 만들고, `rb doctor`와 `rb agent`는 `no bridge IdentityFile configured for <alias>`를 보고한다.
 - **런타임 디렉터리:** agent 소켓과 `rb-ssh-agent`는 `$XDG_RUNTIME_DIR`(보통 `/run/user/<uid>`, 모드 700)에 있다. 로그인 세션이 없는 셸에는 이 디렉터리가 없을 수 있으며, 그때 `rb agent`는 `no usable runtime directory for an ssh-agent socket`을 출력하고 멈춘다.
 - **노드의 `from=`:** 허브 자신의 주소 또는 서브넷(`<HUB_ADDR>`, `<HUB_SUBNET>`)이며 노트북의 것이 아니다.
 - **승인:** 허브 터미널에서 `rb approve`와 `rb reject`. 8765 대시보드와 그 `/rb/approve` 경로는 vault 쪽에 있으며 여기에는 설치되지 않는다.
@@ -325,6 +325,8 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 ## 13. Unattended sync and the timer
 
 ### 13.1 `rb sync`
+
+허브를 `git pull`과 `uv sync --extra host`로 갱신한 뒤, 첫 `rb sync`를 실행하기 전이나 `rb-sync.timer`를 켜기 전에 허브의 모든 Claude 세션을 재시작한다. 옛 코드로 시작한 MCP 서버 프로세스에는 claim 단계가 없어서, 새 `rb sync`가 아직 전달되지 않은 것으로 저장한 항목을 돌려주지 못한다. 또한 같은 노드를 poll하는 다른 데이터 루트(예: 노트북의 MCP 서버)가 없는지 확인한다.
 
     rb sync [--node NAME] [--watch SECONDS]
 
@@ -354,7 +356,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
 ## 14. Hub page
 
-`rb web serve [--port PORT] [--bind 127.0.0.1]`(기본 포트 8767)는 읽기 전용 페이지를 제공한다. 대화, 작업 레코드, 대기 중인 승인, 동기화 상태를 보여 준다. 요청은 파일만 읽으며, 페이지는 노드 연결을 열지 않고, 프로세스를 시작하지 않고, 아무것도 쓰지 않는다. `--bind`는 `127.0.0.1`만 받으며, 다른 값은 아래의 SSH 포워드를 알려 주는 메시지와 함께 거부된다. 보통 `rb-web.service`가 시작한다(§13.3). session-safe: 아무것도 바꾸지 않는다.
+`rb web serve [--port PORT] [--bind 127.0.0.1]`(기본 포트 8767)는 읽기 전용 페이지를 제공한다. 대화, 작업 레코드, 대기 중인 승인, 동기화 상태를 보여 준다. 요청은 파일만 읽으며, 페이지는 노드 연결을 열지 않고, 프로세스를 시작하지 않고, 아무것도 쓰지 않는다. `--bind`는 `127.0.0.1`만 받으며, 다른 값은 아래의 SSH 포워드를 알려 주는 메시지와 함께 거부된다. 보통 `rb-web.service`가 시작한다(§13.3). 데이터를 바꾸지는 않지만, 시작하는 것은 session-safe가 아니다. 세션은 사용자의 승인이 필요하다(`AGENTS.md`).
 
 | Route | Content | Refresh |
 |---|---|---|
