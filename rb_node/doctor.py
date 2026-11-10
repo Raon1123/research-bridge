@@ -496,8 +496,15 @@ def render(checks: List[Check], only_problems: bool) -> str:
             continue
         lines.append("[%s] %s: %s" % (c.level, c.id, c.message))
         lines.append("      next: %s" % c.fix)
-    n = len([c for c in checks if c.level != "ok"])
-    lines.append("ok" if n == 0 else "%d item(s) to fix" % n)
+    fails = len([c for c in checks if c.level == "fail"])
+    warns = len([c for c in checks if c.level == "warn"])
+    if not fails and not warns:
+        lines.append("ok")
+    else:
+        parts = ["%d to fix" % fails] if fails else ["all ok"]
+        if warns:
+            parts.append("%d warning(s)" % warns)
+        lines.append(", ".join(parts))
     return "\n".join(lines)
 
 

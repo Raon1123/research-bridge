@@ -473,8 +473,12 @@ def test_render_only_problems():
     full = doctor.render(res, only_problems=False)
     assert "ok a  fine" in full and "warn b  odd" in full and "      next: do x" in full
     short = doctor.render(res, only_problems=True)
-    assert "ok a" not in short and "warn b  odd" in short and short.rstrip().endswith("1 item(s) to fix")
+    assert "ok a" not in short and "warn b  odd" in short and short.rstrip().endswith("all ok, 1 warning(s)")
     assert doctor.render(res[:1], only_problems=True).strip() == "ok"
+    mixed = res + [doctor.Result("c", "fail", "bad", "do y", "node1"),
+                   doctor.Result("d", "fail", "bad2", "do z", "node1")]
+    assert doctor.render(mixed, only_problems=True).rstrip().endswith("2 to fix, 1 warning(s)")
+    assert doctor.render(mixed[2:], only_problems=True).rstrip().endswith("2 to fix")
 
 
 def test_config_check_runs_offline_part(hub, monkeypatch, tmp_path, capsys):

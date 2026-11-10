@@ -474,6 +474,16 @@ def online(cfg: HostConfig, node: str) -> List[Result]:
 
 # ---------------------------------------------------------------- output
 
+def _verdict(fails: int, warns: int) -> str:
+    """Closing line of the problems-only report: failures and warnings are counted apart."""
+    if not fails and not warns:
+        return "ok"
+    parts = ["%d to fix" % fails] if fails else ["all ok"]
+    if warns:
+        parts.append("%d warning(s)" % warns)
+    return ", ".join(parts)
+
+
 def render(results: List[Result], only_problems: bool) -> str:
     shown = [r for r in results if not (only_problems and r.level == "ok")]
     order = [""]
@@ -492,9 +502,9 @@ def render(results: List[Result], only_problems: bool) -> str:
             lines.append(prefix + r.message)
             if r.level != "ok" and r.next:
                 lines.append("      next: " + r.next)
-    problems = sum(1 for r in results if r.level != "ok")
     if only_problems:
-        lines.append("ok" if not problems else "%d item(s) to fix" % problems)
+        lines.append(_verdict(sum(1 for r in results if r.level == "fail"),
+                              sum(1 for r in results if r.level == "warn")))
     else:
         lines.append("summary: %d ok, %d warn, %d fail" % tuple(
             sum(1 for r in results if r.level == lv) for lv in ("ok", "warn", "fail")))

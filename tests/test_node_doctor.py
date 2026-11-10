@@ -338,10 +338,12 @@ def test_render_formats():
     checks = [doctor.Check("a", "ok", "fine", ""), doctor.Check("b", "warn", "odd", "do x"),
               doctor.Check("c", "fail", "bad", "do y")]
     full = doctor.render(checks, only_problems=False)
-    assert "fine" in full and "      next: do x" in full and "2 item(s) to fix" in full
+    assert "fine" in full and "      next: do x" in full and "1 to fix, 1 warning(s)" in full
     short = doctor.render(checks, only_problems=True)
-    assert "fine" not in short and "odd" in short and short.rstrip().endswith("2 item(s) to fix")
+    assert "fine" not in short and "odd" in short and short.rstrip().endswith("1 to fix, 1 warning(s)")
     assert doctor.render(checks[:1], only_problems=True).strip() == "ok"
+    assert doctor.render(checks[:2], only_problems=True).rstrip().endswith("all ok, 1 warning(s)")
+    assert doctor.render(checks[2:], only_problems=True).rstrip().endswith("1 to fix")
     assert doctor.exit_code(checks) == 1 and doctor.exit_code(checks[:2]) == 0
 
 
