@@ -22,6 +22,8 @@ import argparse
 import http.server
 import json
 import os
+import shutil
+import signal
 import sys
 import tempfile
 import threading
@@ -227,17 +229,28 @@ def main() -> int:
     ap.add_argument("--web-port", type=int, default=None, help="hub page port (default: port + 1)")
     ap.add_argument("--dir", help="empty directory for the demo data (default: a new temp dir)")
     a = ap.parse_args()
+    temp = not a.dir  # a directory this script created is removed on exit; --dir is left alone
     root = Path(a.dir) if a.dir else Path(tempfile.mkdtemp(prefix="rb-demo-"))
-    srv, web_srv = start(root, a.port, a.web_port if a.web_port is not None else a.port + 1)
-    threading.Thread(target=web_srv.serve_forever, daemon=True).start()
-    print("demo data: %s" % root)
-    print("open http://127.0.0.1:%d/board and /rb/pending (passphrase: %s)" % (
-        srv.server_address[1], PASSPHRASE))
-    print("hub page: http://127.0.0.1:%d/ (also /threads, /jobs, /nodes)" % web_srv.server_address[1])
+
+    def stop(signum: int, frame: object) -> None:  # SIGTERM ends like Ctrl+C
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, stop)
     try:
+        srv, web_srv = start(root, a.port, a.web_port if a.web_port is not None else a.port + 1)
+        threading.Thread(target=web_srv.serve_forever, daemon=True).start()
+        print("demo data: %s" % root, flush=True)
+        print("open http://127.0.0.1:%d/board and /rb/pending (passphrase: %s)" % (
+            srv.server_address[1], PASSPHRASE), flush=True)
+        print("hub page: http://127.0.0.1:%d/ (also /threads, /jobs, /nodes)"
+              % web_srv.server_address[1], flush=True)
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        os.chdir("/")  # start() changed into the repository; do not stay inside what is removed
+        if temp:
+            shutil.rmtree(str(root), ignore_errors=True)
     return 0
 
 

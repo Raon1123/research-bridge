@@ -81,3 +81,26 @@ def test_demo_pages_200_and_seeded_thread(tmp_path, monkeypatch):
         web_srv.shutdown()
         srv.server_close()
         web_srv.server_close()
+
+
+def test_script_prints_flushed_lines_and_removes_its_temp_dir_on_sigterm(tmp_path):
+    import signal
+    import subprocess
+    import sys
+    env = dict(os.environ, RB_HOST_CONFIG=str(tmp_path / "none.json"),
+               RB_HOST_ROOT=str(tmp_path / "root"), TMPDIR=str(tmp_path))
+    p = subprocess.Popen([sys.executable, str(REPO / "scripts" / "demo_dashboard.py"),
+                          "--port", "0", "--web-port", "0"], stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL, env=env, universal_newlines=True)
+    try:
+        lines = [p.stdout.readline() for _ in range(3)]  # blocks until flushed
+        assert lines[0].startswith("demo data: ") and "hub page" in lines[2]
+        demo_dir = Path(lines[0].split(": ", 1)[1].strip())
+        assert demo_dir.is_dir()
+        p.send_signal(signal.SIGTERM)
+        assert p.wait(timeout=30) == 0
+        assert not demo_dir.exists()
+    finally:
+        if p.poll() is None:
+            p.kill()
+        p.stdout.close()
