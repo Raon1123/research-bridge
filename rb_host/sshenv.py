@@ -51,6 +51,10 @@ def user_home() -> Path:
     return Path(pwd.getpwuid(os.getuid()).pw_dir)
 
 
+def user_name() -> str:
+    return pwd.getpwuid(os.getuid()).pw_name
+
+
 def user_ssh_dir() -> Path:
     return user_home() / ".ssh"
 

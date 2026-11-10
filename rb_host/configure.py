@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
+import shlex
+import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from rb_node.configure import ConfigError, git_exposure, read_json, write_json
 
@@ -116,7 +117,7 @@ def set_local(laptop_home: str = "", node_home: str = "") -> Path:
 
 def mcp_entry() -> Dict[str, Any]:
     root = Path(__file__).resolve().parents[1].as_posix()
-    entry: Dict[str, Any] = {"type": "stdio", "command": "uv",
+    entry: Dict[str, Any] = {"type": "stdio", "command": shutil.which("uv") or "uv",
                              "args": ["run", "--directory", root, "--extra", "host",
                                       "python", "-m", "rb_host.server"]}
     env = {k: os.environ[k] for k in ("RB_HOST_ROOT", "RB_HOST_CONFIG") if os.environ.get(k)}
@@ -125,59 +126,66 @@ def mcp_entry() -> Dict[str, Any]:
     return {"research-bridge": entry}
 
 
-def _ssh_hosts() -> List[str]:
-    p = Path.home() / ".ssh" / "config"
-    if not p.is_file():
-        return []
-    hosts: List[str] = []
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = re.match(r"\s*Host\s+(.+)", line, re.I)
-        if m:
-            hosts.extend(m.group(1).split())
-    return hosts
+def mcp_command() -> str:
+    """The command the user runs to register the MCP server (rb never edits ~/.claude.json)."""
+    entry = mcp_entry()["research-bridge"]
+    return "claude mcp add-json --scope user research-bridge " + shlex.quote(json.dumps(entry))
+
+
+def claude_json_path() -> Path:
+    return Path.home() / ".claude.json"
+
+
+def _read_obj(path: Path) -> Dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def registered_entry(checkout: Path) -> Optional[Dict[str, Any]]:
+    """The `research-bridge` MCP entry, read only: ~/.claude.json (user scope, then the
+    checkout's project scope), then <checkout>/.mcp.json."""
+    cj = _read_obj(claude_json_path())
+    projects = cj.get("projects") if isinstance(cj.get("projects"), dict) else {}
+    proj = projects.get(str(checkout)) if isinstance(projects.get(str(checkout)), dict) else {}
+    for holder in (cj, proj, _read_obj(Path(checkout) / ".mcp.json")):
+        servers = holder.get("mcpServers")
+        if isinstance(servers, dict) and isinstance(servers.get("research-bridge"), dict):
+            return servers["research-bridge"]
+    return None
+
+
+def mcp_registered(checkout: Path) -> Tuple[bool, str]:
+    """(found, problem); problem is "", "missing path" or "worktree"."""
+    entry = registered_entry(checkout)
+    if entry is None:
+        return False, ""
+    cmd = entry.get("command")
+    if not isinstance(cmd, str) or not cmd or not (
+            Path(cmd).exists() if os.path.isabs(cmd) else shutil.which(cmd)):
+        return True, "missing path"
+    args = entry.get("args") if isinstance(entry.get("args"), list) else []
+    if "--directory" in args and args.index("--directory") + 1 < len(args):
+        directory = str(args[args.index("--directory") + 1])
+        if "/.claude/worktrees/" in directory.replace("\\", "/") + "/":
+            return True, "worktree"
+        if not Path(directory).is_dir():
+            return True, "missing path"
+    return True, ""
+
+
+def host_json_error(exc: Exception) -> str:
+    """One line for a missing or unreadable host.json (no traceback)."""
+    path = host_path()
+    if isinstance(exc, FileNotFoundError):
+        return ("error: no host.json at %s; run: rb setup --node NAME --host HOST --user USER" % path)
+    return ("error: %s is not valid JSON (%s); fix it or move it away, then run rb setup"
+            % (path, str(exc).replace("\n", " ")))
 
 
 def check() -> List[str]:
-    """Problems, one line each; empty = ready. Reads ~/.ssh/config and ~/.claude.json only."""
-    probs: List[str] = []
-    hp = host_path()
-    for p in (hp, local_path()):
-        if p.exists():
-            reason = git_exposure(p)
-            if reason:
-                probs.append("LEAK RISK: " + reason)
-    if not hp.is_file():
-        return probs + ["no %s: run `rb config init`" % hp]
-    try:
-        data = read_json(hp)
-    except ConfigError as exc:
-        return probs + [str(exc)]
-    nodes = data.get("nodes") or {}
-    if not nodes:
-        probs.append("no node in host.json: run `rb config add-node <name>`")
-    hosts = _ssh_hosts()
-    for name, entry in nodes.items():
-        for k in NODE_KEYS:
-            a = (entry or {}).get(k) or ("rb-%s-harness" % name if k == "harness_alias" else "")
-            if not a:
-                probs.append("node %s has no %s" % (name, k))
-            elif a not in hosts:
-                probs.append("node %s: %s %r is not a Host in ~/.ssh/config" % (name, k, a))
-    root = Path(data.get("data_root") or default_root())
-    if not root.is_dir():
-        probs.append("data_root does not exist: %s" % root)
-    wp = Path(data.get("withheld_patterns_file") or default_withheld())
-    if not wp.is_file():
-        probs.append("withheld_patterns_file does not exist: %s (the hub re-check falls back to "
-                     "the five built-in patterns only)" % wp)
-    if not local_path().is_file():
-        probs.append("no private/local.json: run `rb config local --laptop-home ... "
-                     "--node-home ...` (harness path mapping falls back to guesses)")
-    cj = Path.home() / ".claude.json"
-    try:
-        servers = json.loads(cj.read_text(encoding="utf-8")).get("mcpServers") or {}
-    except (OSError, ValueError, AttributeError):
-        servers = {}
-    if "research-bridge" not in servers:
-        probs.append("MCP server not registered in ~/.claude.json: add the entry from `rb config mcp`")
-    return probs
+    """Problems, one line each; empty = ready. The offline part of `rb doctor`, non-ok lines."""
+    from . import doctor
+    return [r.message for r in doctor.offline() if r.level != "ok"]
