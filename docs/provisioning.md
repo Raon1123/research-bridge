@@ -1,108 +1,54 @@
-# Provisioning research-bridge on node1
+# node1: security checks and first live run
 
-Node: node1, <NODE_HOST> port <NODE_PORT>, user <NODE_USER>, python3 3.12.3. Written by the controller; the controller runs nothing on node1 until the user confirms each step. Facts: `docs/server-facts.md`.
+Rewritten 2026-11-10. This file keeps only what is still to do on the real link: the security checks (B2) and the first live run (B3), with an empty Results section. Linking a hub and a node (keys, ssh config blocks, host key, `authorized_keys` lines, node install) is now done by `rb setup` on the hub and `scripts/node-install.sh` on the node: see `README.md` and the manuals in `docs/manual/`. The earlier key and alias steps are in git history. Project facts for node1: `docs/projects/trm.md`. Open decisions: `docs/issues/2026-11-10-triage.md` §5. GitHub issue: #8.
 
-This file is the node1-specific run sheet. The general, role-by-role instructions (any hub, any node) are in `docs/manual/hub-setup.md` and `docs/manual/node-setup.md`, with Korean translations. Each step here is also a GitHub issue (tracking: Raon1123/research-bridge#21).
+Abbreviations: SSH = Secure Shell; MCP = Model Context Protocol (the tool interface of Claude sessions); GPU = graphics processing unit; PR = GitHub pull request.
 
-## Decisions the user must make first
+Notation: `rb` means `uv run --extra host rb` in the hub's main checkout. `rb-node1` and `rb-node1-harness` are the ssh aliases `rb setup` writes for node `node1` (`rb-<node>`, `rb-<node>-harness`); use the aliases in `host.json` if they differ. A session runs a command only after the user's go-ahead for that command (`AGENTS.md`, "Ask the user before").
 
-1. **Laptop subnet for `from=`.** Which interface reaches node1: Wi-Fi <LAPTOP_WIFI_SUBNET>, or Ethernet <LAPTOP_ETH_SUBNET> or <LAPTOP_ETH_SUBNET>? Check with `route print` or a test `ssh node1`. This replaces `<LAPTOP_SUBNET>` in `deploy/authorized_keys.example`.
-2. **Does the shared key `<SHARED_KEY>` stay in node1's `authorized_keys`?** Plan Decision 2: yes, unless the user removes it. Step 6 relies on it as the unrestricted login.
-3. **`job_template` value for node.json.** The example ships `[]` (argv list with a `{config}` placeholder). No job can run until the user sets it. The controller does not invent it.
-4. **Harness allowlist.** Is it the one in `60_Tools/sync/prepare_staging.py` (`HARNESS_FILES`, `HARNESS_DIRS`)? The plan's `deliver.ps1` path does not exist. `harness_root` is empty in the example; harness push/pull is refused (`no_harness_root`) until it is set.
+## Before B2
 
-## A. User runs
+All of these must hold first (steps 1 to 6 of `docs/HANDOFF.md` §Next actions):
 
-### A1. Keys (plan Step 2)
+- [ ] The node runs rb_node 0.2.0, installed by `scripts/node-install.sh` with `--withheld-file`.
+- [ ] `rb-node approve-key set` was run on the node console.
+- [ ] `rb doctor --node node1` on the hub shows `withheld_hub` ok, `node_version` ok (0.2.0, protocol 2), `node_withheld` ok, `node_approval` ok.
+- [ ] The MCP server `research-bridge` is registered from the main checkout (`rb setup --node node1` prints the command if not) and the Claude session was restarted after a change.
 
-```
-ssh-keygen -t ed25519 -f C:/keys/research-bridge/node1_ed25519 -C research-bridge-laptop
-ssh-keygen -t ed25519 -f C:/keys/research-bridge/node1_harness_ed25519 -C research-bridge-harness
-ssh-add C:/keys/research-bridge/node1_ed25519
-ssh-add C:/keys/research-bridge/node1_harness_ed25519
-```
+## B2. Security checks
 
-Use a passphrase on both. The Windows `ssh-agent` service must be running. Public keys (`*.pub`) are the `<PUBKEY>` values; never share the private files.
+Each row must hold. If one does not, stop and write a postmortem (`docs/postmortems/README.md`).
 
-### A2. `~/.ssh/config` (plan Step 3)
+| # | Who and where | Command | Expected |
+|---|---|---|---|
+| 1 | user, hub terminal | `ssh rb-node1` (type nothing, then Ctrl-D) | No shell prompt. Protocol output only. |
+| 2 | user, hub terminal | `ssh rb-node1 cat /etc/passwd` | Nothing from `cat`; no passwd contents. The forced command ignores the requested command. |
+| 3 | user, hub terminal | `ssh rb-node1-harness ls` | `rb-node harness-receive: unknown command`, exit status 1. |
+| 4 | user, own login | log in to the node with `<SHARED_KEY>` | A normal shell (the old key is unrestricted until decision 5 of the triage file). Record that the two bridge keys, not this one, are restricted. |
+| 5 | user, node console | `rb-node doctor` | `ak_bridge` ok (`serve-remote line N is restricted`), `ak_harness` ok, `withheld` ok (`N pattern(s) loaded besides the fallback`), `approval` ok. No `fail` line. |
+| 6 | user, hub terminal | `rb doctor --node node1` | No `fail` line; `known_host`, `ssh_options`, `reachable`, `node_withheld`, `node_approval` ok. |
+| 7 | user, node console | `claude -p 'Say ok.' --tools Read,Grep,Glob --setting-sources ""` then `echo $?` | A short answer and `0`. If the Claude command line rejects `--setting-sources ""`, every responder run ends in `responder_failed` (`2026-11-03-whole-branch-review.md` PM-02). |
+| 8 | user, node console | `claude -p 'Run the shell command id and print its output.' --tools Read,Grep,Glob --setting-sources ""` | No output of `id`; the answer says it cannot run commands. |
+| 9 | session on the hub, after go-ahead | MCP `read_doc("node1", "../../.ssh/authorized_keys")` | `denied`. |
 
-```
-Host rb-node1
-    HostName <NODE_HOST>
-    Port <NODE_PORT>
-    User <NODE_USER>
-    IdentityFile C:/keys/research-bridge/node1_ed25519
-    IdentitiesOnly yes
-    StrictHostKeyChecking yes
+## B3. First live run
 
-Host rb-node1-harness
-    HostName <NODE_HOST>
-    Port <NODE_PORT>
-    User <NODE_USER>
-    IdentityFile C:/keys/research-bridge/node1_harness_ed25519
-    IdentitiesOnly yes
-    StrictHostKeyChecking yes
-```
+Run only after every B2 row holds. Use test text that names no withheld series.
 
-`IdentitiesOnly yes` stops the agent offering other keys. `StrictHostKeyChecking yes` refuses an unknown or changed host key, so node1 must already be in `known_hosts` (the existing `node1` alias does this).
-
-### A3. Authorized keys (plan Step 5)
-
-On node1, append the two lines of `deploy/authorized_keys.example` to `~/.ssh/authorized_keys`, with `<LAPTOP_SUBNET>` set per decision 1 and `<PUBKEY>` set to the contents of the matching `.pub` file (the base64 field only). The harness line's entry point accepts only `harness-push` or `harness-send` as `SSH_ORIGINAL_COMMAND`; any other value exits 1.
-
-## B. Controller runs after the user confirms
-
-### B1. Install (plan Step 4, via the existing `node1` alias)
-
-Each command needs the user's go-ahead.
-
-```
-ssh node1 "mkdir -p ~/.local/share/research-bridge ~/.local/bin ~/.research-bridge"
-scp -r rb_node node1:~/.local/share/research-bridge/
-```
-
-Wrapper `~/.local/bin/rb-node` (mode 755):
-
-```
-#!/bin/sh
-PYTHONPATH="$HOME/.local/share/research-bridge" exec python3 -m rb_node.cli "$@"
-```
-
-Then write `~/.research-bridge/node.json` from `deploy/node.json.example` with decisions 3 and 4 applied, and run `chmod 700 ~/.research-bridge`.
-
-### B2. Security checks (plan Step 6)
-
-After A3 is confirmed. Each must hold.
-
-| Command | Expected |
-|---|---|
-| `ssh rb-node1` (send nothing) | No shell prompt. Protocol output only; a `hello` appears only after a request is sent. |
-| `ssh rb-node1 cat /etc/passwd` | Nothing from `cat`; no passwd contents. |
-| `ssh -o IdentityFile=C:/keys/<SHARED_KEY> -o IdentitiesOnly=yes rb-node1` | Normal interactive shell (the old key is unchanged). Record that the new keys, not the old one, are restricted. |
-| `read_doc("node1", "../../.ssh/authorized_keys")` | `denied` |
-
-### B3. MCP registration and live run (plan Step 7)
-
-User applies this to `~/.claude.json` at user scope (entry point is `rb_host.server`; run through `uv`; adjust the `--directory` path to the checkout):
-
-```json
-{
-  "mcpServers": {
-    "rb-host-mcp": {
-      "type": "stdio",
-      "command": "uv",
-      "args": ["run", "--directory", "D:/raw/Codes/research-bridge", "--extra", "host", "python", "-m", "rb_host.server"]
-    }
-  }
-}
-```
-
-In a new laptop session:
-
-1. `send_message("node1", "EXP-015 그림 해석을 요약해 달라", [<a small pdf>])`, wait, then `poll`. Expect a reply whose attachment is stored under `D:/raw/research-bridge/inbox/node1/<msg_id>/` with `provenance.json`.
-2. `read_doc("node1", "H-001")` returns the document.
-3. `submit_job` with a tiny config, `gpu_hours=0.01`, then `rb approve`. Expect a `job_finished` event with `budget_exceeded` or `done`. Requires decision 3.
+| # | Who and where | Command | Expected |
+|---|---|---|---|
+| 1 | session on the hub, after go-ahead | MCP `send_message("node1", "<short test question>", [<path of a small pdf>])` | `{"msg_id": ..., "status": "sent"}`; a masked copy under `<data_root>/outbox/node1/<msg_id>/`. |
+| 2 | session, a few minutes later | MCP `poll()` | The responder's reply; its files under `<data_root>/inbox/node1/<reply id>/` with `body.txt` and `provenance.json`. |
+| 3 | session | MCP `read_doc("node1", "H-001")` (or another document id from `docs/projects/trm.md`) | The document text, with any withheld line blanked. |
+| 4 | user, hub terminal | `rb sync --node node1` | Exit 0; `<data_root>/sync/node1.json` has `"ok": true` (this is the PR 45 check "`rb sync` over a real SSH connection"). |
+| 5 | session, after go-ahead | MCP `submit_job("node1", <path of a tiny config>, [<one GPU id>], 0.01, <new idempotency key>)` | A `pending_approval` record and its job id; nothing is sent to the node yet. Needs `job_template` (decision 12). |
+| 6 | user, hub terminal | `rb pending`, then `rb approve <job_id>` | y/N question, then the approval passphrase; the job is queued on the node. |
+| 7 | session | MCP `poll()` later | A `job_finished` event with status `done` or `budget_exceeded`. |
+| 8 | user, hub terminal | `rb service install`, paste the printed `systemctl --user ...` line; after one timer interval `rb service status` and `rb doctor --node node1` | Both units active; `sync_status` ok. |
+| 9 | user, laptop | `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>`, then open `http://127.0.0.1:8767/` | The node with a recent sync time, the thread from rows 1 and 2, the job from rows 5 to 7. |
 
 ## Results
 
-(Filled in after the live run, plan Step 8.)
+As of 2026-11-10: not run.
+
+(Fill in after the run: date, who ran each row, outcome per row, deviations. Then write the postmortem of the first live run.)

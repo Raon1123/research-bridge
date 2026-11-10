@@ -1,6 +1,6 @@
 # Postmortems
 
-A postmortem records what went wrong, under what conditions, how it surfaced, what was fixed, and whether the fix was confirmed. It does not assign blame. Open problems that are not yet fixed go to `docs/HANDOFF.md` §Follow-ups, not here; a postmortem item may point to them.
+A postmortem records what went wrong, under what conditions, how it surfaced, what was fixed, and whether the fix was confirmed. It does not assign blame. Open problems that are not yet fixed go to a GitHub issue or, until one exists, to the triage file `docs/issues/2026-11-10-triage.md`; a postmortem item may point to them.
 
 Copy [TEMPLATE.md](TEMPLATE.md) to `docs/postmortems/YYYY-MM-DD-<slug>.md`. The date is the start of the period covered.
 
@@ -43,5 +43,6 @@ The scale comes from the anti-goals in the research-bridge design §4.
 |---|---|---|
 | 2026-10-27 | [First build (Tasks 0–13 Step 1)](2026-10-27-sdd-build.md) | draft, unaudited |
 | 2026-11-03 | [Final whole-branch review (issue 10)](2026-11-03-whole-branch-review.md) | draft, unaudited |
+| 2026-11-06 | [One SSH error message for two causes (hub key-agent setup)](2026-11-06-hub-key-agent-setup.md) | draft, unaudited |
 
 The format follows the vault postmortem `90_Claude/60_Tools/session-calendar/POSTMORTEM-20261004.md` (fields and audit lines), adapted to this project's severity scale.

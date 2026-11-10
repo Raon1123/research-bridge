@@ -1,4 +1,5 @@
 {
-  "laptop_home": "C:/Users/<LAPTOP_USER>",
+  "_note": "Copy to private/local.json (gitignored), or write it with `rb config local --laptop-home DIR --node-home DIR`. Used only by the harness channel path mapping. The key name laptop_home is historical: it is the home directory, on the machine that runs rb (the hub), whose paths appear in the harness files. RB_LAPTOP_HOME and RB_NODE_HOME override both values.",
+  "laptop_home": "<HUB_HOME>",
   "node_home": "/home/<NODE_USER>"
 }

@@ -1,4 +1,5 @@
 {
+  "_note": "Every key of rb_node/config.py NodeConfig with its default, written for user <NODE_USER>. Do not copy this file by hand: scripts/node-install.sh runs `rb-node config init`, which writes ~/.research-bridge/node.json (mode 600) with these defaults, and `--research-root DIR` sets trm_root and the paths that follow it. Change one key with `rb-node config set KEY VALUE` on the node console; lists take JSON. Keys that start with an underscore are notes and are ignored. A key the code does not know is dropped by the loader without a message; `rb-node config check` reports it. See docs/manual/node-setup.md and docs/projects/TEMPLATE.md.",
   "trm_root": "/home/<NODE_USER>/project/trm",
   "read_roots": [
     "lab/registry/",
@@ -12,13 +13,19 @@
     "/home/<NODE_USER>/project/trm/scripts/queue/jobs"
   ],
   "queue_dir": "/home/<NODE_USER>/project/trm/scripts/queue",
-  "_withheld_source_note": "Must be the session-calendar JSON pattern file (families[*].patterns), copied to the node during provisioning. A YAML file does not parse: the node then runs on the five fallback patterns only and writes a withheld_source warning to the audit log. Unknown keys such as this one are ignored by the loader.",
+  "_withheld_source_note": "A JSON file (a list of strings, {\"patterns\": [...]}, or {\"families\": [{\"patterns\": [...]}]}); scripts/node-install.sh --withheld-file FILE validates it and copies it here. YAML is not parsed. Without a readable file the node runs on the five fallback patterns only (AGENTS.md hard rule 3); `hello` then reports withheld_extra 0.",
   "withheld_source": "/home/<NODE_USER>/.research-bridge/withheld-patterns.json",
   "claude_bin": "/home/<NODE_USER>/.local/bin/claude",
+  "_job_template_note": "argv of the job command, with {config} replaced by the stored config file path. An empty list means job_submit cannot queue a job.",
   "job_template": [],
   "max_file": 52428800,
   "mailbox_root": "/home/<NODE_USER>/.research-bridge/mailbox",
   "audit_path": "/home/<NODE_USER>/.research-bridge/audit.jsonl",
+  "_approval_path_note": "Verifier of the approval passphrase, written only by `rb-node approve-key set` on the node console. Keep it outside read_roots and write_roots. Missing file: job_submit and job_cancel are refused.",
   "approval_path": "/home/<NODE_USER>/.research-bridge/approve.json",
+  "_read_doc_note": "Where read_doc finds EXP-nnn and H-nnn by identifier, relative to trm_root; both must lie inside read_roots.",
+  "experiments_dir": "lab/experiments",
+  "hypotheses_path": "lab/registry/HYPOTHESES.md",
+  "_harness_root_note": "The node's ~/.claude directory for the harness channel. Empty: harness push and pull are refused (no_harness_root).",
   "harness_root": ""
 }

@@ -315,8 +315,9 @@ Copying these into `AGENTS.md` is left to the fix change, so the hard rules and 
 
 ## 5. Open items
 
-- PM-01 to PM-07 (S1): fix before the B3 live run. Tracked in `docs/HANDOFF.md` §Follow-ups (line added with this document).
-- PM-08 to PM-17 (S2): tracked in `docs/HANDOFF.md` §Follow-ups as one line pointing here.
+- PM-01 to PM-07 (S1): fix before the B3 live run. Tracked in `docs/issues/2026-11-10-triage.md` §2.
+- PM-08 to PM-17 (S2): tracked in `docs/issues/2026-11-10-triage.md` §2.
+- Afterwards (2026-11-10): the two lines above first pointed to a section of `docs/HANDOFF.md` that never existed. Still open on 2026-11-10: PM-02 residual, PM-03, PM-04 residual, PM-07 residual, PM-13, PM-15, PM-16, PM-17 server half, PM-18, PM-19. Board question 6 and the `reduce_state` allowlist, last line below, are in issue 14 (the HANDOFF table it names was removed with the 2026-11-10 rewrite).
 - PM-13: a laptop attachment allowlist needs a design (`docs/design/TEMPLATE.md`).
 - PM-18: the user confirms whether withheld identifiers can appear in another case.
 - Board question 6 (`events.jsonl` refused by the node as unscannable) and the `reduce_state` key allowlist are already in `docs/HANDOFF.md` (MVP scope table) and are not repeated here.

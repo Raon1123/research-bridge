@@ -1,5 +1,7 @@
 # vault-export
 
+**The vault files described here are deployed only on the laptop.** The hub is a Linux server with no vault and no 8765 dashboard (`docs/session-dashboard.md`). Every command below with a `D:/raw/...` path, `cmd /c _restart.bat` or `patch` against the vault is run by the user on the laptop. Nothing in this directory is needed to run the hub, and the tests do not need the vault: they import the copies in this directory.
+
 Snapshot of the vault-side files that research-bridge edited, so they can be reviewed, re-applied or rolled back from this repository. The live copies are already in place in the vault; nothing here is applied automatically.
 
 Vault tools root: `D:/raw/vault-primary/90_Claude/60_Tools/`. The vault is not a git repository. Write only under `90_Claude/` (the mirror hook handles the rest); never edit the iCloud copy.
@@ -17,7 +19,7 @@ Vault tools root: `D:/raw/vault-primary/90_Claude/60_Tools/`. The vault is not a
 | `dashboard/server.py.board.patch` | `dashboard/server.py` | **Not applied yet.** Adds `GET /board` routed to `rb_board`. Made against the *current* `server.py` (with `/rb/pending`), not the original. |
 | `CHECKSUMS.txt` | — | sha256 of the original and edited files at export time (2026-11-02). |
 
-Tests for the two new modules are in the repo: `tests/test_rb_pending.py` and `tests/test_bridge_edges.py`. Both insert the vault path into `sys.path`, so they need the vault files in place. `tests/test_rb_board.py` imports `rb_board` from this directory instead, so it runs before the patch is applied.
+Tests for the new modules are in the repo: `tests/test_rb_pending.py`, `tests/test_bridge_edges.py` and `tests/test_rb_board.py`. All three put this directory's copies (`vault-export/dashboard/`, `vault-export/session-calendar/`) on `sys.path`, so they run on any machine, before or without the vault patches, and do not need the vault.
 
 ## Check that the vault still matches the export
 
@@ -75,10 +77,10 @@ then restart the dashboard.
     cp D:/raw/Codes/research-bridge/vault-export/dashboard/rb_pending.py dashboard/
     cd dashboard && cmd /c _restart.bat
 
-`server.py` needs no change: the form fields, including `passphrase`, already reach `handle_post`. `tests/test_rb_pending.py` now imports the copy in this directory, not the vault copy.
+`server.py` needs no change: the form fields, including `passphrase`, already reach `handle_post`. `tests/test_rb_pending.py` imports the copy in this directory, not the vault copy.
 
 ## Known limits
 
-- Bridge edges do not appear on the session browser main screen yet: its renderer builds from transcripts, not from `cache/agents/*.json`. See `docs/HANDOFF.md` §Follow-ups.
+- Bridge edges do not appear on the session browser main screen yet: its renderer builds from transcripts, not from `cache/agents/*.json`. Tracked in `docs/issues/2026-11-10-triage.md`.
 - The `verify.py --server` run after the refresh change showed one failure that is probably older than this change; no baseline was taken.
-- If `D:/raw/Codes/research-bridge` moves, change `RB_REPO` in `rb_pending.py` and the `sys.path` line in the two tests.
+- If `D:/raw/Codes/research-bridge` moves, change `RB_REPO` in `rb_pending.py` (the vault copy imports `rb_host` from that checkout, and the checkout must hold the current `rb_host`).
