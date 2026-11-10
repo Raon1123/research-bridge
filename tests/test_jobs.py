@@ -338,3 +338,13 @@ def test_zero_gpus_read_successfully_is_no_gpus(tcfg, monkeypatch):
     r = call(tcfg, ("job_submit", _submit_args("j15", sha)))[0]
     assert not r["ok"] and r["error"]["code"] == "no_gpus", r
     assert _jobs(tcfg) == []
+
+
+def test_template_dir_and_stem_placeholders(tcfg):
+    tcfg.job_template = ["uv", "run", "pretrain.py", "--config-dir", "{config_dir}",
+                         "--config-name", "{config_stem}"]
+    sha = _upload_config(tcfg, "j9")
+    assert call(tcfg, ("job_submit", _submit_args("j9", sha)))[0]["ok"]
+    body = _jobs(tcfg)[0].read_text(encoding="utf-8")
+    d = Path(tcfg.mailbox_root) / "state" / "configs" / "j9"
+    assert "--config-dir %s --config-name train" % d in body and "{config" not in body

@@ -149,7 +149,8 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     gpus = args["gpus"]
     argv = ["rb-node", "run-job", "--gpus", ",".join(str(g) for g in gpus),
             "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
-    argv += [t.replace("{config}", str(config_path)) for t in cfg.job_template]
+    argv += [t.replace("{config}", str(config_path)).replace("{config_dir}", str(config_path.parent))
+             .replace("{config_stem}", config_path.stem) for t in cfg.job_template]
     git = gitinfo.repo_state(Path(cfg.trm_root))  # pinned at submit; run-job records the start state
     _mkdir(state / "git")
     _write_json(state / "git" / (job_id + ".json"), git)
