@@ -7,7 +7,26 @@ import sys
 from typing import List, Optional
 
 SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive",
-               "approve-key", "config", "git-status", "install-record")
+               "approve-key", "config", "git-status", "install-record", "doctor", "link")
+
+
+def _interactive() -> bool:
+    """True when a person is at a terminal (stdin and stdout). Tests replace this."""
+    try:
+        return bool(sys.stdin.isatty() and sys.stdout.isatty())
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def _ask(prompt: str) -> bool:
+    """Write the prompt, read one stdin line; y or yes is True. Tests replace this."""
+    sys.stdout.write(prompt + " ")
+    sys.stdout.flush()
+    try:
+        line = sys.stdin.readline()
+    except (OSError, ValueError):
+        return False
+    return line.strip().lower() in ("y", "yes")
 
 
 def _not_implemented(name: str) -> int:
@@ -56,6 +75,15 @@ def _config(rest: List[str]) -> int:
             if path.exists() and not ns.force:
                 sys.stderr.write("%s exists; use --force to overwrite\n" % path)
                 return 1
+            if path.exists() and not _interactive():
+                try:
+                    old_ws = c.read_json(path).get("withheld_source")
+                except (c.ConfigError, OSError):
+                    old_ws = None
+                if old_ws and old_ws != c.node_defaults().get("withheld_source"):
+                    sys.stderr.write("rb-node config init --force would reset withheld_source; "
+                                     "run it in an interactive terminal\n")
+                    return 1
             c.write_json(path, c.node_defaults())
             print("wrote %s" % path)
             return 0
@@ -67,14 +95,17 @@ def _config(rest: List[str]) -> int:
             print(json.dumps(data, ensure_ascii=False, indent=2))
             return 0
         if ns.action == "set":
+            if ns.key == "withheld_source" and not _interactive():
+                sys.stderr.write("rb-node config set withheld_source must be run by the user in "
+                                 "an interactive terminal\n")
+                return 1
             c.write_json(path, c.node_set(data, ns.key, c.parse_value(ns.value)))
             print("%s set" % ns.key)
             return 0
-        probs = c.node_check(data)
-        for p in probs:
-            print("- " + p)
-        print("ok" if not probs else "%d item(s) to fix" % len(probs))
-        return 1 if probs else 0
+        from . import doctor
+        checks = doctor.config_checks(data, path)
+        print(doctor.render(checks, only_problems=True))
+        return doctor.exit_code(checks)
     except (c.ConfigError, OSError) as exc:
         sys.stderr.write("rb-node config: %s\n" % exc)
         return 1
@@ -95,7 +126,14 @@ def _approve_key(rest: List[str]) -> int:
         sys.stderr.write("rb-node: %s\n" % exc)
         return 1
     path = Path(cfg.approval_path)
+    if not _interactive():
+        sys.stderr.write("rb-node approve-key must be run by the user in an interactive "
+                         "terminal\n")
+        return 1
     if rest == ["clear"]:
+        if not _ask("Remove the approval verifier? [y/N]"):
+            sys.stderr.write("not removed\n")
+            return 1
         if path.exists():
             path.unlink()
         print("approval verifier removed; job_submit and job_cancel are refused")
@@ -183,10 +221,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if ns.command == "serve-remote":
         # SSH_ORIGINAL_COMMAND is deliberately ignored: the protocol is on stdin.
         from .config import load_config
-        from .remote import serve
+        from .remote import serve, serve_unconfigured
         try:
             cfg = load_config()
-        except (OSError, ValueError) as exc:
+        except (FileNotFoundError, ValueError) as exc:
+            # Missing or invalid node.json: stay alive so the hub's `hello` can say so.
+            sys.stderr.write("rb-node: %s\n" % exc)
+            return serve_unconfigured(sys.stdin.buffer, sys.stdout.buffer)
+        except OSError as exc:
             sys.stderr.write("rb-node: %s\n" % exc)
             return 1
         return serve(cfg, sys.stdin.buffer, sys.stdout.buffer)
@@ -226,6 +268,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _git_status()
     if ns.command == "install-record":
         return _install_record(_rest)
+    if ns.command == "doctor":
+        from . import doctor
+        checks = doctor.run()
+        print(doctor.render(checks, only_problems=False))
+        return doctor.exit_code(checks)
+    if ns.command == "link":
+        from . import link
+        return link.main(_rest)
     return _not_implemented(ns.command)
 
 

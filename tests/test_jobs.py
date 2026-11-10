@@ -72,7 +72,7 @@ def test_submit_writes_queue_job(tcfg):
     assert len(files) == 1 and r["result"]["queued"] == str(files[0])
     assert files[0].name == "0001_j1.job"
     body = files[0].read_text(encoding="utf-8")
-    assert "rb-node run-job --gpus 0,2 --gpu-hours 1.5 --job-id j1 -- uv run pretrain.py" in body
+    assert "run-job --gpus 0,2 --gpu-hours 1.5 --job-id j1 -- uv run pretrain.py" in body
     stored = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "train.yaml"
     assert stored.read_bytes() == b"lr: 0.1\n"
     assert "{config}" not in body
@@ -202,6 +202,8 @@ def test_cli_approve_key_set_and_clear(tmp_path, monkeypatch, capsys):
     answers = iter(["short", "a long passphrase", "a different one!", "a long passphrase",
                     "a long passphrase"])
     monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr(cli, "_ask", lambda prompt: True)
     assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # too short
     assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # mismatch
     assert cli.main(["approve-key", "set"]) == 0
@@ -211,6 +213,37 @@ def test_cli_approve_key_set_and_clear(tmp_path, monkeypatch, capsys):
     key = approval.derive("a long passphrase", rec["salt"], rec["iterations"])
     approval.check(path, tmp_path / "state", {"approval_key": key})
     assert cli.main(["approve-key", "bogus"]) == 2
+    assert cli.main(["approve-key", "clear"]) == 0 and not path.exists()
+
+
+def test_approve_key_set_requires_terminal(tmp_path, monkeypatch, capsys):
+    from rb_node import cli
+    path = tmp_path / "approve.json"
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"approval_path": str(path)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    monkeypatch.setattr(cli, "_interactive", lambda: False)
+
+    def boom(prompt=""):
+        raise AssertionError("getpass must not be called")
+    monkeypatch.setattr("getpass.getpass", boom)
+    assert cli.main(["approve-key", "set"]) == 1 and not path.exists()
+    assert "interactive terminal" in capsys.readouterr().err
+    path.write_text("{}", encoding="utf-8")
+    assert cli.main(["approve-key", "clear"]) == 1 and path.exists()
+
+
+def test_approve_key_clear_asks(tmp_path, monkeypatch):
+    from rb_node import cli
+    path = tmp_path / "approve.json"
+    path.write_text("{}", encoding="utf-8")
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"approval_path": str(path)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr(cli, "_ask", lambda prompt: False)
+    assert cli.main(["approve-key", "clear"]) == 1 and path.exists()
+    monkeypatch.setattr(cli, "_ask", lambda prompt: True)
     assert cli.main(["approve-key", "clear"]) == 0 and not path.exists()
 
 
@@ -338,3 +371,56 @@ def test_zero_gpus_read_successfully_is_no_gpus(tcfg, monkeypatch):
     r = call(tcfg, ("job_submit", _submit_args("j15", sha)))[0]
     assert not r["ok"] and r["error"]["code"] == "no_gpus", r
     assert _jobs(tcfg) == []
+
+
+def _queue(cfg):
+    q = Path(cfg.queue_dir)
+    (q / "jobs").mkdir(parents=True, exist_ok=True)
+    (q / "processing").mkdir(parents=True, exist_ok=True)
+    return q
+
+
+def test_cancel_matches_exact_job_id(tcfg):
+    q = _queue(tcfg)
+    (q / "jobs" / "0001_a_x.job").write_text("x", encoding="utf-8")
+    (q / "jobs" / "0002_x.job").write_text("x", encoding="utf-8")
+    r = call(tcfg, ("job_cancel", _cancel_args("x", "c-x")))[0]
+    assert r["ok"], r
+    assert (q / "jobs" / "0001_a_x.job").exists() and not (q / "jobs" / "0002_x.job").exists()
+    r = call(tcfg, ("job_cancel", _cancel_args("y", "c-y")))[0]
+    assert not r["ok"] and r["error"]["code"] == "not_found"
+    assert (q / "jobs" / "0001_a_x.job").exists()
+
+
+def test_cancel_running_exact_match(tcfg):
+    q = _queue(tcfg)
+    (q / "processing" / "0001_a_x.job.lock").write_text("x", encoding="utf-8")
+    r = call(tcfg, ("job_cancel", _cancel_args("x", "c-x2")))[0]
+    assert not r["ok"] and r["error"]["code"] == "not_found"
+    (q / "processing" / "0003_x.job.lock").write_text("x", encoding="utf-8")
+    r = call(tcfg, ("job_cancel", _cancel_args("x", "c-x3")))[0]
+    assert r["ok"] and r["result"] == {"cancelled": "requested"}
+
+
+def test_job_script_uses_absolute_launcher(tcfg, monkeypatch):
+    import shlex
+    from rb_node import spawn
+    monkeypatch.setattr(spawn, "launcher_argv", lambda: ["/abs/rb-node"])
+    sha = _upload_config(tcfg, "j1")
+    assert call(tcfg, ("job_submit", _submit_args("j1", sha)))[0]["ok"]
+    body = _jobs(tcfg)[0].read_text(encoding="utf-8")
+    conf1 = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "train.yaml"
+    assert body == ("#!/bin/bash\nexec /abs/rb-node run-job --gpus 0,2 --gpu-hours 1.5 "
+                    "--job-id j1 -- uv run pretrain.py config=%s\n" % shlex.quote(str(conf1)).strip("'"))
+    pkg_parent = str(Path(spawn.__file__).resolve().parent.parent)
+    monkeypatch.setattr(spawn, "launcher_argv",
+                        lambda: [sys.executable, "-m", "rb_node.cli"])
+    sha = _upload_config(tcfg, "j2")
+    assert call(tcfg, ("job_submit", _submit_args("j2", sha)))[0]["ok"]
+    body = (Path(tcfg.queue_dir) / "jobs" / "0002_j2.job").read_text(encoding="utf-8")
+    lines = body.split("\n")
+    assert lines[0] == "#!/bin/bash"
+    assert lines[1] == ("PYTHONPATH=%s exec %s -m rb_node.cli run-job --gpus 0,2 --gpu-hours 1.5 "
+                        "--job-id j2 -- uv run pretrain.py config=%s" % (
+                            shlex.quote(pkg_parent), shlex.quote(sys.executable),
+                            str(Path(tcfg.mailbox_root) / "state" / "configs" / "j2" / "train.yaml")))

@@ -342,3 +342,21 @@ def test_fully_blanked_event_body_becomes_marker(cfg):
     mb.post_out("event", json.dumps({"event": "job_finished", "job_id": "pp_ltf_x"}), [], None)
     item = call(cfg, ("poll", {}))[0]["result"]["items"][0]
     assert json.loads(item["body"]) == {"event": "withheld", "withheld_lines": 1}
+
+
+def test_attachment_named_part_not_lost(cfg):
+    pa, pb = b"first", b"second"
+    atts = [{"name": n, "bytes": len(p), "sha256": hashlib.sha256(p).hexdigest()}
+            for n, p in (("foo.part", pa), ("foo", pb))]
+    r = call(cfg, ("msg_begin", {"msg_id": "mp", "body": "b", "from_session": "s", "attachments": atts}))[0]
+    names = r["result"]["names"]
+    assert len(names) == 2 and names[0] != "foo.part"
+    reqs = [("put_chunk", {"msg_id": "mp", "name": n, "seq": 0, "data_b64": b64(p)})
+            for n, p in zip(names, (pa, pb))]
+    reqs.append(("msg_commit", {"msg_id": "mp"}))
+    resp = call(cfg, *reqs)
+    assert all(x["ok"] for x in resp), resp
+    att = Path(cfg.mailbox_root) / "in" / "mp" / "attachments"
+    assert (att / names[0]).read_bytes() == pa and (att / names[1]).read_bytes() == pb
+    assert sorted(p.name for p in att.iterdir()) == sorted(names)
+    assert not [p for p in att.iterdir() if p.name.endswith(".part")]

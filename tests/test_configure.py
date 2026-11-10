@@ -112,3 +112,69 @@ def test_node_config_flow(tmp_path, monkeypatch, capsys):
 def test_node_check_template_placeholder():
     probs = nc.node_check({"job_template": ["python", "train.py"]})
     assert any("{config}" in p for p in probs)
+
+
+def test_set_research_root_moves_dependent_defaults(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    data = nc.node_defaults()
+    out = nc.node_set(data, "trm_root", "/srv/tree")
+    assert out["trm_root"] == "/srv/tree"
+    assert out["queue_dir"] == "/srv/tree/scripts/queue"
+    assert "/srv/tree/scripts/queue/jobs" in out["write_roots"]
+    assert data["write_roots"][0] in out["write_roots"]  # mailbox entry unchanged
+    assert out["withheld_source"] == data["withheld_source"]  # already the new default
+    # user-changed queue_dir is left alone
+    data2 = dict(nc.node_defaults(), queue_dir="/custom/q")
+    out2 = nc.node_set(data2, "trm_root", "/srv/tree")
+    assert out2["queue_dir"] == "/custom/q"
+    # same value: no cascade
+    data3 = dict(nc.node_defaults(), queue_dir="/custom/q")
+    assert nc.node_set(data3, "trm_root", data3["trm_root"]) == data3
+
+
+def test_set_research_root_moves_old_withheld_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    from rb_node.config import default_dependents
+    data = nc.node_defaults()
+    data["withheld_source"] = default_dependents(data["trm_root"])["old_withheld"]
+    out = nc.node_set(data, "trm_root", "/srv/tree")
+    assert out["withheld_source"].endswith("/.research-bridge/withheld-patterns.json")
+
+
+def test_tilde_expanded_in_path_keys(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    p = tmp_path / "node.json"
+    monkeypatch.setenv("RB_NODE_CONFIG", str(p))
+    assert node_cli.main(["config", "init"]) == 0
+    assert node_cli.main(["config", "set", "trm_root", "~/x"]) == 0
+    assert node_cli.main(["config", "set", "read_roots", '["~/a", "lab/b"]']) == 0
+    from rb_node.config import load_config
+    import json as _json
+    stored = _json.loads(p.read_text(encoding="utf-8"))
+    assert stored["trm_root"] == str(home / "x")
+    assert stored["read_roots"] == [str(home / "a"), "lab/b"]
+    stored["queue_dir"] = "~/q"
+    p.write_text(_json.dumps(stored), encoding="utf-8")
+    assert load_config().queue_dir == str(home / "q")
+
+
+def test_default_withheld_source_is_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    from rb_node.config import NodeConfig
+    assert NodeConfig().withheld_source.endswith("/.research-bridge/withheld-patterns.json")
+
+
+def test_default_config_paths_follow_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    from rb_node.config import NodeConfig, PATH_KEYS, PATH_LIST_KEYS
+    cfg = NodeConfig()
+    for k in PATH_KEYS:
+        v = getattr(cfg, k)
+        if v and v.startswith("/"):
+            assert v.startswith(str(home)), k
+    for k in PATH_LIST_KEYS:
+        for v in getattr(cfg, k):
+            if v.startswith("/"):
+                assert v.startswith(str(home)), (k, v)

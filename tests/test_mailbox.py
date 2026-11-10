@@ -151,3 +151,11 @@ def test_inbox_status(mb):
         mb.set_status("m1", "weird")
     with pytest.raises(ProtocolError):
         mb.set_status("nope", "failed")
+
+
+def test_sanitize_part_and_tmp_suffix():
+    from rb_node.mailbox import Mailbox
+    assert Mailbox.sanitize("a.part", set()) == "a.part_"
+    assert Mailbox.sanitize("b.TMP", set()) == "b.TMP_"
+    assert Mailbox.sanitize("c.txt", set()) == "c.txt"
+    assert Mailbox.sanitize("a.part", {"a.part_"}) == "a-2.part_"

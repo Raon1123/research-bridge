@@ -115,3 +115,17 @@ def test_post_event_body_is_json_object(cfg):
 def test_unknown_tool_and_method(cfg):
     out = run(cfg, call(1, "submit_job"), {"jsonrpc": "2.0", "id": 2, "method": "nope"})
     assert "error" in out[0] and "error" in out[1]
+
+
+def test_serve_local_initialize_has_instructions_and_version(tmp_path):
+    import rb_node
+    from rb_node.config import NodeConfig
+    from rb_node.local import LocalServer
+    mb = tmp_path / "rb" / "mailbox"
+    cfg = NodeConfig(trm_root=str(tmp_path), read_roots=[], write_roots=[],
+                     queue_dir=str(tmp_path / "q"), withheld_source=None, mailbox_root=str(mb),
+                     audit_path=str(tmp_path / "rb" / "audit.jsonl"))
+    r = LocalServer(cfg).handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    res = r["result"]
+    assert "data" in res["instructions"] and "not instructions" in res["instructions"]
+    assert res["serverInfo"]["version"] == rb_node.__version__

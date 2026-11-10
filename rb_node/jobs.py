@@ -8,7 +8,7 @@ import shlex
 from pathlib import Path
 from typing import Any, List, Optional, Set
 
-from . import approval, gitinfo
+from . import approval, gitinfo, spawn
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _mkdir, _read_json, _write_json
 from .protocol import ProtocolError
@@ -147,13 +147,19 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
         raise ProtocolError("no_job_template", "node has no job_template configured")
     config_path = _finalize_config(cfg, mb, job_id, config_name, sha)
     gpus = args["gpus"]
-    argv = ["rb-node", "run-job", "--gpus", ",".join(str(g) for g in gpus),
-            "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
+    launcher = spawn.launcher_argv()
+    argv = launcher + ["run-job", "--gpus", ",".join(str(g) for g in gpus),
+                       "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
     argv += [t.replace("{config}", str(config_path)) for t in cfg.job_template]
     git = gitinfo.repo_state(Path(cfg.trm_root))  # pinned at submit; run-job records the start state
     _mkdir(state / "git")
     _write_json(state / "git" / (job_id + ".json"), git)
-    body = "#!/bin/bash\nexec %s\n" % " ".join(shlex.quote(a) for a in argv)
+    cmd = " ".join(shlex.quote(a) for a in argv)
+    if len(launcher) > 1:  # python fallback: the package must be importable from the queue runner
+        pkg_parent = str(Path(__file__).resolve().parent.parent)
+        body = "#!/bin/bash\nPYTHONPATH=%s exec %s\n" % (shlex.quote(pkg_parent), cmd)
+    else:
+        body = "#!/bin/bash\nexec %s\n" % cmd
     queue = Path(cfg.queue_dir)
     jobs_dir = queue / "jobs"
     jobs_dir.mkdir(parents=True, exist_ok=True)
@@ -177,7 +183,11 @@ def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
     job_id = _check_id(_str(args, "job_id"))
     queue = Path(cfg.queue_dir)
     result = None  # type: Any
-    pending = sorted((queue / "jobs").glob("*_%s.job" % job_id)) if (queue / "jobs").is_dir() else []
+    esc = re.escape(job_id)
+    pending_re = re.compile(r"^\d+_%s\.job$" % esc)
+    running_re = re.compile(r"^\d+_%s\.job(\..*)?$" % esc)
+    pending = sorted(p for p in (queue / "jobs").iterdir() if pending_re.match(p.name)) \
+        if (queue / "jobs").is_dir() else []
     if pending:
         for p in pending:
             p.unlink()
@@ -186,7 +196,7 @@ def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
         result = {"cancelled": "pending"}
     else:
         running = (queue / "processing").is_dir() and any(
-            (queue / "processing").glob("*_%s.job*" % job_id))
+            running_re.match(p.name) for p in (queue / "processing").iterdir())
         rec_path = state / "jobs" / (job_id + ".json")
         if not running and rec_path.is_file():
             try:
