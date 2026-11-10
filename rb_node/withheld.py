@@ -97,8 +97,12 @@ class Withheld:
     def _hit(self, text: str) -> bool:
         if any(r.search(text) for r in self._re):
             return True
-        if text.isascii() and not _ASCII_CTRL.search(text):
-            return False
+        if text.isascii():
+            # ASCII has no Cf, Zl or Zp character, and its C* characters are the controls below
+            # (the newline is kept). Lines with tabs or a carriage return are common, so this
+            # case avoids the per-character loops.
+            plain = _ASCII_CTRL.sub("", text)
+            return plain != text and any(r.search(plain) for r in self._re)
         # a name split by a soft hyphen, a zero-width space, U+2028 or U+0085 still reads as the
         # name once a viewer drops those characters. Two extra copies are tested: one without
         # Unicode format characters (Cf), one without any C* character and line/paragraph

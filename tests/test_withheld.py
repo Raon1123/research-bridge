@@ -198,3 +198,15 @@ def test_tab_separated_pattern_still_matches():
 def test_newline_does_not_join_lines_for_matching():
     w = Withheld(["alpha.*beta"])
     assert not w._hit("alpha\nbeta")
+
+
+
+def test_ascii_control_split_is_hit_and_tab_or_crlf_lines_stay_clean():
+    from rb_node.withheld import FALLBACK_PATTERNS, Withheld
+    name = [p for p in FALLBACK_PATTERNS if p.replace("_", "").isalnum()][0]
+    w = Withheld([])
+    assert w._hit(name[:3] + "\x01" + name[3:])
+    assert w._hit(name[:3] + "\t" + name[3:])
+    assert not w._hit("step\t1\tloss\t0.5\r")
+    masked, n = w.mask_text("a\tb\r\n" + name[:2] + "\x7f" + name[2:] + "\r\nc\td\r\n")
+    assert n == 1 and masked.split("\n")[0] == "a\tb\r" and masked.split("\n")[2] == "c\td\r"

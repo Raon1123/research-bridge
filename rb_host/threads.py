@@ -200,17 +200,22 @@ def _ordered(recs: List[dict], order: Dict[str, int]) -> List[dict]:
     by_id = {r["id"]: r for r in recs}
     memo = {}  # type: Dict[str, Tuple[str, int]]
 
-    def eff(r: dict, seen: frozenset = frozenset()) -> Tuple[str, int]:
-        """(sort time, depth below the root of the reply chain)."""
-        if r["id"] in memo:
-            return memo[r["id"]]
-        t, depth = node_time(r), 0
-        rt = r.get("reply_to")
-        if isinstance(rt, str) and rt in by_id and rt != r["id"] and rt not in seen:
-            pt, pd = eff(by_id[rt], seen | {r["id"]})
-            t, depth = max(t, pt), pd + 1
-        memo[r["id"]] = (t, depth)
-        return t, depth
+    def eff(r: dict) -> Tuple[str, int]:
+        """(sort time, depth below the root of the reply chain). A loop, not recursion: the node
+        sets the chain length. The walk up stops at a known record, at the root, or at a loop."""
+        chain = []  # type: List[dict]
+        on_chain = set()  # type: set
+        cur = r  # type: Any
+        while cur is not None and cur["id"] not in memo and cur["id"] not in on_chain:
+            chain.append(cur)
+            on_chain.add(cur["id"])
+            rt = cur.get("reply_to")
+            cur = by_id.get(rt) if isinstance(rt, str) else None
+        t, depth = memo[cur["id"]] if cur is not None and cur["id"] in memo else ("", -1)
+        for rec in reversed(chain):
+            t, depth = max(t, node_time(rec)), depth + 1
+            memo[rec["id"]] = (t, depth)
+        return memo[r["id"]]
     return sorted(recs, key=lambda r: eff(r) + (order.get(r["id"], 0),))
 
 

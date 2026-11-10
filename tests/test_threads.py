@@ -286,6 +286,25 @@ def test_node_clock_behind_hub_reply_still_sorts_after_its_message(cfg):
     assert t["last_at"] == "2026-11-10T08:10:00Z"
 
 
+def test_long_reply_chain_does_not_exhaust_the_stack(cfg):
+    # the chain length is set by the node; one long thread must not break every page
+    # stored newest first, so the walk from the first record passes through the whole chain
+    for i in range(1499, 0, -1):
+        add(cfg, "m%d" % i, "in" if i % 2 else "out", "2026-11-10T08:00:00Z",
+            reply_to="m%d" % (i - 1), msg_kind="reply", delivered=True)
+    add(cfg, "m0", "out", "2026-11-10T08:00:00Z")
+    t = threads.load(cfg)["threads"][0]
+    assert [r["id"] for r in t["records"]] == ["m%d" % i for i in range(1500)]
+
+
+def test_reply_loop_is_ordered_without_error(cfg):
+    add(cfg, "a", "out", "2026-11-10T08:00:00Z", reply_to="b")
+    add(cfg, "b", "in", "2026-11-10T08:00:01Z", reply_to="a", msg_kind="reply", delivered=True)
+    add(cfg, "c", "out", "2026-11-10T08:00:02Z", reply_to="c")
+    ids = sorted(r["id"] for t in threads.load(cfg)["threads"] for r in t["records"])
+    assert ids == ["a", "b", "c"]
+
+
 def test_split_name_is_masked_before_invisible_characters_are_removed(cfg):
     rec = add(cfg, "r1", "in", msg_kind="reply", delivered=True)
     put_body(cfg, rec, "see secretfam_­x results\nkeep", prov={"files": [
