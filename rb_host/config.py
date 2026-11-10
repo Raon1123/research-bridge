@@ -59,8 +59,8 @@ def wrong_types(data: Any) -> List[str]:
         return ["the top level must be an object"]
     bad = []  # type: List[str]
     nodes = data.get("nodes")
-    if nodes is not None and (not isinstance(nodes, dict)
-                              or not all(isinstance(v, dict) for v in nodes.values())):
+    if "nodes" in data and (not isinstance(nodes, dict)  # null is a wrong type, not "absent"
+                            or not all(isinstance(v, dict) for v in nodes.values())):
         bad.append("nodes must be an object whose values are objects")
     for key in ("data_root", "withheld_patterns_file"):
         if key in data and not isinstance(data[key], str):

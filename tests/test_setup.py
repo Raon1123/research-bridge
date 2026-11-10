@@ -577,7 +577,7 @@ def test_differences_show_the_picked_identity(hub):
 
 @pytest.mark.parametrize("body", [{"nodes": ["node1"]}, {"nodes": "x"}, {"nodes": 5},
                                   {"nodes": {}, "data_root": 5}, {"data_root": ["a"]},
-                                  {"nodes": {"node1": "x"}}])
+                                  {"nodes": {"node1": "x"}}, {"nodes": None}, {"data_root": None}])
 def test_setup_host_json_wrong_types_one_line(hub, capsys, tmp_path, body):
     hp = tmp_path / "data" / "host.json"
     hp.parent.mkdir()

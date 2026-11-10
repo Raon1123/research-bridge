@@ -441,8 +441,9 @@ def test_stage_sweep_runs_before_connect(env, monkeypatch):
     assert called == ["n1"]
 
 
-def test_run_host_json_nodes_not_a_mapping(env, capsys):
-    env["host"].write_text(json.dumps({"nodes": ["n1"], "data_root": str(env["root"])}),
+@pytest.mark.parametrize("nodes", [["n1"], None])
+def test_run_host_json_nodes_not_a_mapping(env, capsys, nodes):
+    env["host"].write_text(json.dumps({"nodes": nodes, "data_root": str(env["root"])}),
                            encoding="utf-8")
     assert sync.run(None, 0) == 1  # a failed pass is reported, not a traceback
     assert "wrong types" in capsys.readouterr().out
