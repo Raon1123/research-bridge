@@ -53,7 +53,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 
 ## The hub page (port 8767)
 
-`rb web serve` is the read-only page of the hub. It shows the sync state of each node, pending job approvals, conversations (threads) between hub sessions and node sessions, job records and the board caches. Design: `docs/design/2026-11-10-sync-and-hub-page.md` (sections 6.6 and 7); code: `rb_host/web.py`.
+`rb web serve` is the read-only page of the hub. It shows the sync state of each node, pending job approvals, conversations (threads) between hub sessions and node sessions, job records and the board caches. Design: `docs/design/2026-11-10-sync-and-hub-page.md` (sections 6.6 and 7); code: `rb_host/web.py`. The page has no authentication: while it runs, any account on the hub machine can read the stored (masked) conversations through it, although the data directory is mode 700. Whether to close this is undecided and is the user's call (see section 15, question 1 of the design document).
 
 | Item | Value |
 |---|---|

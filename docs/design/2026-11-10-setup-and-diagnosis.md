@@ -181,7 +181,7 @@ On the node, in a research-bridge checkout (git clone <REPO_URL>; cd research-br
 
 ### 6.3 Doctor checks
 
-Output, one line per check: `<level> <id>  <message>` on the hub and `[<level>] <id>: <message>` on the node, followed by `      next: <command>` for `warn` and `fail`. `rb doctor` prints all lines grouped by node and ends with `summary: N ok, N warn, N fail`; `rb config check` and `rb-node config check` print only non-`ok` lines and end with `ok` or `N item(s) to fix`; `rb-node doctor` prints all lines and also ends with `ok` or `N item(s) to fix` (§13 row 9). Exit 1 only when a `fail` exists.
+Output, one line per check: `<level> <id>  <message>` on the hub and `[<level>] <id>: <message>` on the node, followed by `      next: <command>` for `warn` and `fail`. `rb doctor` prints all lines grouped by node and ends with `summary: N ok, N warn, N fail`; `rb config check` and `rb-node config check` print only non-`ok` lines and end with `ok`, `N to fix`, `all ok, M warning(s)` or `N to fix, M warning(s)` (failures and warnings counted apart; a later change); `rb-node doctor` prints all lines and ends the same way (§13 row 9). Exit 1 only when a `fail` exists.
 
 #### Hub, offline (`rb doctor --offline`, also part of `rb doctor` and `rb config check`)
 

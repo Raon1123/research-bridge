@@ -13,7 +13,7 @@ research-bridge connects Claude sessions on a **hub** to Claude sessions on an e
 | | Hub | Node |
 |---|---|---|
 | System | Linux; a systemd user manager for the optional timer and page | Linux (the installer uses GNU `mv -T`) |
-| Python | installed by uv (3.10 or later) | `python3` 3.8 or later on `PATH` |
+| Python | uv selects or downloads a Python 3.10 or later for the hub environment (`.python-version` asks for it) | its own `python3` 3.8 or later on `PATH`; no uv |
 | Programs | [uv](https://docs.astral.sh/uv/), git, OpenSSH client (`ssh`, `ssh-keygen`, `ssh-agent`, `ssh-add`, `ssh-keyscan`), the Claude command-line interface (CLI, `claude`; used to register the MCP server), `ip` (optional; used to find the hub address) | git, OpenSSH server; optional: `pdftotext` (without it pdf files are denied), the Claude CLI (the responder that answers messages when no live session does) |
 | Access | a terminal for the commands that ask questions | a console login as the node user |
 
@@ -79,7 +79,7 @@ Replace `~/research-bridge` with the directory where you cloned in step 1. `rb-n
    Run `rb setup` twice: this first run, and again in step 7 as `rb setup --node node1` (the facts are now in `host.json`, so the flags are not repeated). Its nine parts are called stages here to keep them apart from the numbered steps of this README; the program prints them as `step N/9 ...`. Each ends in `-> done`, `skipped`, `printed` or `failed: ...`: (1) data root and `host.json`; (2) node entry with the aliases `rb-node1` and `rb-node1-harness`; (3) keys: asks `Generate ...? [y/N]`, then `ssh-keygen` asks a passphrase twice per key (the same passphrase may serve both); (4) shows the two `Host` blocks and asks `Append to ~/.ssh/config? [y/N]` (aliases that already exist with other values are reported, not rewritten); (5) host key: deferred on this first run, done in step 7; (6) loads both keys into an ssh-agent under `$XDG_RUNTIME_DIR`, starting `rb-ssh-agent` there if none answers, and `ssh-add` asks the key passphrase; (7) prints the node command for README step 5 below; (8) prints `claude mcp add-json --scope user research-bridge '...'`; (9) runs `rb doctor`, whose online part fails until the node is installed. The second run skips what exists (keys, blocks) and does not ask the key passphrase again if the agent still holds both keys (`already loaded`); it asks only if the agent was lost, for example after a reboot. A hub linked earlier with the removed scripts `hub-connect.sh` and `hub-agent.sh` runs the same command; existing keys and blocks are kept. To check the hub without any connection at any point, run `rb doctor --offline`; plain `rb doctor` also contacts the node.
 4. **Hub terminal: pattern file to the node,** with your own login (the bridge key can only run `rb-node serve-remote`). Note the hyphen in the node's file name. This is the first time the hub connects to the node's address with `scp`, so if `~/.ssh/known_hosts` has no entry for it, `scp` asks `Are you sure you want to continue connecting?` and writes the entry itself; `rb setup` then finds the entry and skips its own fingerprint comparison (step 7). Before you answer `yes`, compare the fingerprint `scp` shows with the output of `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the node console, and answer `no` if they differ.
    ```
-   scp -P <NODE_PORT> ~/.local/share/research-bridge/withheld_patterns.json <NODE_USER>@<NODE_HOST>:withheld-patterns.json
+   scp -P <NODE_PORT> "${RB_HOST_ROOT:-$HOME/.local/share/research-bridge}"/withheld_patterns.json <NODE_USER>@<NODE_HOST>:withheld-patterns.json
    ```
 5. **Node console: install.** Get a checkout and paste the command that setup stage 7 printed. It looks like this:
    ```
@@ -128,7 +128,7 @@ systemctl --user daemon-reload && systemctl --user enable --now rb-sync.timer rb
 ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>
 ```
 
-The page is `rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767; only loopback is accepted); `rb service install` sets it up as `rb-web.service`, and in a hub terminal you can also start it by hand. It only reads hub files: it opens no node connection, accepts only GET and HEAD, has no forms, and masks text with the hub pattern file. A banner appears when a node reports `withheld_extra 0` or the hub pattern file is unusable.
+The page is `rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767; only loopback is accepted); `rb service install` sets it up as `rb-web.service`, and in a hub terminal you can also start it by hand. It only reads hub files: it opens no node connection, accepts only GET and HEAD, has no forms, and masks text with the hub pattern file. A banner appears when a node reports `withheld_extra 0` or the hub pattern file is unusable. The page has no authentication: while it runs, any account on the hub machine can read the stored (masked) conversations through it, even though the data directory is mode 700. Whether to close this (a Unix socket, a token file, or accepting it on a single-user hub) is undecided and is the user's call.
 
 | Page | Shows |
 |---|---|
@@ -160,7 +160,7 @@ rb approve <job_id>
 rb reject <job_id>
 ```
 
-`rb pending` prints nothing at all when no job is pending. `rb approve` prints the record (node, config, its sha256, GPUs, GPU-hours, note), asks `Approve? [y/N]` and then `Approval passphrase:`. The hub derives the key and sends the job; the node checks it against its verifier and queues the job. Nothing else approves: no MCP tool, no flag, no file or environment variable holds the passphrase, and the hub page only shows the commands. The approval route of the laptop's 8765 dashboard does not reach this hub's ledger.
+`rb pending` prints `no pending jobs` when no job is pending. `rb approve` prints the record (node, config, its sha256, GPUs, GPU-hours, note), asks `Approve? [y/N]` and then `Approval passphrase:`. The hub derives the key and sends the job; the node checks it against its verifier and queues the job. Nothing else approves: no MCP tool, no flag, no file or environment variable holds the passphrase, and the hub page only shows the commands. The approval route of the laptop's 8765 dashboard does not reach this hub's ledger.
 
 ## Updating the node code
 
@@ -188,6 +188,7 @@ It runs `git pull --ff-only`, installs the code as a new release and switches to
 | `unreachable` | cannot reach ALIAS (network or address) | wrong host, network down, SSH server (`sshd`) not running | `rb doctor --node NODE` |
 | `timeout` | ALIAS did not answer in time | slow network or node | retry; if it repeats, `rb doctor --node NODE` |
 | `closed` | connection to ALIAS closed (exit N) | the node side failed | on the node: `rb-node doctor` (old code: `scripts/node-install.sh --update` first, or `rb-node config check`) |
+| (`uv sync`) | The current Python platform is not compatible with the lockfile's supported environments | uv picked a Python older than 3.10 that comes first on `PATH` | `uv sync --extra host --python 3.12` |
 
 When `rb agent` or `rb setup` cannot start an agent it prints one of: `no usable runtime directory for an ssh-agent socket` (no `/run/user/<uid>`; log in directly instead of through `su`), `<path> exists and is not a dead socket owned by you`, or `ssh-agent did not start (...)`.
 

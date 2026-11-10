@@ -68,7 +68,7 @@ Edit it on the node console only, with `rb-node config` (no bridge operation rea
     rb-node config init [--force]        # write the defaults (mode 600)
     rb-node config show                  # print it
     rb-node config set KEY VALUE         # one key; lists and numbers as JSON, e.g. '["a", "b"]'
-    rb-node config check                 # non-ok doctor lines for the config only; ends with "ok" or "N item(s) to fix"
+    rb-node config check                 # non-ok doctor lines for the config only; ends with "ok", "N to fix", "all ok, M warning(s)" or "N to fix, M warning(s)"
 
 `init` refuses to overwrite an existing file without `--force`, and `--force` outside a terminal refuses if it would reset a customised `withheld_source`. `set withheld_source` needs a terminal (a session cannot weaken the masking), and `set` accepts only known keys of the right type. `config check` exits 1 only when a check is `fail`; its `--help` text says "exit 1 if anything" (§12.1).
 
@@ -161,7 +161,7 @@ Send and read checks are meaningful only after the node loaded a withheld patter
 
     rb-node doctor
 
-Read-only: it creates no directory and writes no audit record. Output is `[ok|warn|fail] <id>: <message>`, and under each non-ok line `      next: <command>`; it ends with `ok` or `N item(s) to fix`. Exit 1 only if some check is `fail`. It never prints key material or pattern text.
+Read-only: it creates no directory and writes no audit record. Output is `[ok|warn|fail] <id>: <message>`, and under each non-ok line `      next: <command>`; it ends with `ok`, `N to fix`, `all ok, M warning(s)` or `N to fix, M warning(s)` (failures and warnings counted apart). Exit 1 only if some check is `fail`. It never prints key material or pattern text.
 
 | id | Level if not ok | What a failure means | Next |
 |---|---|---|---|

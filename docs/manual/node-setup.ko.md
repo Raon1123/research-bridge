@@ -70,7 +70,7 @@ python 경로는 설치 시점에 찾은 절대 경로이며(여기서는 예로
     rb-node config init [--force]        # write the defaults (mode 600)
     rb-node config show                  # print it
     rb-node config set KEY VALUE         # one key; lists and numbers as JSON, e.g. '["a", "b"]'
-    rb-node config check                 # non-ok doctor lines for the config only; ends with "ok" or "N item(s) to fix"
+    rb-node config check                 # non-ok doctor lines for the config only; ends with "ok", "N to fix", "all ok, M warning(s)" or "N to fix, M warning(s)"
 
 `init`은 `--force` 없이는 기존 파일을 덮어쓰지 않으며, 터미널이 아닌 곳에서 `--force`는 사용자가 바꾼 `withheld_source`를 초기화하게 되면 거부한다. `set withheld_source`는 터미널이 필요하다(세션이 마스킹을 약화시킬 수 없게 하기 위해서다). `set`은 알려진 키와 올바른 타입만 받는다. `config check`는 검사 결과가 `fail`일 때만 종료 코드 1을 반환한다. 그런데 `--help` 문구는 "exit 1 if anything"이라고 적혀 있다(§12.1).
 
@@ -163,7 +163,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
     rb-node doctor
 
-읽기 전용이다. 디렉터리를 만들지 않고 감사 기록도 쓰지 않는다. 출력은 `[ok|warn|fail] <id>: <message>`이고, ok가 아닌 각 줄 아래에 `      next: <command>`가 붙으며, 마지막은 `ok` 또는 `N item(s) to fix`다. 어떤 검사가 `fail`일 때만 종료 코드 1이다. 키 자료나 패턴 텍스트는 출력하지 않는다.
+읽기 전용이다. 디렉터리를 만들지 않고 감사 기록도 쓰지 않는다. 출력은 `[ok|warn|fail] <id>: <message>`이고, ok가 아닌 각 줄 아래에 `      next: <command>`가 붙으며, 마지막은 `ok`, `N to fix`, `all ok, M warning(s)`, `N to fix, M warning(s)` 중 하나다(fail과 warn을 따로 센다). 어떤 검사가 `fail`일 때만 종료 코드 1이다. 키 자료나 패턴 텍스트는 출력하지 않는다.
 
 | id | Level if not ok | What a failure means | Next |
 |---|---|---|---|

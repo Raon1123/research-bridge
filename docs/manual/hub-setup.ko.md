@@ -205,7 +205,7 @@ Agent:
 
 실제 명령에는 사용자의 경로가 들어 있다. `env`에는 항상 `RB_HOST_CONFIG`(`host.json`의 절대 경로)가 있고, `RB_HOST_ROOT`는 `rb setup`을 실행한 셸에 설정돼 있었을 때만 있다. 평소 쓰는 셸 설정과 같은 셸에서 `rb setup`이나 `rb config mcp`를 실행한다. 항목에는 `SSH_AUTH_SOCK`이 없다(§4.3). 그것이 있는 옛 항목도 계속 동작한다.
 
-`rb config mcp`는 같은 항목을 JSON으로 출력한다. 등록된 항목이 없거나, 없는 경로나 worktree를 가리키거나, `rb setup`이 출력하는 항목과 다르면 `rb doctor`의 `mcp_entry` 검사가 경고한다. 그때는 항목을 제거하고(`claude mcp remove research-bridge`) 다시 등록한다. 이 `rb`가 git worktree에서 실행되고 등록된 항목이 체크아웃 경로만 다를 때도 경고(`from_worktree`)하며, 이때 다음 단계는 메인 체크아웃에서 `rb`를 실행하는 것이다.
+`rb config mcp`는 같은 항목을 `claude mcp add-json ...` 명령으로 출력한다. 등록된 항목이 없거나, 없는 경로나 worktree를 가리키거나, `rb setup`이 출력하는 항목과 다르면 `rb doctor`의 `mcp_entry` 검사가 경고한다. 그때는 항목을 제거하고(`claude mcp remove research-bridge`) 다시 등록한다. 이 `rb`가 git worktree에서 실행되고 등록된 항목이 체크아웃 경로만 다를 때도 경고(`from_worktree`)하며, 이때 다음 단계는 메인 체크아웃에서 `rb`를 실행하는 것이다.
 
 그러면 새 Claude 세션은 정확히 도구 열 개를 가진다. `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `queue_status`, `gpu_status`, `submit_job`, `cancel_job`이다. 테스트가 이 집합을 고정한다. 승인 도구는 없다. `submit_job`과 `cancel_job`은 `pending_approval` 레코드만 쓰고 SSH 호출은 하지 않는다.
 
@@ -244,7 +244,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
     rb doctor [--node NAME] [--offline]
 
-검사마다 한 줄을 노드별로 묶어 `<level> <id>  <message>` 형태로 출력하고, `warn`이나 `fail` 아래에는 `      next: <command>` 줄을 붙인다. 마지막은 `summary: N ok, N warn, N fail`이다. 어떤 검사가 `fail`일 때만 종료 코드 1이고, `warn`은 0이다. `--offline`은 로컬 파일을 읽고 로컬 명령(`ssh -G`, `ssh-add -l`, `ssh-keygen`, `systemctl`)만 실행한다. 이 옵션이 없으면 노드마다 SSH 연결 한 번으로 `hello`만 보낸다. 출력에는 키 자료나 패턴 텍스트가 들어가지 않는다. `rb config check`는 ok가 아닌 줄만 보여 주는 오프라인 보고서이며, `ok` 또는 `N item(s) to fix`로 끝난다. (`rb config check`의 `--help` 문구는 "exit 1 if anything"이라고 하지만, 코드는 `fail`일 때만 종료 코드 1을 반환한다.)
+검사마다 한 줄을 노드별로 묶어 `<level> <id>  <message>` 형태로 출력하고, `warn`이나 `fail` 아래에는 `      next: <command>` 줄을 붙인다. 마지막은 `summary: N ok, N warn, N fail`이다. 어떤 검사가 `fail`일 때만 종료 코드 1이고, `warn`은 0이다. `--offline`은 로컬 파일을 읽고 로컬 명령(`ssh -G`, `ssh-add -l`, `ssh-keygen`, `systemctl`)만 실행한다. 이 옵션이 없으면 노드마다 SSH 연결 한 번으로 `hello`만 보낸다. 출력에는 키 자료나 패턴 텍스트가 들어가지 않는다. `rb config check`는 ok가 아닌 줄만 보여 주는 오프라인 보고서이며, `ok`, `N to fix`(fail 개수), `all ok, M warning(s)`, `N to fix, M warning(s)` 중 하나로 끝난다. (`rb config check`의 `--help` 문구는 "exit 1 if anything"이라고 하지만, 코드는 `fail`일 때만 종료 코드 1을 반환한다.)
 
 ### 10.1 Offline checks
 
@@ -252,7 +252,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 |---|---|---|---|
 | `host_json` | fail | `host.json`이 없거나, 유효한 JSON이 아니거나, 타입이 틀린 필드가 있다. 다른 것은 검사할 수 없다. | `rb setup --node NAME --host HOST --user USER`, 또는 파일 수정 |
 | `host_json_git` | fail | `host.json` 또는 `private/local.json`이 git에 추적될 상태다(`LEAK RISK`). | `.gitignore`에 추가하거나 옮긴다 |
-| `data_root` | fail | 데이터 디렉터리가 없다. | `rb setup --node NAME ...` |
+| `data_root` | fail | 데이터 디렉터리가 없거나, 디렉터리 모드가 그룹이나 다른 사용자의 접근을 허용한다(700이어야 한다). | 없을 때: `rb setup --node NAME ...`. 모드일 때: `chmod 700 <path>` |
 | `nodes` | fail | `host.json`에 노드가 없거나, `--node`가 알 수 없는 노드를 가리킨다. | `rb setup --node NAME ...` |
 | `alias` | fail | `ssh -G`가 노드의 bridge 별칭에 대한 `Host` 블록을 보여 주지 않는다. | `rb setup --node NAME ...` |
 | `alias_harness` | warn | harness 별칭에 대해 같은 문제다. harness 채널만 영향을 받는다. | 같음 |

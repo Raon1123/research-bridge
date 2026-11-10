@@ -15,7 +15,7 @@ research-bridge는 **허브(hub)**의 Claude 세션과 실험 서버인 **노드
 | | 허브 | 노드 |
 |---|---|---|
 | 시스템 | Linux. 선택 사항인 타이머와 페이지에는 systemd 사용자 관리자가 필요하다 | Linux (설치 스크립트가 GNU `mv -T`를 쓴다) |
-| Python | uv가 설치한다 (3.10 이상) | `PATH`에 `python3` 3.8 이상 |
+| Python | uv가 허브 환경용 Python 3.10 이상을 고르거나 내려받는다(`.python-version`이 이를 요청한다) | `PATH`에 있는 자체 `python3` 3.8 이상. uv는 필요 없다 |
 | 프로그램 | [uv](https://docs.astral.sh/uv/), git, OpenSSH 클라이언트(`ssh`, `ssh-keygen`, `ssh-agent`, `ssh-add`, `ssh-keyscan`), Claude 명령줄 인터페이스(CLI, `claude`; MCP 서버를 등록하는 데 쓴다), `ip`(선택 사항; 허브 주소를 찾는 데 쓴다) | git, OpenSSH 서버. 선택 사항: `pdftotext`(없으면 pdf 파일은 거부된다), Claude CLI(살아 있는 세션이 없을 때 메시지에 응답하는 응답기) |
 | 접근 | 질문을 던지는 명령을 실행할 터미널 | 노드 사용자로 하는 콘솔 로그인 |
 
@@ -81,7 +81,7 @@ alias rb='uv run --directory ~/research-bridge --extra host rb'
    `rb setup`은 두 번 실행한다. 첫 실행이 이것이고, 7단계에서 `rb setup --node node1`로 다시 실행한다(정보가 이미 `host.json`에 있으므로 플래그를 반복하지 않는다). 아홉 부분은 번호가 붙은 README 단계와 구별하려고 여기서 스테이지라 부르며, 프로그램은 `step N/9 ...`로 출력한다. 각 스테이지는 `-> done`, `skipped`, `printed`, `failed: ...` 중 하나로 끝난다. (1) 데이터 루트와 `host.json`. (2) 별칭 `rb-node1`과 `rb-node1-harness`를 가진 노드 항목. (3) 키: `Generate ...? [y/N]`을 묻고, 이어서 `ssh-keygen`이 키마다 암호문을 두 번 묻는다(두 키에 같은 암호문을 써도 된다). (4) `Host` 블록 두 개를 보여 주고 `Append to ~/.ssh/config? [y/N]`을 묻는다(이미 다른 값으로 존재하는 별칭은 다시 쓰지 않고 보고만 한다). (5) 호스트 키: 첫 실행에서는 보류하고 7단계에서 한다. (6) 두 키를 `$XDG_RUNTIME_DIR` 아래의 ssh-agent에 로드한다. 응답하는 agent가 없으면 거기서 `rb-ssh-agent`를 시작하고, `ssh-add`가 키 암호문을 묻는다. (7) 아래 README 5단계에서 쓸 노드 명령을 출력한다. (8) `claude mcp add-json --scope user research-bridge '...'`를 출력한다. (9) `rb doctor`를 실행하며, 노드를 설치하기 전에는 온라인 검사 부분이 실패한다. 두 번째 실행은 이미 있는 것(키, 블록)을 건너뛰며, agent가 두 키를 아직 들고 있으면(`already loaded`) 키 암호문을 다시 묻지 않는다. agent를 잃은 경우(예: 재부팅 후)에만 묻는다. 제거된 스크립트 `hub-connect.sh`와 `hub-agent.sh`로 이전에 연결한 허브도 같은 명령을 실행하며, 기존 키와 블록은 유지된다. 어느 시점에서든 연결 없이 허브만 점검하려면 `rb doctor --offline`을 실행한다. `--offline` 없는 `rb doctor`는 노드에도 연결한다.
 4. **허브 터미널: 노드로 패턴 파일 보내기.** 사용자 본인의 로그인으로 보낸다(브리지 키는 `rb-node serve-remote`만 실행할 수 있다). 노드 쪽 파일 이름에는 하이픈이 있음에 유의한다. 허브가 노드 주소에 `scp`로 처음 연결하는 것이므로 `~/.ssh/known_hosts`에 항목이 없으면 `scp`가 `Are you sure you want to continue connecting?`을 묻고 항목을 직접 기록한다. 그러면 `rb setup`은 그 항목을 찾아 자체 지문 비교(7단계)를 건너뛴다. `yes`라고 답하기 전에 `scp`가 보여 주는 지문을 노드 콘솔의 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 결과와 비교하고, 다르면 `no`로 답한다.
    ```
-   scp -P <NODE_PORT> ~/.local/share/research-bridge/withheld_patterns.json <NODE_USER>@<NODE_HOST>:withheld-patterns.json
+   scp -P <NODE_PORT> "${RB_HOST_ROOT:-$HOME/.local/share/research-bridge}"/withheld_patterns.json <NODE_USER>@<NODE_HOST>:withheld-patterns.json
    ```
 5. **노드 콘솔: 설치.** 체크아웃을 받고, `rb setup`의 7번 스테이지가 출력한 명령을 붙여 넣는다. 다음과 같은 모양이다.
    ```
@@ -130,7 +130,7 @@ systemctl --user daemon-reload && systemctl --user enable --now rb-sync.timer rb
 ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>
 ```
 
-이 페이지는 `rb web serve [--port PORT] [--bind 127.0.0.1]`이며(기본 포트 8767, 루프백만 받는다), `rb service install`이 `rb-web.service`로 설정하고, 허브 터미널에서 직접 시작할 수도 있다. 허브 파일만 읽는다. 노드에 연결하지 않고, GET과 HEAD만 받고, 폼이 없고, 허브 패턴 파일로 텍스트를 가린다. 노드가 `withheld_extra 0`을 보고하거나 허브 패턴 파일을 쓸 수 없으면 배너가 나타난다.
+이 페이지는 `rb web serve [--port PORT] [--bind 127.0.0.1]`이며(기본 포트 8767, 루프백만 받는다), `rb service install`이 `rb-web.service`로 설정하고, 허브 터미널에서 직접 시작할 수도 있다. 허브 파일만 읽는다. 노드에 연결하지 않고, GET과 HEAD만 받고, 폼이 없고, 허브 패턴 파일로 텍스트를 가린다. 노드가 `withheld_extra 0`을 보고하거나 허브 패턴 파일을 쓸 수 없으면 배너가 나타난다. 이 페이지에는 인증이 없다. 실행되는 동안 허브 기계의 모든 계정이, 데이터 디렉터리가 모드 700이어도, 이 페이지를 통해 저장된(가려진) 대화를 읽을 수 있다. 이를 막을지(Unix 소켓, 토큰 파일, 또는 사용자가 한 명뿐인 허브에서 그대로 두기)는 정해지지 않았고 사용자가 결정할 일이다.
 
 | 페이지 | 표시 내용 |
 |---|---|
@@ -162,7 +162,7 @@ rb approve <job_id>
 rb reject <job_id>
 ```
 
-`rb pending`은 대기 중인 작업이 없으면 아무것도 출력하지 않는다. `rb approve`는 기록(노드, 설정, 그 sha256, GPU, GPU-hours, 메모)을 출력하고, `Approve? [y/N]`을 묻고, 이어서 `Approval passphrase:`를 묻는다. 허브가 키를 만들어 작업을 보내고, 노드가 그 키를 자신의 검증값과 대조해 작업을 대기열에 넣는다. 다른 방법으로는 승인되지 않는다. 암호문을 가진 MCP 도구, 플래그, 파일, 환경 변수가 없으며, 허브 페이지는 명령만 보여 준다. 노트북의 8765 대시보드의 승인 경로는 이 허브의 원장에 닿지 않는다.
+`rb pending`은 대기 중인 작업이 없으면 `no pending jobs`를 출력한다. `rb approve`는 기록(노드, 설정, 그 sha256, GPU, GPU-hours, 메모)을 출력하고, `Approve? [y/N]`을 묻고, 이어서 `Approval passphrase:`를 묻는다. 허브가 키를 만들어 작업을 보내고, 노드가 그 키를 자신의 검증값과 대조해 작업을 대기열에 넣는다. 다른 방법으로는 승인되지 않는다. 암호문을 가진 MCP 도구, 플래그, 파일, 환경 변수가 없으며, 허브 페이지는 명령만 보여 준다. 노트북의 8765 대시보드의 승인 경로는 이 허브의 원장에 닿지 않는다.
 
 ## 노드 코드 업데이트
 
@@ -190,6 +190,7 @@ scripts/node-install.sh --update
 | `unreachable` | cannot reach ALIAS (network or address) | 호스트가 틀렸거나, 네트워크가 끊겼거나, SSH 서버(`sshd`)가 실행 중이 아니다 | `rb doctor --node NODE` |
 | `timeout` | ALIAS did not answer in time | 네트워크 또는 노드가 느리다 | 재시도한다. 반복되면 `rb doctor --node NODE` |
 | `closed` | connection to ALIAS closed (exit N) | 노드 쪽이 실패했다 | 노드에서: `rb-node doctor` (오래된 코드는 먼저 `scripts/node-install.sh --update` 또는 `rb-node config check`) |
+| (`uv sync`) | The current Python platform is not compatible with the lockfile's supported environments | `PATH`에서 먼저 발견된 3.10 미만 Python을 uv가 골랐다 | `uv sync --extra host --python 3.12` |
 
 `rb agent` 또는 `rb setup`이 agent를 시작하지 못하면 다음 중 하나를 출력한다. `no usable runtime directory for an ssh-agent socket`(`/run/user/<uid>`가 없다. `su`를 거치지 말고 직접 로그인한다), `<path> exists and is not a dead socket owned by you`, `ssh-agent did not start (...)`.
 

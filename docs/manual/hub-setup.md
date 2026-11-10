@@ -203,7 +203,7 @@ Without a usable `host.json`, every `rb` command that needs it prints one line, 
 
 The real command carries your paths. `env` always has `RB_HOST_CONFIG` (absolute path of `host.json`) and has `RB_HOST_ROOT` only if the shell that ran `rb setup` had it set; run `rb setup` or `rb config mcp` in the same shell setting you use daily. The entry has no `SSH_AUTH_SOCK` (§4.3). An older entry that has one still works.
 
-`rb config mcp` prints the same entry as JSON. `rb doctor` check `mcp_entry` warns if the registered entry is missing, points at a missing path or a worktree, or differs from the one `rb setup` prints; remove it (`claude mcp remove research-bridge`) and register again. It also warns (`from_worktree`) when this `rb` runs from a git worktree and the registered entry differs only in the checkout path; the next step is to run `rb` from the main checkout.
+`rb config mcp` prints the same entry as the `claude mcp add-json ...` command. `rb doctor` check `mcp_entry` warns if the registered entry is missing, points at a missing path or a worktree, or differs from the one `rb setup` prints; remove it (`claude mcp remove research-bridge`) and register again. It also warns (`from_worktree`) when this `rb` runs from a git worktree and the registered entry differs only in the checkout path; the next step is to run `rb` from the main checkout.
 
 A new Claude session then has exactly ten tools: `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `queue_status`, `gpu_status`, `submit_job`, `cancel_job`. A test pins this set. There is no approval tool: `submit_job` and `cancel_job` only write a `pending_approval` record and make no SSH call.
 
@@ -242,7 +242,7 @@ Only the allowlist (`CLAUDE.md`, `settings.json`, `rtk-reference.md`, `commands/
 
     rb doctor [--node NAME] [--offline]
 
-Prints one line per check, grouped by node: `<level> <id>  <message>`, and under every `warn` or `fail` a line `      next: <command>`. It ends with `summary: N ok, N warn, N fail`. Exit code 1 only if some check is `fail`; `warn` exits 0. `--offline` reads local files and runs local commands only (`ssh -G`, `ssh-add -l`, `ssh-keygen`, `systemctl`); without it one SSH connection per node sends `hello` and nothing else. Output never contains key material or pattern text. `rb config check` is the offline report limited to non-ok lines; it ends with `ok` or `N item(s) to fix`. (The `--help` text of `rb config check` says "exit 1 if anything"; the code exits 1 only on a `fail`.)
+Prints one line per check, grouped by node: `<level> <id>  <message>`, and under every `warn` or `fail` a line `      next: <command>`. It ends with `summary: N ok, N warn, N fail`. Exit code 1 only if some check is `fail`; `warn` exits 0. `--offline` reads local files and runs local commands only (`ssh -G`, `ssh-add -l`, `ssh-keygen`, `systemctl`); without it one SSH connection per node sends `hello` and nothing else. Output never contains key material or pattern text. `rb config check` is the offline report limited to non-ok lines; it ends with `ok`, `N to fix` (failures), `all ok, M warning(s)` or `N to fix, M warning(s)`. (The `--help` text of `rb config check` says "exit 1 if anything"; the code exits 1 only on a `fail`.)
 
 ### 10.1 Offline checks
 
@@ -250,7 +250,7 @@ Prints one line per check, grouped by node: `<level> <id>  <message>`, and under
 |---|---|---|---|
 | `host_json` | fail | `host.json` is missing, not valid JSON, or has fields of the wrong type. Nothing else can be checked. | `rb setup --node NAME --host HOST --user USER`, or fix the file |
 | `host_json_git` | fail | `host.json` or `private/local.json` would be tracked by git (`LEAK RISK`). | add it to `.gitignore` or move it |
-| `data_root` | fail | The data directory does not exist. | `rb setup --node NAME ...` |
+| `data_root` | fail | The data directory does not exist, or its mode allows access by group or other users (it must be 700). | missing: `rb setup --node NAME ...`; mode: `chmod 700 <path>` |
 | `nodes` | fail | No node in `host.json`, or `--node` names an unknown one. | `rb setup --node NAME ...` |
 | `alias` | fail | `ssh -G` shows no `Host` block for the node's bridge alias. | `rb setup --node NAME ...` |
 | `alias_harness` | warn | Same for the harness alias; only the harness channel is affected. | same |
