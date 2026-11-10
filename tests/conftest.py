@@ -1,6 +1,24 @@
 from __future__ import annotations
 
+import atexit
+import os
+import shutil
+import tempfile
+
 import pytest
+
+# --- session-wide isolation -------------------------------------------------------------
+# Set when this file is imported, before any test module runs. The per-test fixture below
+# narrows these values further, but a test that undoes its monkeypatches (monkeypatch.undo())
+# falls back to what is set here, never to the real account. On 2026-11-10 one such undo made
+# every run of the suite overwrite the real ~/.claude.json (docs/postmortems/).
+_SESSION_DIR = tempfile.mkdtemp(prefix="rb-tests-")
+atexit.register(shutil.rmtree, _SESSION_DIR, True)
+for _name, _sub in (("HOME", "home"), ("XDG_RUNTIME_DIR", "run")):
+    os.makedirs(os.path.join(_SESSION_DIR, _sub), mode=0o700)
+    os.environ[_name] = os.path.join(_SESSION_DIR, _sub)
+for _name in ("SSH_AUTH_SOCK", "RB_HOST_ROOT", "RB_HOST_CONFIG", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+    os.environ.pop(_name, None)
 
 # --- hub-setup: external command isolation ---
 
