@@ -8,7 +8,7 @@ Status history:
 <!--
 Copy to docs/design/YYYY-MM-DD-<slug>.md. Delete the comment blocks once filled.
 Section order follows docs/superpowers/specs/2026-10-27-research-bridge-design.md.
-Placeholders only for server facts (<NODE_HOST>, <NODE_USER>, ...). No withheld content, no experiment results.
+Placeholders only for server facts (<NODE_HOST>, <NODE_USER>, <HUB_ADDR>, <HUB_SUBNET>, ...). No withheld content, no experiment results.
 -->
 
 ## 1. Intent
@@ -36,7 +36,7 @@ Placeholders only for server facts (<NODE_HOST>, <NODE_USER>, ...). No withheld 
 ## 6. Architecture
 
 <!-- Diagram or short description. Name each process, which side it runs on, and the direction of every connection
-     (hard rule 2: laptop to node only). -->
+     (hard rule 2: hub to node only). -->
 
 ### 6.1 Interfaces
 

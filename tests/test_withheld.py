@@ -151,3 +151,62 @@ def test_good_source_no_warning(tmp_path):
     w = Withheld.load(src)
     assert w.source_error is None and w.extra_count == 1
     assert Withheld.load(None).source_error is None
+
+
+def test_rejected_patterns_counted(tmp_path):
+    src = tmp_path / "w.json"
+    src.write_text(json.dumps({"patterns": ["good_[a-z]+", "bad([", "other_x"]}), encoding="utf-8")
+    w = Withheld.load(src)
+    assert w.extra_count == 2
+    assert w.rejected_count == 1
+    assert w.rejected_indexes == [1]
+    assert w.source_error is None
+    assert w.source_set is True
+    assert Withheld.load(None).source_set is False
+
+
+def _plain_names():
+    # literal fallback patterns that are plain strings (no regex syntax)
+    return [p for p in FALLBACK_PATTERNS if p.isidentifier()]
+
+
+def test_name_split_by_line_separator_or_next_line_char_is_hit():
+    w = Withheld.load(None)
+    plain = _plain_names()
+    assert plain
+    for pat in plain:
+        mid = len(pat) // 2
+        for sep in (" ", "\u0085", "​", " ", "\x01"):
+            split = pat[:mid] + sep + pat[mid:]
+            assert w.name_hit("reports/" + split + ".png"), (pat, sep)
+            assert w.mask_text("a\nx " + split + " y\nb") == ("a\n\nb", 1)
+    assert not w.name_hit("reports/other name.png")
+
+
+def test_separator_split_content_denied(tmp_path):
+    pat = _plain_names()[0]
+    f = tmp_path / "note.md"
+    f.write_text(pat[:2] + " " + pat[2:], encoding="utf-8")
+    assert Withheld.load(None).check_file(f) == "deny_content"
+
+
+def test_tab_separated_pattern_still_matches():
+    w = Withheld(["alpha\tbeta"])
+    assert w.name_hit("x alpha\tbeta y")
+
+
+def test_newline_does_not_join_lines_for_matching():
+    w = Withheld(["alpha.*beta"])
+    assert not w._hit("alpha\nbeta")
+
+
+
+def test_ascii_control_split_is_hit_and_tab_or_crlf_lines_stay_clean():
+    from rb_node.withheld import FALLBACK_PATTERNS, Withheld
+    name = [p for p in FALLBACK_PATTERNS if p.replace("_", "").isalnum()][0]
+    w = Withheld([])
+    assert w._hit(name[:3] + "\x01" + name[3:])
+    assert w._hit(name[:3] + "\t" + name[3:])
+    assert not w._hit("step\t1\tloss\t0.5\r")
+    masked, n = w.mask_text("a\tb\r\n" + name[:2] + "\x7f" + name[2:] + "\r\nc\td\r\n")
+    assert n == 1 and masked.split("\n")[0] == "a\tb\r" and masked.split("\n")[2] == "c\td\r"

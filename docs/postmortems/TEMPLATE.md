@@ -11,10 +11,10 @@ tags: [postmortem, research-bridge]
 
 <!--
 Copy to docs/postmortems/YYYY-MM-DD-<slug>.md. Rules: docs/postmortems/README.md.
-No withheld content, no experiment results, no message bodies, no secrets, placeholders only for server facts.
+No withheld content, no experiment results, no message bodies, no secrets, placeholders only for server facts (<NODE_HOST>, <NODE_USER>, <HUB_ADDR>, <HUB_SUBNET>).
 -->
 
-This document covers <what work, which commits or sessions>. It records what went wrong, how it surfaced, what was fixed and whether the fix was confirmed. It does not assign blame. Problems still open are in `docs/HANDOFF.md` §Follow-ups.
+This document covers <what work, which commits or sessions>. It records what went wrong, how it surfaced, what was fixed and whether the fix was confirmed. It does not assign blame. Problems still open are in `docs/issues/2026-11-10-triage.md`.
 
 ## How this was made
 
@@ -72,4 +72,4 @@ Abbreviations used: <spell out each one at first use, or link its source>.
 
 ## 5. Open items
 
-- <Item, and where it is tracked (HANDOFF §Follow-ups or a design candidate).>
+- <Item, and where it is tracked (`docs/issues/2026-11-10-triage.md` or a design candidate).>

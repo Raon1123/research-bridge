@@ -58,7 +58,7 @@ It extends the unified board rather than replacing it:
 - The 8765 server and the session-calendar generators live in the vault. This design reads their outputs; it does not change them, except for one optional link patch shipped through `vault-export/`.
 - The run view's experiment data comes from the server through the `trm-research` MCP (`list_runs`, `get_run_context`; vault `session-calendar/README.md`), not through research-bridge. The share builder reads the laptop files that the run view already wrote; it makes no server call of its own.
 - Node-side autoresearch events are blocked until unified-board Open question 6 is decided (`.jsonl` is refused by `MASK_EXT`). Until then the stage section shows the node's refusal.
-- The repository is public: placeholders only (`<HUB_LAN_IP>`, `<NODE_HOST>`, …).
+- The repository is public: placeholders only (`<HUB_HOST>`, `<NODE_HOST>`, …).
 
 ## 6. Architecture
 
@@ -147,7 +147,7 @@ Weekly cost (`status.json` `cost_usd`) is owner tier only by default (Open quest
 |---|---|---|---|
 | G1 | `tests/test_share.py::test_all_sections_present` | unit test | passes (2026-11-06, dev server) |
 | G2 | `tests/test_share.py::test_unknown_source_field_not_copied` (add a field to a fixture; it must not appear) | unit test | passes (2026-11-06, dev server) |
-| G3 | `tests/test_share.py::test_serve_only_two_files` (`/`, `/../`, `/md?…`, encoded traversal, symlink → 404); live: same paths against `<HUB_LAN_IP>:<SHARE_PORT>` | unit test; live check | unit test passes (2026-11-06, dev server); live check not run |
+| G3 | `tests/test_share.py::test_serve_only_two_files` (`/`, `/../`, `/md?…`, encoded traversal, symlink → 404); live: same paths against `<HUB_HOST>:<SHARE_PORT>` | unit test; live check | unit test passes (2026-11-06, dev server); live check not run |
 | G4 | `tests/test_share.py::test_stale_and_failed_sources_marked` | unit test | passes (2026-11-06, dev server) |
 | G5 | `tests/test_share.py::test_sources_unchanged` (sha256 before and after) | unit test | passes (2026-11-06, dev server) |
 | G6 | `tests/test_share.py::test_shared_tier_has_no_waiting_list_or_pending_details` | unit test | passes (2026-11-06, dev server) |

@@ -4,16 +4,32 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import subprocess
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import sshenv
 from rb_node.protocol import CHUNK, MAX_FILE, ProtocolError, encode, read_message
 
 
+CODES = ("no_agent", "agent_empty", "key_not_loaded", "node_refused_key", "host_key_unknown",
+         "host_key_changed", "unknown_alias", "unreachable", "timeout", "closed")
+AGENT_CODES = ("no_agent", "agent_empty", "key_not_loaded")
+NODE_DOCTOR = ("on the node: rb-node doctor (node code before 0.2.0 has no doctor: "
+               "run scripts/node-install.sh --update first, or rb-node config check)")
+
+
 class TransportError(Exception):
-    pass
+    def __init__(self, message: str, code: str = "closed", hint: str = "") -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.hint = hint
+
+    def __str__(self) -> str:
+        return "%s (next: %s)" % (self.message, self.hint) if self.hint else self.message
 
 
 class AgentLockedError(TransportError):
@@ -28,33 +44,115 @@ class RemoteError(Exception):
 
 
 def default_argv(alias: str) -> List[str]:
-    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", alias]
+    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=15",
+            "-o", "ServerAliveCountMax=3", alias]
+
+
+def _error(code: str, message: str, hint: str) -> TransportError:
+    cls = AgentLockedError if code in AGENT_CODES else TransportError
+    return cls(message, code, hint)
+
+
+def classify(code: Optional[int], stderr: str, alias: str, node: str,
+             sock: Optional[Path]) -> TransportError:
+    """Map an ssh failure to a TransportError (design 6.4). stderr is matched, never copied."""
+    if code == 255:
+        if "REMOTE HOST IDENTIFICATION HAS CHANGED" in stderr:
+            return _error("host_key_changed", "host key of %s changed" % alias,
+                          "do not connect; compare fingerprints on the node console, "
+                          "see rb doctor --node %s" % node)
+        if "host key is known for" in stderr or "Host key verification failed" in stderr:
+            return _error("host_key_unknown", "no known_hosts entry for %s" % alias,
+                          "rb setup --node %s" % node)
+        m = re.search(r"Could not resolve hostname ([^\s:]+)", stderr)
+        if m and m.group(1).lower() == alias.lower():
+            return _error("unknown_alias", "ssh has no Host block for %s" % alias,
+                          "rb setup --node %s --host HOST --user USER" % node)
+        if ("Timeout, server" in stderr or "timed out during banner exchange" in stderr
+                or "Connection timed out" in stderr):
+            return _error("timeout", "%s did not answer in time" % alias,
+                          "retry; if it repeats: rb doctor --node %s" % node)
+        if ("Could not resolve host" in stderr or "Connection refused" in stderr
+                or "No route to host" in stderr or "Network is unreachable" in stderr):
+            return _error("unreachable", "cannot reach %s (network or address)" % alias,
+                          "rb doctor --node %s" % node)
+        if "Permission denied (publickey" in stderr:
+            refused = _error(
+                "node_refused_key", "%s refused the key" % alias,
+                "%s (authorized_keys line and from=); --hub-from may be wrong if a router "
+                "translates addresses" % NODE_DOCTOR)
+            key = sshenv.identity_file(alias, sshenv.key_names(node))
+            if key is not None and sshenv.key_unencrypted(key):
+                return refused
+            rc = sshenv.agent_rc(sock)
+            if rc == 2:
+                return _error("no_agent", "no ssh-agent reachable for %s" % alias, "rb agent")
+            if rc == 1:
+                return _error("agent_empty", "the ssh-agent holds no keys", "rb agent")
+            fp = sshenv.fingerprint(Path(str(key) + ".pub")) if key is not None else None
+            if fp is None or sock is None or fp in sshenv.agent_fingerprints(sock):
+                return refused
+            return _error("key_not_loaded", "the key for %s is not in the ssh-agent" % alias,
+                          "rb agent --node %s" % node)
+    return _error("closed", "connection to %s closed (exit %s)" % (alias, code), NODE_DOCTOR)
+
+
+def normalize_hello(raw: Any) -> Dict[str, Any]:
+    """Return a hello result with protocol-2 keys present (protocol 1 when the node omits them)."""
+    if not isinstance(raw, dict):
+        raise TransportError("bad response to hello (not an object)")
+    protocol = raw.get("protocol")
+    extra = raw.get("withheld_extra")
+    return {
+        "node": str(raw.get("node", "")),
+        "version": str(raw.get("version", "")),
+        "protocol": protocol if isinstance(protocol, int) and not isinstance(protocol, bool) else 1,
+        "ops": raw["ops"] if isinstance(raw.get("ops"), list) else None,
+        "state": raw["state"] if isinstance(raw.get("state"), dict) else None,
+        "withheld_extra": extra if isinstance(extra, int) and not isinstance(extra, bool) else None,
+    }
+
+
+def _popen(argv: List[str], env: Optional[Dict[str, str]]) -> subprocess.Popen:
+    return subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=env)
 
 
 class NodeClient:
     def __init__(self, alias: str, ssh_argv: Optional[List[str]] = None,
-                 env: Optional[Dict[str, str]] = None) -> None:
+                 env: Optional[Dict[str, str]] = None, node: str = "") -> None:
         self.alias = alias
+        self.node = node or (alias[3:] if alias.startswith("rb-") else alias)
+        self.default_argv = ssh_argv is None
         self.argv = list(ssh_argv) if ssh_argv is not None else default_argv(alias)
         self.env = env
+        self.agent_sock = None  # type: Optional[Path]
         self.proc = None  # type: Optional[subprocess.Popen]
         self._n = 0
         self._err = []  # type: List[bytes]
         self._err_thread = None  # type: Optional[threading.Thread]
 
     def __enter__(self) -> "NodeClient":
+        extra = self.env
+        if self.default_argv and self.env is None:
+            self.agent_sock = sshenv.agent_socket(self.alias, sshenv.key_names(self.node))
+            if self.agent_sock is not None:
+                extra = {"SSH_AUTH_SOCK": str(self.agent_sock)}
         env = None
-        if self.env is not None:
+        if extra is not None:
             env = dict(os.environ)
-            env.update(self.env)
+            env.update(extra)
         try:
-            self.proc = subprocess.Popen(self.argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                         stderr=subprocess.PIPE, env=env)
+            self.proc = _popen(self.argv, env)
         except OSError as exc:
-            raise TransportError("cannot start ssh: %s" % type(exc).__name__)
+            raise TransportError("cannot start ssh (%s)" % type(exc).__name__, "closed",
+                                 "install openssh-client")
         self._err_thread = threading.Thread(target=self._drain, daemon=True)
         self._err_thread.start()
         return self
+
+    def hello(self) -> Dict[str, Any]:
+        return normalize_hello(self.call("hello"))
 
     def _drain(self) -> None:
         try:
@@ -103,9 +201,13 @@ class NodeClient:
             if self._err_thread:
                 self._err_thread.join(timeout=2)
         stderr = b"".join(self._err).decode("utf-8", "replace")
-        if code == 255 and "Permission denied (publickey" in stderr:
-            return AgentLockedError("ssh key unavailable (agent locked?)")
-        return TransportError("connection to %s closed (exit %s)" % (self.alias, code))
+        sock = self.agent_sock
+        if sock is None and self.env and self.env.get("SSH_AUTH_SOCK"):
+            sock = Path(self.env["SSH_AUTH_SOCK"])
+        exc = classify(code, stderr, self.alias, self.node, sock)
+        if exc.code in AGENT_CODES or exc.code == "node_refused_key":
+            sshenv.forget(self.alias)
+        return exc
 
     def call(self, op: str, **args: Any) -> Any:
         if self.proc is None or self.proc.stdin is None or self.proc.stdout is None:
@@ -119,7 +221,7 @@ class NodeClient:
         except (OSError, ValueError):
             raise self._transport_failure()
         except ProtocolError as exc:
-            raise TransportError("bad response: %s" % exc.code)
+            raise TransportError("bad response from %s" % self.alias, "closed", NODE_DOCTOR)
         if resp is None:
             raise self._transport_failure()
         if resp.get("ok") is not True:

@@ -1,9 +1,10 @@
 # Node-side job approval (SEC-01) — design
 
-Date: 2026-11-03 · Status: draft · Author: research-bridge session "MVP scope review" · Code: `rb_node/approval.py` (new), `rb_node/jobs.py`, `rb_node/remote.py`, `rb_node/cli.py`, `rb_node/config.py`, `rb_node/audit.py`, `rb_host/jobs.py`, `rb_host/cli.py`, `vault-export/dashboard/rb_pending.py` · Data: node `~/.research-bridge/approve.json`, node `mailbox/state/approve_fail.json`
+Date: 2026-11-03 · Status: draft, not user-approved; built: merged from branch `claude/sec-01-02-fixes` in PR 27 (merge commit 933edc3, branch tip 682509c; `rb_node/approval.py`) · Author: research-bridge session "MVP scope review" · Code: `rb_node/approval.py` (new), `rb_node/jobs.py`, `rb_node/remote.py`, `rb_node/cli.py`, `rb_node/config.py`, `rb_node/audit.py`, `rb_host/jobs.py`, `rb_host/cli.py`, `vault-export/dashboard/rb_pending.py` · Data: node `~/.research-bridge/approve.json`, node `mailbox/state/approve_fail.json`
 
 Status history:
 - 2026-11-03 draft; implemented on branch `claude/sec-01-02-fixes` at the user's request ("fix both", for SEC-01 and SEC-02 in GitHub issue 26). The design itself has not been reviewed by the user.
+- 2026-11-10 status set to built (lifecycle in `docs/design/README.md`): merged to `main` on 2026-11-03 in PR 27 (merge commit 933edc3). The verifier on node1 is not confirmed (issue 8). The design is still not user-approved.
 
 ## 1. Intent
 

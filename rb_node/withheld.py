@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -18,17 +19,24 @@ FALLBACK_PATTERNS = [
 
 # .svg is XML text (labels live in <text> elements), so it is scanned, not name-checked only.
 _TEXT_EXT = {".tex", ".md", ".txt", ".csv", ".json", ".svg"}
+_ASCII_CTRL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")  # ASCII C0 controls and DEL, not newline
 _NAME_ONLY_EXT = {".png", ".jpg", ".jpeg"}
 
 
-def _compile(patterns: List[str]) -> list:
+def _compile_report(patterns: List[str]) -> Tuple[list, List[int]]:
+    """Compiled patterns and the indexes (into `patterns`) of those that failed to compile."""
     out = []
-    for p in patterns:
+    failed = []  # type: List[int]
+    for i, p in enumerate(patterns):
         try:
             out.append(re.compile(p))
         except re.error:
-            continue
-    return out
+            failed.append(i)
+    return out, failed
+
+
+def _compile(patterns: List[str]) -> list:
+    return _compile_report(patterns)[0]
 
 
 def _as_list(v: object) -> list:
@@ -40,9 +48,15 @@ class Withheld:
         # The fallback is always included, so an empty or broken source cannot disable it.
         self.patterns = list(FALLBACK_PATTERNS) + [p for p in patterns if p not in FALLBACK_PATTERNS]
         self._re = _compile(self.patterns)
+        # Indexes into `patterns` (the source list) that failed to compile; fallbacks never appear.
+        self.rejected_indexes = [i for i, p in enumerate(patterns)
+                                 if p not in FALLBACK_PATTERNS and not _compile([p])]  # type: List[int]
+        self.rejected_count = len(self.rejected_indexes)
+        self.source_set = False
         # Set by load(): None, "unreadable" or "unparseable" when a source was given but unusable.
         self.source_error = None  # type: Optional[str]
-        self.extra_count = len(self.patterns) - len(FALLBACK_PATTERNS)
+        # Compiled patterns from the source, without duplicates of the fallback patterns.
+        self.extra_count = len(self.patterns) - len(FALLBACK_PATTERNS) - self.rejected_count
 
     @classmethod
     def load(cls, source: Optional[Path]) -> "Withheld":
@@ -77,10 +91,27 @@ class Withheld:
                 error = error or "unparseable"
         w = cls(extra)
         w.source_error = error
+        w.source_set = source is not None
         return w
 
     def _hit(self, text: str) -> bool:
-        return any(r.search(text) for r in self._re)
+        if any(r.search(text) for r in self._re):
+            return True
+        if text.isascii():
+            # ASCII has no Cf, Zl or Zp character, and its C* characters are the controls below
+            # (the newline is kept). Lines with tabs or a carriage return are common, so this
+            # case avoids the per-character loops.
+            plain = _ASCII_CTRL.sub("", text)
+            return plain != text and any(r.search(plain) for r in self._re)
+        # a name split by a soft hyphen, a zero-width space, U+2028 or U+0085 still reads as the
+        # name once a viewer drops those characters. Two extra copies are tested: one without
+        # Unicode format characters (Cf), one without any C* character and line/paragraph
+        # separator (Zl, Zp), except the newline, so patterns never match across lines.
+        # The checks only add to the plain test above.
+        no_cf = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+        no_c = "".join(ch for ch in text if ch == "\n" or not (
+            unicodedata.category(ch)[0] == "C" or unicodedata.category(ch) in ("Zl", "Zp")))
+        return any(v != text and any(r.search(v) for r in self._re) for v in (no_cf, no_c))
 
     def name_hit(self, path: str) -> bool:
         return self._hit(str(path).replace("\\", "/"))

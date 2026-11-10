@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 DEFAULT_RB = "~/.research-bridge"
 
@@ -14,34 +14,68 @@ def _home(p: str) -> str:
     return os.path.expanduser(p)
 
 
-DEFAULT_TRM = _home("~/project/trm")
+def default_trm() -> str:
+    return _home("~/project/trm")
+
+
+PATH_KEYS = ("trm_root", "queue_dir", "withheld_source", "claude_bin", "mailbox_root",
+             "audit_path", "approval_path", "harness_root")
+PATH_LIST_KEYS = ("read_roots", "write_roots")
+
+
+def _rb(sub: str) -> str:
+    return _home(DEFAULT_RB + sub)
 
 
 @dataclass
 class NodeConfig:
-    trm_root: str = DEFAULT_TRM
+    # Path defaults are computed when the object is built, so HOME at that moment decides them.
+    trm_root: str = field(default_factory=default_trm)
     read_roots: List[str] = field(default_factory=lambda: [
         "lab/registry/", "lab/experiments/", "lab/reports/", "reports/figures/",
-        _home(DEFAULT_RB + "/mailbox/out/")])
+        _rb("/mailbox/out/")])
     write_roots: List[str] = field(default_factory=lambda: [
-        _home(DEFAULT_RB + "/mailbox/in/"), DEFAULT_TRM + "/scripts/queue/jobs"])
-    queue_dir: str = DEFAULT_TRM + "/scripts/queue"
-    withheld_source: Optional[str] = DEFAULT_TRM + "/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml"
+        _rb("/mailbox/in/"), default_trm() + "/scripts/queue/jobs"])
+    queue_dir: str = field(default_factory=lambda: default_trm() + "/scripts/queue")
+    withheld_source: Optional[str] = field(
+        default_factory=lambda: _rb("/withheld-patterns.json"))
     claude_bin: str = field(default_factory=lambda: _home("~/.local/bin/claude"))
     job_template: List[str] = field(default_factory=list)  # argv with {config} placeholder
     # GPU indices a bridge job may run on (the node owner's GPUs). Empty -> job_submit refused
     # (no_allowed_gpus) and run-job launches nothing. Set from the node console only.
     allowed_gpus: List[int] = field(default_factory=list)
     max_file: int = 50 * 1024 * 1024
-    mailbox_root: str = _home(DEFAULT_RB + "/mailbox")
-    audit_path: str = _home(DEFAULT_RB + "/audit.jsonl")
+    mailbox_root: str = field(default_factory=lambda: _rb("/mailbox"))
+    audit_path: str = field(default_factory=lambda: _rb("/audit.jsonl"))
     # job approval verifier, set only from the node console (rb-node approve-key set); keep it
     # outside read_roots and write_roots. Missing -> job_submit / job_cancel refused.
-    approval_path: str = _home(DEFAULT_RB + "/approve.json")
+    approval_path: str = field(default_factory=lambda: _rb("/approve.json"))
     # Where read_doc looks up EXP-nnn and H-nnn by id (relative to trm_root; must lie in read_roots).
     experiments_dir: str = "lab/experiments"
     hypotheses_path: str = "lab/registry/HYPOTHESES.md"
     harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
+
+
+def default_dependents(root: str) -> Dict[str, Any]:
+    """Defaults that follow the research tree root."""
+    return {"queue_dir": root + "/scripts/queue",
+            "queue_jobs": root + "/scripts/queue/jobs",
+            "old_withheld": root + "/lab/11_governance/11_lab-root/WITHHELD_RUNS.yaml"}
+
+
+def expand_paths(data: dict) -> dict:
+    """Expand a leading ~ in every path key and every path-list entry."""
+    out = dict(data)
+    for k in PATH_KEYS:
+        v = out.get(k)
+        if isinstance(v, str) and v.startswith("~"):
+            out[k] = os.path.expanduser(v)
+    for k in PATH_LIST_KEYS:
+        v = out.get(k)
+        if isinstance(v, list):
+            out[k] = [os.path.expanduser(e) if isinstance(e, str) and e.startswith("~") else e
+                      for e in v]
+    return out
 
 
 def config_path() -> Path:
@@ -60,4 +94,5 @@ def load_config(path: Optional[Path] = None) -> NodeConfig:
     if not isinstance(data, dict):
         raise ValueError("node config must be a JSON object: %s" % p)
     known = {f.name for f in fields(NodeConfig)}
+    data = expand_paths(data)
     return NodeConfig(**{k: v for k, v in data.items() if k in known})

@@ -68,6 +68,25 @@ def _load(path: Path) -> Optional[dict]:
     return rec
 
 
+def path_inside_roots(cfg) -> bool:
+    """True when approval_path lies inside a read or write root (the bridge key could write it)."""
+    ap = os.path.realpath(str(cfg.approval_path))
+    roots = [r if os.path.isabs(r) else os.path.join(str(cfg.trm_root), r)
+             for r in list(cfg.read_roots) + list(cfg.write_roots)]
+    roots.append(str(cfg.mailbox_root))  # the hub writes attachments there
+    for root in roots:
+        root = os.path.realpath(root)
+        if ap == root or ap.startswith(root.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+def require_safe_path(cfg) -> None:
+    if path_inside_roots(cfg):
+        raise ProtocolError("approval_path_unsafe",
+                            "approval_path lies inside a read/write root; fix it on the node console")
+
+
 def params(path: Path) -> dict:
     """Public parameters for the laptop's derive(); no secret."""
     rec = _load(path)

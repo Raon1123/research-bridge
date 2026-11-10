@@ -8,7 +8,7 @@ import shlex
 from pathlib import Path
 from typing import Any, List, Optional, Set
 
-from . import approval, gitinfo
+from . import approval, gitinfo, spawn
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _mkdir, _read_json, _write_json
 from .protocol import ProtocolError
@@ -33,18 +33,23 @@ def _idem_load(state: Path) -> dict:
         return {}
 
 
-def _idem_lookup(state: Path, key: str, op: str) -> Optional[dict]:
+def _idem_lookup(state: Path, key: str, op: str, job_id: Optional[str] = None) -> Optional[dict]:
     entry = _idem_load(state).get(key)
     if entry is None:
         return None
     if entry.get("op") != op:
         raise ProtocolError("conflict", "idempotency_key already used by another op")
+    stored = entry.get("job_id")  # absent in entries written by earlier versions
+    if isinstance(stored, str) and isinstance(job_id, str) and stored != job_id:
+        raise ProtocolError("conflict", "idempotency_key already used for another job")
     return entry["result"]
 
 
-def _idem_store(state: Path, key: str, op: str, result: dict) -> None:
+def _idem_store(state: Path, key: str, op: str, result: dict, job_id: Optional[str] = None) -> None:
     data = _idem_load(state)
     data[key] = {"op": op, "result": result}
+    if job_id is not None:
+        data[key]["job_id"] = job_id
     _write_json(_idem_path(state), data)  # tmp + os.replace
 
 
@@ -149,8 +154,9 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     state = mb.root / "state"
     key = _key(args)
     # SEC-01: before any lookup or write, so a refused call leaves nothing behind
+    approval.require_safe_path(cfg)
     approval.check(Path(cfg.approval_path), state, args)
-    prior = _idem_lookup(state, key, "job_submit")
+    prior = _idem_lookup(state, key, "job_submit", args.get("job_id"))
     if prior is not None:
         return prior
     # PM-12: after approval and replay. None = GPU list unreadable; empty = read, no GPUs.
@@ -176,14 +182,20 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     validate_budget(args, known_gpus, allowed)
     config_path = _finalize_config(cfg, mb, job_id, config_name, sha)
     gpus = args["gpus"]
-    argv = ["rb-node", "run-job", "--gpus", ",".join(str(g) for g in gpus),
-            "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
+    launcher = spawn.launcher_argv()
+    argv = launcher + ["run-job", "--gpus", ",".join(str(g) for g in gpus),
+                       "--gpu-hours", str(args["gpu_hours"]), "--job-id", job_id, "--"]
     argv += [t.replace("{config}", str(config_path)).replace("{config_dir}", str(config_path.parent))
              .replace("{config_stem}", config_path.stem) for t in cfg.job_template]
     git = gitinfo.repo_state(Path(cfg.trm_root))  # pinned at submit; run-job records the start state
     _mkdir(state / "git")
     _write_json(state / "git" / (job_id + ".json"), git)
-    body = "#!/bin/bash\nexec %s\n" % " ".join(shlex.quote(a) for a in argv)
+    cmd = " ".join(shlex.quote(a) for a in argv)
+    if len(launcher) > 1:  # python fallback: the package must be importable from the queue runner
+        pkg_parent = str(Path(__file__).resolve().parent.parent)
+        body = "#!/bin/bash\nPYTHONPATH=%s exec %s\n" % (shlex.quote(pkg_parent), cmd)
+    else:
+        body = "#!/bin/bash\nexec %s\n" % cmd
     queue = Path(cfg.queue_dir)
     jobs_dir = queue / "jobs"
     jobs_dir.mkdir(parents=True, exist_ok=True)
@@ -193,21 +205,26 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
         fh.write(body)
     os.replace(str(tmp), str(target))
     result = {"queued": str(target), "git": {k: git.get(k) for k in ("head", "dirty_files") if k in git}}
-    _idem_store(state, key, "job_submit", result)
+    _idem_store(state, key, "job_submit", result, job_id)
     return result
 
 
 def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
     state = mb.root / "state"
     key = _key(args)
+    approval.require_safe_path(cfg)
     approval.check(Path(cfg.approval_path), state, args)
-    prior = _idem_lookup(state, key, "job_cancel")
+    prior = _idem_lookup(state, key, "job_cancel", args.get("job_id"))
     if prior is not None:
         return prior
     job_id = _check_id(_str(args, "job_id"))
     queue = Path(cfg.queue_dir)
     result = None  # type: Any
-    pending = sorted((queue / "jobs").glob("*_%s.job" % job_id)) if (queue / "jobs").is_dir() else []
+    esc = re.escape(job_id)
+    pending_re = re.compile(r"^\d+_%s\.job$" % esc)
+    running_re = re.compile(r"^\d+_%s\.job(\..*)?$" % esc)
+    pending = sorted(p for p in (queue / "jobs").iterdir() if pending_re.match(p.name)) \
+        if (queue / "jobs").is_dir() else []
     if pending:
         for p in pending:
             p.unlink()
@@ -216,7 +233,7 @@ def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
         result = {"cancelled": "pending"}
     else:
         running = (queue / "processing").is_dir() and any(
-            (queue / "processing").glob("*_%s.job*" % job_id))
+            running_re.match(p.name) for p in (queue / "processing").iterdir())
         rec_path = state / "jobs" / (job_id + ".json")
         if not running and rec_path.is_file():
             try:
@@ -228,5 +245,5 @@ def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
         _mkdir(state / "cancel")
         (state / "cancel" / job_id).write_text("cancel\n", encoding="utf-8")
         result = {"cancelled": "requested"}
-    _idem_store(state, key, "job_cancel", result)
+    _idem_store(state, key, "job_cancel", result, job_id)
     return result

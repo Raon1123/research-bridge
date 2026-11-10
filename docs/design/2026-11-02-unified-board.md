@@ -1,10 +1,11 @@
 # Unified research board (autoresearch + research-bridge) — design
 
-Date: 2026-11-02 · Status: draft (steps 3–5 implemented 2026-11-03, not merged; not yet user-approved) · Author: research-bridge session "Design/postmortem templates" · Code: `rb_host/` (new `board` module and `rb board` CLI), `vault-export/dashboard/` (8765 route patch), `deploy/node.json.example` (read roots) · Data: `D:/raw/research-bridge/board/` (laptop cache)
+Date: 2026-11-02 · Status: draft, not user-approved; built: steps 3–5 (board module, `rb board` CLI, `/board` page patch in `vault-export/`) merged in PR 23 (merge commit 2bd8841, branch tip 7df8fd8); the vault copy of the patch is a pending laptop step (issue 13) · Author: research-bridge session "Design/postmortem templates" · Code: `rb_host/` (new `board` module and `rb board` CLI), `vault-export/dashboard/` (8765 route patch), `deploy/node.json.example` (read roots) · Data: `D:/raw/research-bridge/board/` (laptop cache)
 
 Status history:
 - 2026-11-02 draft
 - 2026-11-03 still draft; steps 3–5 implemented on branch `claude/mvp-scope-review-01fb0e`: `rb_host/board.py`, `rb board refresh|show`, `vault-export/dashboard/rb_board.py` + `server.py.board.patch`, tests (§10). Open questions answered with their defaults in code, not by the user (§13).
+- 2026-11-10 status set to built (lifecycle in `docs/design/README.md`): steps 3–5 were merged to `main` on 2026-11-03 in PR 23 (merge commit 2bd8841). The design is still not user-approved; open questions remain in issue 14.
 
 ## 1. Intent
 

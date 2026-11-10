@@ -109,14 +109,18 @@ def test_get_file_killed_mid_transfer(node, tmp_path):
     assert dest.is_file()
 
 
-def test_agent_locked(tmp_path):
+def test_agent_locked(tmp_path, monkeypatch):
+    from rb_host import sshenv
+    monkeypatch.setattr(sshenv, "identity_file", lambda alias, n=None: None)
+    monkeypatch.setattr(sshenv, "agent_rc", lambda sock: 2)
     script = tmp_path / "fakessh.py"
     script.write_text(
         "import sys\nsys.stderr.write('x@h: Permission denied (publickey).\\n')\nsys.exit(255)\n",
         encoding="utf-8")
     with NodeClient("x", ssh_argv=[sys.executable, str(script)]) as c:
-        with pytest.raises(AgentLockedError):
+        with pytest.raises(AgentLockedError) as ei:
             c.call("hello")
+    assert ei.value.code == "no_agent"
     assert issubclass(AgentLockedError, TransportError)
 
 
@@ -127,12 +131,14 @@ def test_other_exit_is_transport_error(tmp_path):
         with pytest.raises(TransportError) as ei:
             c.call("hello")
     assert not isinstance(ei.value, AgentLockedError)
+    assert ei.value.code == "closed"
 
 
 def test_default_argv():
     from rb_host.client import default_argv
     assert default_argv("rb-node1") == ["ssh", "-o", "BatchMode=yes", "-o",
-                                         "ConnectTimeout=15", "rb-node1"]
+                                         "ConnectTimeout=15", "-o", "ServerAliveInterval=15",
+                                         "-o", "ServerAliveCountMax=3", "rb-node1"]
 
 
 def test_unknown_alias():

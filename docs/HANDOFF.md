@@ -1,10 +1,12 @@
-# research-bridge handoff — 2026-11-10
+# research-bridge state — 2026-11-10
 
-Read `AGENTS.md` first (rules, layout, test commands).
+Read `AGENTS.md` first. The previous text of this file (the 2026-11-05 plan with laptop-hub steps) is in git history: `git log -p -- docs/HANDOFF.md`.
+
+Commands: `rb` below means `uv run --extra host rb`, run in the repository's main checkout with the same `RB_HOST_ROOT` (hub data root, `<data_root>`) as before. Abbreviations: SSH = Secure Shell; MCP = Model Context Protocol (the tool interface of Claude sessions); B2, B3 = the security checks and the first live run in `docs/provisioning.md`. People type the commands as shown; a session prefixes them with `rtk proxy` (plain `rtk` hides the `next:` lines of `rb doctor`).
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
-This section is newer than everything below it. Where they disagree (for example "nothing has been installed on node1"), this section wins.
+Written by a session on node1 against `main` after PR 46 (merged into this branch on 2026-11-10 together with PR 47). It is newer than "The real link" below on what is installed on node1: the node already runs `scripts/node-install.sh` code of the `claude/node-allowed-gpus` branch (`rb_node` before this branch's `doctor`, `link` and protocol 2). Where the two disagree about the node, this section wins.
 
 Observed on node1:
 
@@ -13,7 +15,7 @@ Observed on node1:
 - The node audit log has hub ops from 2026-11-06 on (`hello`, `git_status`, `queue_status`, `gpu_status`, `read_doc`). It has no `msg_*`, `respond` or `job_submit` entry: the message and job paths have not run from the hub.
 - The research queue is busy: four workers on GPUs 4–7 and about 50 queued jobs. A bridge job gets the highest number plus one, so it starts only after those.
 
-Changed on the branch (345 tests pass):
+Changed by PRs 46 and 47 (345 tests passed on node1 before the merge):
 
 - `allowed_gpus` (new `node.json` key). Before, `job_submit` accepted every index `nvidia-smi` reports and `run-job` replaced the worker's `CUDA_VISIBLE_DEVICES` with the requested ids, so an approved job could run on another user's GPU (0–3) or on a GPU a second worker was using. Now: empty or malformed `allowed_gpus` refuses `job_submit` (`no_allowed_gpus`); a GPU outside the list or more than one GPU is `invalid`; `run-job` runs a one-GPU job on the worker's GPU (record and event carry `gpus_used`) and starts nothing outside the list (`failed`, reason `gpu_not_allowed`, exit 126).
 - A by-name template (`{config_stem}`) takes `.yaml` only.
@@ -29,103 +31,72 @@ Open after these tests:
 2. **Config content.** A submitted config is the whole primary config. It must start with `defaults: [cfg_pretrain, _self_]` to inherit the base; without it the job gets only the keys in the file. Queue jobs written by hand pass `+project_name` and `+run_name` as overrides; a submitted config has to set them itself.
 3. **Hub side, not yet run:** `hello` (expect `withheld_extra > 0`), `send_message` with a small pdf then `poll`, `poll` for the `job_finished` event of job `rbtest-20261110` (posted by the console test, status `budget_exceeded`), `cancel_job` + `rb approve` against a console `rb-node run-job ... -- sleep 600`, and a real `submit_job` once the queue has room.
 4. **Multi-GPU jobs** are refused until the queue has a way to give one job several GPUs.
-5. The hub does not know `allowed_gpus`: a wrong GPU in `submit_job` is refused only at approval. Showing the list in `gpu_status` is a possible follow-up.
+5. The hub does not know the list itself: a wrong GPU in `submit_job` is refused only at approval. After the merge, `hello` carries the boolean `allowed_gpus_set` and `rb doctor --node` reports it (`node_allowed_gpus`, warn when unset); showing the list in `gpu_status` is a possible follow-up.
 6. Not checked in this session (the user's to check): the options on the two bridge lines in node1's `authorized_keys`, and what `~/.ssh/research-bridge/` on node1 holds (hub private keys do not belong on the node).
 
 ## Resume snippet
 
-> research-bridge (`main` at the merge of PR 35) is built and reviewed, and the pre-live-run security fixes from the whole-branch review are merged (PRs 32–35, 2026-11-05). Nothing has been installed on node1 and no SSH key or config has been created. Development continues on another machine (a development server) from 2026-11-05; superseded the same day: that server is now also the **hub** (§Hub moved to the Linux development server). The original plan below kept the laptop as the hub (it runs the 8765 dashboard, holds the SSH keys and `host.json`, and is where `rb approve` is typed). Next: the user decides items 2–4 below and does A1–A3, then the session runs B1 (with the pattern file), B2 (with the two new checks) and B3, and records results.
+> The hub is the Linux server (user decision, 2026-11-05); the laptop keeps only the vault and its 8765 dashboard. One node, `node1`, is registered and answers with rb_node 0.1.0 (code before this branch). Branch `claude/review-optimize-2026-11-10` (local, not pushed, not merged) adds one-command setup and diagnosis, unattended sync and a read-only hub page, and node 0.2.0. Next: the user decides whether to push and merge it (decision 1 in `docs/issues/2026-11-10-triage.md` §5), then runs the terminal steps below; a session then runs the live checks of `docs/provisioning.md` after a go-ahead.
 
-## Hub moved to the Linux development server (2026-11-05, user decision)
+## The real link
 
-The user decided that the Linux development server is both the hub and the development machine; the laptop no longer takes the hub role. Nothing had been set up on the laptop, so nothing moves. Where this section and older text below disagree (for example "laptop only" rows, `C:/keys/...`, the laptop subnet), this section wins.
+Works (checked 2026-11-06): hub keys exist and the node accepts them; the node answers over SSH with rb_node 0.1.0; MCP `gpu_status` and `queue_status` returned results.
 
-- Done on the server (branch `claude/linux-hub`): platform defaults in `rb_host/config.py` (`RB_HOST_ROOT`; Linux default `~/.local/share/research-bridge` instead of a Windows path that Linux reads as relative), `rb config check` reports a missing withheld-pattern file, `rb config mcp` carries `RB_HOST_ROOT` in an `env` block, manual `docs/manual/hub-setup.md` §12. Data root `~/project/research-bridge-hub` (mode 700) with `host.json` for `node1`. 300 tests pass on Python 3.12.
-- Reopened: decision 1 (`from=` subnet) is now the server's subnet, recorded in `private/placeholders.md` as `<HUB_SUBNET>`. A1 keys go under `~/.ssh/research-bridge/` on the server; A2 `~/.ssh/config` on the server (none exists yet); `rb approve` is typed in a terminal on the server.
-- Not on the server: the vault, so no 8765 dashboard, no `/rb/approve` route, no session-calendar withheld JSON, no `rb board` portfolio/priorities sources. §Before B3 item 3 (PM-03, dashboard deploy) does not block B3 for a Linux hub; it applies only if the laptop dashboard is used later.
-- Before any live run: copy the withheld-pattern JSON to `~/project/research-bridge-hub/withheld_patterns.json` (§Before B3 item 1, hub half).
+Not done or not verified:
+- The node has no withheld pattern file loaded: `hello` reported `withheld_extra = 0`, so only the five fallback patterns are active. For that reason `read_doc`, `send_message` and `poll` were deliberately not exercised.
+- The 2026-11-06 hub checks did not confirm the approval verifier or `job_template`. The node1 section above (2026-11-10) found the verifier, `job_template` and `allowed_gpus` set; without `job_template` or `allowed_gpus` every job is refused.
+- The node has not been updated to the code of this branch.
+- The security checks (B2) and the first live run (B3) have not started.
 
-## Shared status page (2026-11-06, development server)
+## This branch (local only)
 
-Built on branch `claude/dashboard-planning-proposal-39dfca` (commits e68109a, 218d60a), design `docs/design/2026-11-06-shared-status-page.md` steps 3–4: `rb_host/share.py` builds `share/snapshot.json` and `index.html` from allowlisted fields of the session-calendar files, the run view files, the board cache and the ledger (withheld re-check, atomic writes, one audit line); `rb_host/share_serve.py` serves exactly `/`, `/index.html` and `/snapshot.json` (GET/HEAD, loopback by default, refuses a non-shared tier); 21 tests in `tests/test_share.py`. It was built without the vault, so the input formats are assumed (plan `docs/superpowers/plans/2026-11-06-shared-status-page.md` Global Constraints §A).
+`claude/review-optimize-2026-11-10`: not pushed, not merged. Nothing in it runs on the real hub or node yet.
 
-Run on the laptop:
+- Hub commands: `rb setup` (host.json, keys, ssh config blocks, host key comparison, agent, the node command, the MCP registration command, doctor), `rb agent` (load keys once per boot), `rb doctor [--offline]`, `rb service install|status` (systemd user units `rb-sync.timer`, `rb-sync.service`, `rb-web.service`), `rb web serve` (read-only page on `127.0.0.1:8767`; from the laptop: `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>`).
+- SSH errors carry a code and the next command (`no_agent`, `agent_empty`, `key_not_loaded`, `node_refused_key`, `host_key_unknown`, `host_key_changed`, `unknown_alias`, `unreachable`, `timeout`, `closed`). The MCP server finds the agent itself: no `SSH_AUTH_SOCK` in its entry, no session restart when the agent changes.
+- `rb sync` writes `<data_root>/sync/<node>.json`; items it stores are marked undelivered, so MCP `poll` still returns them. `send_message` keeps a masked copy of each sent body under `<data_root>/outbox/`.
+- Node: `scripts/node-install.sh` is the single node entry point; `rb-node doctor`; `rb-node link [DIR] [--apply]`; `hello` protocol 2 with a `state` object; defect fixes. Removed: `scripts/hub-connect.sh`, `scripts/hub-agent.sh`, `scripts/trm-link.sh`.
+- Designs (`docs/design/`, 2026-11-10): setup and diagnosis, sync and hub page (both implemented here; both design documents keep the status draft until the user accepts them); project profiles, experiment records (design only). Project facts: `docs/projects/trm.md`.
+- Tests: 854 passed on 2026-11-10 after merging `origin/main` (PRs 46, 47: `job_template` placeholders `{config_dir}` and `{config_stem}`, `allowed_gpus`) into this branch (Linux hub, Python 3.12). `rb-node config check` and `rb-node doctor` on the node report an empty `allowed_gpus` (check `allowed_gpus`).
 
-    rb config set share.calendar_sessions <path>
-    rb config set share.calendar_status <path>
-    rb config set share.runs <path>
-    # add "labels": [...] to the share block of host.json by hand (no label allowlist: every label shows as "other")
-    rb share build
-    rb share serve --port <SHARE_PORT>        # default 8766, bind 127.0.0.1; --bind 0.0.0.0 for the LAN
+## Next actions
 
-What the user does next:
+### Only the user, at a terminal
 
-- (a) Provide masked samples of the session-calendar sessions and status files and of the runs view data, so step 2 can replace the assumed formats.
-- (b) Decide issue #39 open questions 2–6 (design §15).
-- (c) Step 5: apply the `vault-export/dashboard/` `/share` loopback patch and the link from `/board` (not started).
-- (d) Step 6: live check on the laptop and from another device (not started).
-- (e) The two parked items (no `Host` header check on `rb share serve`; owner files under `share/owner/`) are the user's call; the defaults stand.
+1. Decide push and merge (decision 1). The node gets code with `git pull`, and `rb setup` and `rb service install` should run from the main checkout (setup warns in a worktree; the units call the `rb` of the installing environment). Then, on the hub, in the main checkout: `git pull` and `uv sync --extra host`. Then restart every Claude session on the hub before the first `rb sync`: an MCP server started on the old code never returns the items the new `rb sync` stores as not yet delivered.
+2. Hub terminal: `rb doctor --offline`. If `withheld_hub` is not ok, copy the session-calendar withheld pattern file from the laptop to `<data_root>/withheld_patterns.json` (the path `withheld_patterns_file` in `host.json` names).
+3. Node, with your own login (not the `rb-node1` alias, whose key runs only the forced command): copy the same file to `~/withheld-patterns.json`.
+4. Node console, in the node's research-bridge checkout:
 
-## Working from the development server
+       git pull --ff-only
+       scripts/node-install.sh --withheld-file ~/withheld-patterns.json
+       rb-node approve-key set
+       rb-node config set job_template '[..., "{config}"]'
+       rb-node config set allowed_gpus '[4, 5, 6, 7]'
+       rb-node doctor
 
-Clone or pull `main`; run `uv sync --extra host` as in `AGENTS.md`. What does not carry over from the laptop:
+   The installed script predates `--withheld-file`, so pull first (`git pull --ff-only`, or the installed script's `--update`), then run the new script; later updates are `scripts/node-install.sh --update`. Replace `[..., "{config}"]` with the project's job command as a JSON list containing `{config}`, `{config_dir}` or `{config_stem}` (`docs/manual/node-setup.md` §4.1.1); the value is a project fact (`docs/projects/trm.md`, decision 12). `allowed_gpus` is the list of GPU indices that belong to you (`[4, 5, 6, 7]` is the example from node1); empty, every job is refused with `no_allowed_gpus`. node1 already has both set (see the node1 section above).
+5. Hub terminal: `rb setup --node node1`. It skips what exists, compares the host key when `known_hosts` has no entry, and prints `claude mcp add-json --scope user research-bridge '...'` when the registered entry differs; if so, run `claude mcp remove research-bridge`, then the printed command, and restart the Claude session once.
+6. Hub terminal: `rb doctor --node node1`. Expected: `withheld_hub` ok, `node_version` 0.2.0 with protocol 2, `node_withheld`, `node_approval`, `node_job_template` and `node_allowed_gpus` ok.
+7. Hub terminal: `rb service install`, then paste the `systemctl --user ...` line it prints; `rb service status`.
+8. The security checks (B2) and the first live run (B3) in `docs/provisioning.md`.
 
-| Item | Where it lives | Note |
-|---|---|---|
-| Tests | anywhere | The dashboard and bridge-edge tests import the repository's own `vault-export/` copies, and `rb_host` comes from the editable install, so the whole suite runs without the vault. |
-| 8765 dashboard, `vault-export/` deployment | laptop only | Apply PR 35's `vault-export/` files there (see §Before B3). |
-| `rb approve`, `rb reject` | laptop only | Need a real console and the approval passphrase (`AGENTS.md` rule 1). |
-| SSH keys, `~/.ssh/config`, `host.json`, `~/.claude.json` MCP entry | laptop only | Connection direction is laptop to node (rule 2). Do not create keys on the development server. |
-| `private/` (real names and addresses) | laptop only, gitignored | The repository is public: placeholders only (`docs/CONTRIBUTING.md`). |
+### A session, after the user's go-ahead
 
-Line endings: copy `rb_node/` to node1 as LF files (`core.autocrlf=input`, or a Linux checkout).
+- The MCP calls of B3 (`send_message`, `poll`, `read_doc`, `submit_job`), only after step 6 shows `withheld_hub` and `node_withheld` ok; `rb approve` stays the user's.
+- Fill the Results section of `docs/provisioning.md` and write the postmortem of the first live run (`docs/postmortems/README.md`).
+- Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md` (none applied yet).
+- Laptop-only items (8765 dashboard, session browser, shared status page) are listed there too (#13, #18, #19, #39).
 
-## Before B3 (must do)
+## Pending decisions
 
-Code for PM-01 to PM-12, PM-14 and part of PM-17 is merged; what each fix covers is in `docs/postmortems/2026-11-03-whole-branch-review.md` (Fix verified fields). Four things are not code and are still open:
-
-1. **PM-07, B1:** copy the session-calendar withheld-pattern JSON to `~/.research-bridge/withheld-patterns.json` on node1 and point `withheld_source` at it. Check that `hello` reports `withheld_extra > 0` and that the node audit log has no `withheld_source` warning. Also check the laptop's `withheld_patterns_file` exists; a missing file silently falls back to the five fallback patterns.
-2. **PM-02, add to B2:** on node1, run the responder argv (`claude -p ... --tools Read,Grep,Glob --setting-sources ""`) and confirm it exits 0. If node1's Claude CLI rejects `--setting-sources ""`, every responder run ends in `responder_failed` and B3 gets no reply. Then ask the responder to run a shell command and expect a refusal.
-3. **PM-03, laptop (user approves):** copy `vault-export/dashboard/rb_pending.py`, `rb_board.py`, the updated `server.py.patch` and `vault-export/session-calendar/bridge_edges.py` to the vault, then restart 8765. Until then the running dashboard has no `Host` check. The new check fails closed: the rb pages return 403 if `server.py` does not pass the `Host` header.
-4. **PM-04 residual (accept or design):** a laptop session that can open a pseudo-console and knows the passphrase can still approve.
-
-## Issue tiers (2026-11-05)
-
-Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a message with an attachment to node1 and gets the reply, reads one H/EXP document, and a tiny job runs after `rb approve`; the user sees it on one page.
-
-| Tier | Issues | State |
-|---|---|---|
-| Done | bridge (Tasks 1–12); 10 whole-branch review; 12 board module + CLI; 13 `/board` page patch; PM-01..12, 14, 17 (page) and SEC-01..04, 07 | Merged. Issues 10, 12 and 13 are still open on GitHub and can be closed. |
-| User only, blocks B3 | 2 shared key, 3 `job_template`, 4 harness allowlist, 5 keys + aliases + `authorized_keys`, 6 laptop `uv sync` + `host.json` + `~/.claude.json`, 7 install on node1, 8 security checks + live run, 9 node read roots; 25 decide whether transport authentication comes before or after B3 | Not started. Order: 2–4, 5, 6, 7 (with 9's paths and §Before B3 item 1), 8 (with item 2). |
-| User decision | 14 board open questions; PM-18 masking gaps (case variants, text split across lines, zero-width characters) | Defaults are in code. |
-| After B3, need a design first | 15 ledger fields, 16 `reply_to` to node, 17 queue numbering lock, PM-13 laptop attachment root, PM-15 per-chunk re-read, PM-16 board fetch path, PM-17 server half (single-threaded approval), PM-19 `mcp` import in the dashboard, responder Read/Grep/Glob not confined to read roots, SEC-05 config loader, SEC-06 `pdftotext` exposure | Start from `docs/design/TEMPLATE.md`. |
-| After B3, vault side | 18 bridge edges on the session-browser main screen, 19 `verify.py` baseline | Laptop only. |
-| Repository | 11 first-build postmortem, 20 merge settings and old branches | Deferred. |
-
-## Pending decisions (user)
-
-1. ~~Laptop subnet for `from=`~~ — decided: `<LAPTOP_ETH_SUBNET>`.
-2. Does the shared key `<SHARED_KEY>` stay in node1's `authorized_keys`? Only the new keys are restricted by `restrict,from=...,command=...`; `<SHARED_KEY>` keeps an unrestricted shell. Plan default: it stays; clean up after the bridge is stable.
-3. `job_template` in the node's `node.json`: an argv list with a `{config}` placeholder. It ships empty and `job_submit` refuses (`no_job_template`) until it is set.
-4. Harness allowlist: from `60_Tools/sync/prepare_staging.py` (`HARNESS_FILES` = `CLAUDE.md`, `settings.json`, `rtk-reference.md`; `HARNESS_DIRS` = `commands`, `agents`, `hooks`, `workflows`). Confirm or change. `harness_root` is empty by default, so push and pull are refused until set.
-
-## Steps still to do
-
-**User (do not delegate):** A1 keys with passphrase under `C:/keys/research-bridge/` and `ssh-add`; A2 `rb-node1` and `rb-node1-harness` in `~/.ssh/config` (`IdentitiesOnly yes`, `StrictHostKeyChecking yes`); A3 the two `deploy/authorized_keys.example` lines on node1; laptop `uv sync --extra host` and `~/.claude.json` MCP entry; `host.json` (`{"nodes": {"node1": {"alias": "rb-node1", "harness_alias": "rb-node1-harness"}}}`); set the approval verifier on node1 with `rb-node approve-key set` (`docs/design/2026-11-03-node-side-approval.md`).
-
-**Session, after the user confirms each command:** B1 install with §Before B3 item 1; B2 the security checks in `docs/provisioning.md` plus item 2; B3 send a test message with a small pdf, `poll`, `read_doc("node1","H-001")`, submit a job with `gpu_hours=0.01`, `rb approve` on the laptop console, expect `job_finished` with `budget_exceeded` or `done`; then fill the Results section of `docs/provisioning.md` and write a postmortem of the run.
-
-## Notes
-
-- 2026-11-05 fixes were made by four implementer subagents, one per area (node masking, responder, laptop storage, approval), each followed by a task review, fix rounds and a scoped re-review, then one cross-branch review. Rulings made then: `.tex` with a hit is denied by `read_doc` (not masked); the responder prompt drops the work-directory sentence instead of gaining a write tool; an unreadable GPU list gives `gpu_status_unavailable` and an empty one `no_gpus`; an event body masked to nothing becomes `{"event":"withheld","withheld_lines":N}`; `--setting-sources ""` is kept until B2 shows otherwise.
-- Known minor gaps left open: an attachment name long enough to exceed the Windows path limit is retried on every poll; the node's `withheld_lines` / `withheld_attachments` counts are not kept in laptop provenance; the audit warning for an unparseable withheld source repeats on every connection.
-- Hashes in `docs/history/` predate the 2026-11-02 rewrite of `main` (mapping in `docs/postmortems/2026-10-27-sdd-build.md`).
-- The branch `research-bridge/impl` and worktree `D:/raw/Codes/research-bridge-wt` on the laptop are obsolete; remove them when convenient.
+All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. The first three: push and merge this branch; transport authentication (#25) before or after the first live run; approval surfaces (no form on the hub page, the self-approval residual). Open work by workstream: the same file, §4.
 
 ## Verification commands
 
-    uv run --extra host pytest -q   # 345 passed on 2026-11-10 (node1, branch claude/node-allowed-gpus)
-    curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
-    curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
+Session, in this checkout, no node contact:
 
-Vault-side state checks: `vault-export/CHECKSUMS.txt`.
+    rtk proxy uv run --extra host pytest -q        # 854 passed on 2026-11-10
+    rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
+
+User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.

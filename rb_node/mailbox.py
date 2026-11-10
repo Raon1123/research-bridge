@@ -71,6 +71,8 @@ class Mailbox:
         base = "".join(c for c in base if ord(c) >= 32 and ord(c) != 127).strip()
         if base in ("", ".", ".."):
             base = "attachment"
+        if base.lower().endswith((".part", ".tmp")):
+            base += "_"  # never collide with the upload temp name <name>.part
         if base not in taken:
             return base
         stem, ext = os.path.splitext(base)

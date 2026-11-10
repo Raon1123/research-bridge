@@ -33,3 +33,35 @@ def test_thread_and_torn_line(tmp_path):
         fh.write(b'{"kind": "message", "id": "m3"')  # crash mid-write
     assert {r["id"] for r in lg.thread("m1")} == {"m1", "r1"}
     assert lg.get("m3") is None
+
+
+def test_claim_marks_and_returns_matches(tmp_path):
+    lg = Ledger(tmp_path / "ledger.jsonl")
+    for i, flag in enumerate([True, False, True]):
+        lg.append({"kind": "message", "id": "m%d" % i, "pending": flag})
+    got = lg.claim(lambda r: r.get("pending") is True, pending=False, claimed_at="t")
+    assert [r["id"] for r in got] == ["m0", "m2"]
+    assert lg.get("m0")["pending"] is False and lg.get("m0")["claimed_at"] == "t"
+    assert lg.get("m1")["pending"] is False and "claimed_at" not in lg.get("m1")
+    assert lg.claim(lambda r: r.get("pending") is True, pending=False) == []
+
+
+def test_concurrent_claims_are_disjoint(tmp_path):
+    import json
+    import subprocess
+    import sys
+    path = tmp_path / "ledger.jsonl"
+    lg = Ledger(path)
+    for i in range(50):
+        lg.append({"kind": "message", "id": "m%02d" % i, "undelivered": True})
+    code = ("import json, sys\n"
+            "from pathlib import Path\n"
+            "from rb_host.ledger import Ledger\n"
+            "got = Ledger(Path(sys.argv[1])).claim(lambda r: r.get('undelivered') is True,"
+            " undelivered=False)\n"
+            "print(json.dumps([r['id'] for r in got]))\n")
+    procs = [subprocess.Popen([sys.executable, "-c", code, str(path)], stdout=subprocess.PIPE)
+             for _ in range(2)]
+    outs = [set(json.loads(p.communicate()[0])) for p in procs]
+    assert outs[0] | outs[1] == {"m%02d" % i for i in range(50)}
+    assert outs[0] & outs[1] == set()

@@ -2,6 +2,8 @@
 
 Date: 2026-10-27 · Status: draft for user approval · Code home: `D:/raw/Codes/research-bridge/` (user-approved) · Data home: `D:/raw/research-bridge/` (my call; outside vault and iCloud mirror)
 
+> Note 2026-11-10: this document records the design as approved on 2026-10-27 and is not rewritten. Since 2026-11-05 the hub is a Linux server, not the laptop; read "laptop" in §1–§12 as "hub". Where a statement below is false today, a "Superseded" note follows it; current rules are in `AGENTS.md`, current setup in `README.md` and `docs/manual/`.
+
 ## 1. Intent
 
 Experiments run on several servers, but papers are written in one place: this laptop (`D:/raw/vault-primary`). Two things are hard today:
@@ -26,6 +28,8 @@ research-bridge provides one authenticated channel between the laptop (**host**)
 - Replacing the server's queue runner. The node writes into the existing queue (`scripts/queue/jobs`).
 - Multi-node in phase 1. Only `node1` (<NODE_HOST>:<NODE_PORT>, user `<NODE_USER>`). Slurm hosts later.
 - Server-initiated connections to the laptop.
+
+> Superseded 2026-11-10 (the "Multi-node" bullet above): one hub serves any number of nodes, each with its own keys, aliases and `host.json` entry (`docs/manual/README.md`); one node (`node1`) is registered so far. The node serves one research tree (`docs/projects/trm.md`).
 
 ## 4. Anti-goals (failure even if it works)
 
@@ -99,6 +103,8 @@ When a message arrives in the node mailbox, rb-node starts a headless server ses
 
 Spawning is triggered by `serve-remote` at the end of a `send_message` request (detached process), so no resident daemon is needed.
 
+> Superseded 2026-11-10 (tools, lock): the spawned session gets no Bash tool, only `serve-local` tools plus Read, Grep and Glob, and writes only through `reply`; the wall timeout is 1800 s, and a lock whose holder process is dead is also stale. Current rule: `AGENTS.md` hard rule 8 and the paragraph after the rule list; code: `rb_node/spawn.py`.
+
 ### 6.6 Harness sync channel — manual (user decision)
 
 A separate channel keeps the Claude harness (skills, agents, hooks, CLAUDE.md files, MCP config for `serve-local`) in step between laptop and server. It is run by hand only: `rb harness push --node node1` / `rb harness pull --node node1` from a terminal, never as an MCP tool and never automatically. It uses its own SSH key and forced command (`rb-node harness-receive` / `harness-send`), separate from the message key, and writes only into a staging directory `~/.research-bridge/harness-staging/` on the server (and `D:/raw/research-bridge/harness-staging/` on the laptop). Applying staged files into `~/.claude` is a separate manual step with a diff shown first. Reuses path-portablizing logic from `90_Claude/60_Tools/sync/portablize_harness.py` and the allowlist in `harness-sync/deliver.ps1` (builder confirms both).
@@ -110,6 +116,8 @@ A separate channel keeps the Claude harness (skills, agents, hooks, CLAUDE.md fi
 - **authorized_keys entry** on the node:
   `restrict,from="<laptop address>",command="/home/<NODE_USER>/.local/bin/rb-node serve-remote" ssh-ed25519 AAAA… research-bridge-laptop`
   `restrict` disables pty, port/agent/X11 forwarding; `command=` ignores the client's requested command. The key cannot open a shell.
+
+> Superseded 2026-11-10 (key location, address, comment): the keys live on the hub (default `~/.ssh/research-bridge/`), `from=` names the hub address or subnet (`<HUB_ADDR>`), and the comments are `research-bridge-hub` and `research-bridge-harness`. `scripts/node-install.sh` prints these lines and applies them with `--apply-authorized-keys`; see `deploy/authorized_keys.example` and `docs/manual/node-setup.md`.
 - **Path policy in rb-node.** Separate read and write allowlists resolved with `realpath`; reject symlinks escaping the root, `..`, absolute paths outside roots. Write roots: `~/.research-bridge/mailbox/in/` and the queue jobs directory only. Read roots: `~/.research-bridge/mailbox/out/`, `trm/lab/registry/`, `trm/lab/experiments/`, `trm/lab/reports/`, `trm/reports/figures/` (my call; extend by config on the node, not from the host).
 - **Withheld masking on the node** before anything leaves: patterns from the same source `get_withheld_patterns` uses, plus a hard-coded fallback list (section 4). Withheld documents are denied; withheld lines inside a document are blanked. The host re-checks with session-calendar's `server_feed` patterns as a second pass.
 - **Mailbox directory** `~/.research-bridge` mode 0700, files 0600.
@@ -170,6 +178,8 @@ Protocol framing details, module layout, test harness, CLI flags, log rotation, 
 ## 13. Configuration and commands (current state)
 
 Moved from the README on 2026-11-05. Unlike §1–§12, which record the design as approved on 2026-10-27, this section describes the code as it is now; update it when the commands change. Later designs that changed the behaviour described here: [node-side approval (SEC-01)](../../design/2026-11-03-node-side-approval.md), [unified board](../../design/2026-11-02-unified-board.md). Step-by-step setup with SSH keys and `authorized_keys`: `docs/manual/`.
+
+> Superseded 2026-11-10 (command list): §13.2–§13.5 are no longer complete or in step with the code. They lack `rb setup`, `rb agent`, `rb doctor`, `rb service`, `rb sync`, `rb web serve`, `rb share`, `rb git-status` and `rb-node doctor`, `link` and `scripts/node-install.sh`, and they show `<venv python>` and `D:/` paths. Current commands: `README.md`, `docs/manual/hub-setup.md`, `docs/manual/node-setup.md`, and `rb --help` / `rb-node --help`; designs: `docs/design/2026-11-10-setup-and-diagnosis.md`, `docs/design/2026-11-10-sync-and-hub-page.md`. The hub is the Linux server (§13.3 title "Laptop (hub)" is out of date).
 
 ### 13.1 Concept figure
 
@@ -242,6 +252,8 @@ MCP tools (§6.1; a test pins the set): `nodes`, `send_message`, `poll`, `thread
     rb harness diff <stamp>                # unified diff of a pulled stamp against ~/.claude
 
 Approving the same job twice is a no-op.
+
+> Superseded 2026-11-10 (`rb approve --yes`): that flag never existed in the code. `rb approve` takes only the job id, always asks y/N and the approval passphrase, and refuses to run without a terminal; there is no way to skip either question (`AGENTS.md` hard rule 1, `docs/manual/hub-setup.md`).
 
 ### 13.6 Harness channel (manual)
 

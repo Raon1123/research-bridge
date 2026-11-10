@@ -117,54 +117,29 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
             raise ConfigError("%s needs a positive integer" % key)
     elif not isinstance(value, str):
         value = str(value)
+    from .config import NodeConfig, PATH_KEYS, PATH_LIST_KEYS, default_dependents
+    if key in PATH_KEYS and isinstance(value, str) and value.startswith("~"):
+        value = os.path.expanduser(value)
+    if key in PATH_LIST_KEYS and isinstance(value, list):
+        value = [os.path.expanduser(v) if v.startswith("~") else v for v in value]
     out = dict(data)
     out[key] = value
+    if key == "trm_root" and isinstance(value, str):
+        old = data.get("trm_root")
+        old = old if isinstance(old, str) else NodeConfig().trm_root
+        if old != value:
+            od, nd = default_dependents(old), default_dependents(value)
+            if out.get("queue_dir", od["queue_dir"]) == od["queue_dir"]:
+                out["queue_dir"] = nd["queue_dir"]
+            wr = out.get("write_roots", [NodeConfig().write_roots[0], od["queue_jobs"]])
+            if isinstance(wr, list):
+                out["write_roots"] = [nd["queue_jobs"] if e == od["queue_jobs"] else e for e in wr]
+            if out.get("withheld_source") == od["old_withheld"]:
+                out["withheld_source"] = NodeConfig().withheld_source
     return out
 
 
 def node_check(data: Dict[str, Any]) -> List[str]:
     """Problems that block a feature, one line each. Empty list = ready."""
-    from .config import NodeConfig
-    probs: List[str] = []
-    known = {f.name for f in fields(NodeConfig)}
-    for k in data:
-        if k not in known:
-            probs.append("unknown key %r is ignored" % k)
-    cfg = NodeConfig(**{k: v for k, v in data.items() if k in known})
-    tpl = cfg.job_template
-    if not tpl:
-        probs.append("job_template is empty: job_submit is refused (no_job_template)")
-    elif not any(k in a for a in tpl for k in ("{config}", "{config_dir}", "{config_stem}")):
-        probs.append("job_template has no {config}, {config_dir} or {config_stem} placeholder")
-    if not cfg.allowed_gpus:
-        probs.append("allowed_gpus is empty: job_submit is refused (no_allowed_gpus)")
-    if not cfg.harness_root:
-        probs.append("harness_root is empty: harness push/pull are refused (no_harness_root)")
-    elif not Path(cfg.harness_root).is_dir():
-        probs.append("harness_root does not exist: %s" % cfg.harness_root)
-    if not Path(cfg.trm_root).is_dir():
-        probs.append("trm_root does not exist: %s" % cfg.trm_root)
-    for r in cfg.read_roots:
-        p = Path(r) if os.path.isabs(r) else Path(cfg.trm_root) / r
-        if not p.is_dir():
-            probs.append("read root does not exist: %s" % p)
-    if not cfg.withheld_source:
-        probs.append("withheld_source unset: only the fallback patterns apply")
-    elif not cfg.withheld_source.endswith(".json"):
-        probs.append("withheld_source is not JSON: only the fallback patterns apply")
-    elif not Path(cfg.withheld_source).is_file():
-        probs.append("withheld_source not found: %s" % cfg.withheld_source)
-    if not Path(cfg.claude_bin).is_file():
-        probs.append("claude_bin not found: %s" % cfg.claude_bin)
-    ap = Path(cfg.approval_path).absolute()
-    roots = [Path(r) if os.path.isabs(r) else Path(cfg.trm_root) / r
-             for r in list(cfg.read_roots) + list(cfg.write_roots)]
-    for r in roots:
-        try:
-            ap.relative_to(r.absolute())
-            probs.append("approval_path is inside a read/write root: %s" % r)
-        except ValueError:
-            pass
-    if not ap.is_file():
-        probs.append("approval verifier missing: run `rb-node approve-key set` on the console")
-    return probs
+    from . import doctor
+    return [c.message for c in doctor.config_checks(data) if c.level != "ok"]

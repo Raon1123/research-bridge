@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" width="960" height="680" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>research-bridge concept: laptop (hub) and node1 joined by laptop-to-node SSH</title>
+  <title>research-bridge concept: hub (Linux server) and node1 joined by hub-to-node SSH</title>
   <defs>
     <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#57606a"/></marker>
     <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0969da"/></marker>
@@ -24,15 +24,15 @@
 
   <!-- panels -->
   <rect class="panel" x="20" y="40" width="370" height="620" rx="8"/>
-  <text class="h" x="35" y="65">Laptop (hub)</text>
+  <text class="h" x="35" y="65">Hub (Linux server)</text>
   <rect class="panel" x="575" y="40" width="370" height="620" rx="8"/>
   <text class="h" x="590" y="65">node1 (experiment server)</text>
-  <text class="lbl" x="482" y="30" text-anchor="middle">every connection is opened by the laptop</text>
+  <text class="lbl" x="482" y="30" text-anchor="middle">every connection is opened by the hub</text>
 
   <!-- laptop boxes -->
   <rect class="box" x="35" y="80" width="160" height="58" rx="5"/>
   <text class="t" x="115" y="102" text-anchor="middle">Claude session</text>
-  <text class="s" x="115" y="118" text-anchor="middle">on the laptop</text>
+  <text class="s" x="115" y="118" text-anchor="middle">on the hub</text>
 
   <rect class="box" x="215" y="80" width="160" height="58" rx="5"/>
   <text class="t" x="295" y="102" text-anchor="middle">rb-host-mcp</text>
@@ -50,13 +50,13 @@
   <text class="s" x="295" y="231" text-anchor="middle">failures go to quarantine</text>
 
   <rect class="box" x="35" y="280" width="160" height="58" rx="5"/>
-  <text class="t" x="115" y="302" text-anchor="middle">8765 dashboard</text>
-  <text class="s" x="115" y="318" text-anchor="middle">/board · /rb/pending</text>
-  <text class="s" x="115" y="331" text-anchor="middle">shows data only</text>
+  <text class="t" x="115" y="302" text-anchor="middle">Hub page (read-only)</text>
+  <text class="s" x="115" y="318" text-anchor="middle">port 8767 on the hub</text>
+  <text class="s" x="115" y="331" text-anchor="middle">laptop: SSH forward</text>
 
   <rect class="you" x="215" y="280" width="160" height="58" rx="5"/>
   <text class="t" x="295" y="302" text-anchor="middle">Approval (you)</text>
-  <text class="s" x="295" y="318" text-anchor="middle">rb approve or /rb/approve</text>
+  <text class="s" x="295" y="318" text-anchor="middle">rb approve, hub terminal</text>
   <text class="s" x="295" y="331" text-anchor="middle">you type the passphrase</text>
 
   <rect class="box" x="215" y="590" width="160" height="58" rx="5"/>
@@ -80,7 +80,7 @@
   <!-- legend -->
   <text class="t" x="35" y="400">Legend</text>
   <line class="ssh" x1="35" y1="420" x2="80" y2="420" marker-end="url(#b)"/>
-  <text class="s" x="88" y="424">SSH request, laptop → node</text>
+  <text class="s" x="88" y="424">SSH request, hub → node</text>
   <line class="ret" x1="80" y1="442" x2="35" y2="442" marker-end="url(#b)"/>
   <text class="s" x="88" y="446">answer on the same connection</text>
   <line class="ln" x1="35" y1="464" x2="80" y2="464" marker-end="url(#g)"/>
@@ -90,7 +90,7 @@
   <rect class="filt" x="35" y="502" width="45" height="16" rx="3"/>
   <text class="s" x="88" y="514">withheld-series filter</text>
   <text class="s" x="35" y="545">The node never opens a connection</text>
-  <text class="s" x="35" y="559">to the laptop. Events and replies wait</text>
+  <text class="s" x="35" y="559">to the hub. Events and replies wait</text>
   <text class="s" x="35" y="573">in the node mailbox until poll.</text>
 
   <!-- node boxes -->

@@ -1,4 +1,17 @@
-# The 8765 session dashboard
+# The dashboards: 8765 on the laptop, 8767 on the hub
+
+Two pages show research-bridge data. They are different programs on different machines:
+
+| | 8765 session dashboard | 8767 hub page |
+|---|---|---|
+| Machine | the laptop only; **not present on the hub** | the hub (Linux server) |
+| Owner | the vault (this repository ships patches only) | this repository (`rb_host/web.py`, started by `rb web serve`) |
+| Approval | yes: `/rb/pending` and `/rb/approve` (hard rule 1 of `AGENTS.md`) | no: read-only, no form |
+| Described in | the sections "The 8765 session dashboard (laptop only)", "Where it runs", "Routes to use" and "Rules for sessions" | the section "The hub page (port 8767)" |
+
+## The 8765 session dashboard (laptop only)
+
+This part describes the dashboard on the laptop. Since the hub moved to a Linux server on 2026-11-05, the hub has no vault and no 8765 dashboard; the commands and paths below (`D:/raw/...`, `DashboardServer.lnk`, `_restart.bat`) are Windows commands for the laptop. The tests of the research-bridge modules do not need the vault (`vault-export/README.md`).
 
 The session dashboard is the vault's HTTP server on the laptop, port 8765. It serves the session calendar, the agent-sequence (session browser) view, the priorities board, and the research-bridge pages. research-bridge does not own it: the server lives in the vault, and this repository only ships patches for it in `vault-export/dashboard/`.
 
@@ -7,7 +20,7 @@ The session dashboard is the vault's HTTP server on the laptop, port 8765. It se
 | Item | Value |
 |---|---|
 | Base URL (laptop) | `http://127.0.0.1:8765` |
-| Base URL (LAN) | `http://<HUB_LAN_IP>:8765` (the server binds `0.0.0.0:8765`) |
+| Base URL (LAN) | `http://<LAPTOP_LAN_IP>:8765` (the server binds `0.0.0.0:8765`) |
 | Server code | `D:/raw/vault-primary/90_Claude/60_Tools/dashboard/server.py` (vault; read its `README.md` there) |
 | Started by | Windows startup shortcut `DashboardServer.lnk` → `start_dashboard.vbs` → `server.py --port 8765 --host 0.0.0.0` |
 | Restart | `_restart.bat` in the same directory. **Only the user restarts it** (`AGENTS.md` "Ask the user before"). |
@@ -36,4 +49,36 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 
 - Reading pages with `GET` is fine. Do not `POST` to `/rb/approve` or `/todo/toggle`: approval is the user's step (hard rule 1, PM-04 in `docs/postmortems/2026-11-03-whole-branch-review.md`).
 - Do not edit vault `dashboard/` files directly. Change the copy in `vault-export/dashboard/`, test it with `tests/test_rb_pending.py` / `tests/test_rb_board.py`, and hand the user the apply and restart steps.
-- Do not write the LAN address into this repository; it is public. Use `<HUB_LAN_IP>`.
+- Do not write the LAN address into this repository; it is public. Use `<LAPTOP_LAN_IP>` for the laptop, `<HUB_HOST>` for the name you log in to the hub with, and `<HUB_ADDR>` only for the address the node sees the hub as.
+
+## The hub page (port 8767)
+
+`rb web serve` is the read-only page of the hub. It shows the sync state of each node, pending job approvals, conversations (threads) between hub sessions and node sessions, job records and the board caches. Design: `docs/design/2026-11-10-sync-and-hub-page.md` (sections 6.6 and 7); code: `rb_host/web.py`. The page has no authentication: while it runs, any account on the hub machine can read the stored (masked) conversations through it, although the data directory is mode 700. Whether to close this is undecided and is the user's call (see section 15, question 1 of the design document).
+
+| Item | Value |
+|---|---|
+| Start | in a hub terminal, `rb web serve [--port 8767] [--bind 127.0.0.1]` (a session needs the user's go-ahead, `AGENTS.md` "Ask the user before"), or as the systemd user unit `rb-web.service` that `rb service install` writes (the user installs it; `rb service status` shows its state) |
+| Address | `http://127.0.0.1:8767/` on the hub. The server accepts only the bind address `127.0.0.1`; any other value ends with `error: --bind accepts only 127.0.0.1; from another machine use: ssh -N -L PORT:127.0.0.1:PORT <hub>` |
+| From the laptop | an SSH local forward through the user's own login to the hub, then the same port in the browser: `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>` and `http://localhost:8767/`. Use the same port number on both sides: the page accepts only the `Host` headers `127.0.0.1:P`, `localhost:P` and `[::1]:P` for the port it listens on, so a forward to a different local port answers 403 |
+| Methods | `GET` and `HEAD` only; anything else answers 405 |
+| Needs | a usable `host.json` (otherwise one error line, `rb setup` is named as the next command) |
+
+| Route | Shows |
+|---|---|
+| `/` | nodes (sync result, age of the last success, node version, `withheld_extra`), pending job approvals with the exact `rb approve JOB_ID` and `rb reject JOB_ID` commands as text, the latest conversations |
+| `/threads` | all conversations, latest activity first |
+| `/thread/<id>` | one conversation: every message with direction, kind, attachments (name, size, hash start, status) and the body |
+| `/jobs` | job records by status, with the `job_finished` events beside them |
+| `/nodes` | per node: all fields of the sync status file and the board caches |
+| `/healthz` | `{"ok": true, ...}` as JSON |
+
+Anything else answers 404.
+
+What the page does not do:
+
+- It has no approval form. Approving or rejecting a job stays with `rb approve` and `rb reject` in a hub terminal, which ask for the approval passphrase (hard rule 1); the page only prints the command.
+- It opens no connection to a node, writes no file and does not change the ledger. It reads the ledger, the stored message bodies, the sync status files (`<data root>/sync/<node>.json`) and the board cache.
+- It contains no script, no form and no external resource. Message bodies are escaped text and are masked again with the hub's pattern file when shown; a banner appears when that file cannot be read or when a node reports `withheld_extra` = 0.
+- It is not an authentication boundary on the hub: any account on the hub can reach the loopback port. Only the user's own SSH login protects it from other machines.
+
+Check: `curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8767/healthz` in the hub terminal prints `200` while the page runs.

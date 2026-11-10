@@ -205,3 +205,203 @@ def test_poll_survives_oserror_item(tmp_path, monkeypatch):
     r = server._poll_node(cfg, "node1")
     assert [i["msg_id"] for i in r["items"]] == ["good"] and r["rejected"] == 1
     assert c.acked == ["good"]
+
+
+# -- sync-and-page: stage directories and outbox -------------------------------------------
+def _wh_file(tmp_path, patterns):
+    p = tmp_path / "wh.json"
+    p.write_text(json.dumps({"patterns": patterns, "name_patterns": patterns}), encoding="utf-8")
+    return p
+
+
+def _wcfg(tmp_path, patterns=("secretfam_",)):
+    return HostConfig(nodes={"n1": {"alias": "a"}}, data_root=str(tmp_path / "data"),
+                      withheld_patterns_file=str(_wh_file(tmp_path, list(patterns))))
+
+
+def test_stage_dir_unique_per_process(tmp_path, monkeypatch):
+    import os
+    cfg = _hcfg(tmp_path)
+    parents = []
+
+    class C(FakeClient):
+        def get_file(self, kind, ref, dest):
+            parents.append(Path(dest).parent.name)
+            return super().get_file(kind, ref, dest)
+    for pid in (111, 222):
+        monkeypatch.setattr(os, "getpid", lambda pid=pid: pid)
+        store_incoming(cfg, "node1", {"id": "m%d" % pid, "body": "", "attachments": [{"name": "a.txt"}]},
+                       C({"a.txt": b"x"}))
+    assert parents[0].startswith(".stage-111-") and parents[1].startswith(".stage-222-")
+    assert parents[0] != parents[1]
+    quar = tmp_path / "data" / "quarantine"
+    assert not list(quar.rglob(".stage*"))
+    assert not list(quar.glob("node1/*"))  # empty quarantine/<node>/<id> removed
+
+
+@pytest.mark.parametrize("bad", ["../x", "a/b", "CON", ""])
+def test_store_outgoing_rejects_unsafe_id(tmp_path, bad):
+    from rb_host.store import store_outgoing
+    cfg = _wcfg(tmp_path)
+    with pytest.raises(ValueError):
+        store_outgoing(cfg, "n1", bad, "b", [])
+    assert not (tmp_path / "data" / "outbox").exists() or _files(tmp_path / "data") == []
+    assert not (tmp_path / "x").exists()
+
+
+def test_store_outgoing_masks_and_records(tmp_path):
+    import hashlib
+    from rb_host.store import store_outgoing
+    cfg = _wcfg(tmp_path)
+    att = tmp_path / "a.txt"
+    att.write_bytes(b"hello")
+    out = store_outgoing(cfg, "n1", "m1", "ok\nsecretfam_1\nend", [att])
+    d = tmp_path / "data" / "outbox" / "n1" / "m1"
+    assert (d / "body.txt").read_text(encoding="utf-8") == "ok\n\nend"
+    prov = json.loads((d / "provenance.json").read_text(encoding="utf-8"))
+    assert prov["body_withheld_lines"] == 1 and out["body_withheld_lines"] == 1
+    assert prov["attachments"] == [{"index": 0, "name": "a.txt", "bytes": 5,
+                                    "sha256": hashlib.sha256(b"hello").hexdigest()}]
+    assert prov["node"] == "n1" and prov["msg_id"] == "m1" and prov["body_chars"] == 18
+    assert out["dir"] == str(d)
+    assert not (d / "a.txt").exists()  # attachments are not copied
+    assert not list(d.glob("*.tmp")) and not list(d.glob("*.part"))
+
+
+def test_store_outgoing_retry_same_body_ok_different_body_refused(tmp_path):
+    from rb_host.store import store_outgoing
+    cfg = _wcfg(tmp_path)
+    store_outgoing(cfg, "n1", "m1", "one", [])
+    d = tmp_path / "data" / "outbox" / "n1" / "m1"
+    first = (d / "provenance.json").read_text(encoding="utf-8")
+    store_outgoing(cfg, "n1", "m1", "one", [])
+    assert (d / "provenance.json").read_text(encoding="utf-8") == first
+    with pytest.raises(ValueError, match="different body"):
+        store_outgoing(cfg, "n1", "m1", "two", [])
+    assert (d / "body.txt").read_text(encoding="utf-8") == "one"
+
+
+def test_store_outgoing_masks_attachment_name(tmp_path):
+    import hashlib
+    from rb_host.store import store_outgoing
+    cfg = _wcfg(tmp_path)
+    att = tmp_path / "secretfam_a.txt"
+    att.write_bytes(b"zz")
+    store_outgoing(cfg, "n1", "m1", "b", [att])
+    prov = json.loads((tmp_path / "data" / "outbox" / "n1" / "m1" / "provenance.json")
+                      .read_text(encoding="utf-8"))
+    assert prov["attachments"][0]["name"] == "(withheld)"
+    assert prov["attachments"][0]["sha256"] == hashlib.sha256(b"zz").hexdigest()
+
+
+def test_store_outgoing_unknown_node(tmp_path):
+    from rb_host.store import store_outgoing
+    with pytest.raises(ValueError, match="unknown node"):
+        store_outgoing(_wcfg(tmp_path), "zz", "m1", "b", [])
+
+
+def test_sweep_removes_old_stage_dirs_only(tmp_path):
+    import os
+    import time
+    from rb_host.store import sweep_stage_dirs
+    cfg = _wcfg(tmp_path)
+    base = tmp_path / "data" / "quarantine" / "n1"
+    old = base / "old1" / ".stage-1-aaaa"
+    fresh = base / "new1" / ".stage-2-bbbb"
+    old.mkdir(parents=True)
+    fresh.mkdir(parents=True)
+    t = time.time() - 7200
+    os.utime(str(old), (t, t))
+    assert sweep_stage_dirs(cfg, "n1") == 1
+    assert not old.exists() and not old.parent.exists()
+    assert fresh.exists()
+    assert sweep_stage_dirs(cfg, "n1", now_s=time.time() + 7200) == 1
+    assert sweep_stage_dirs(cfg, "n1") == 0
+
+
+def test_sweep_removes_old_tmp_files_only(tmp_path):
+    import os
+    import time
+    from rb_host.store import sweep_stage_dirs
+    cfg = _wcfg(tmp_path)
+    data = tmp_path / "data"
+    keep = []
+    gone = []
+    for top in ("inbox", "outbox"):
+        d = data / top / "n1" / "m1"
+        d.mkdir(parents=True)
+        old_b, old_p = d / ".body.txt.0123abcd.tmp", d / ".provenance.json.89abcdef.tmp"
+        fresh = d / ".body.txt.deadbeef.tmp"
+        other = d / ".notes.0123abcd.tmp"
+        real = d / "body.txt"
+        for f in (old_b, old_p, fresh, other, real):
+            f.write_text("x", encoding="utf-8")
+        t = time.time() - 7200
+        for f in (old_b, old_p, other, real):
+            os.utime(str(f), (t, t))
+        gone += [old_b, old_p]
+        keep += [fresh, other, real]
+    sweep_stage_dirs(cfg, "n1")
+    assert not any(f.exists() for f in gone)
+    assert all(f.exists() for f in keep)
+    assert sweep_stage_dirs(cfg, "n2") == 0  # another node: nothing to do, no error
+
+
+def test_store_outgoing_files_are_mode_600(tmp_path):
+    import os
+    from rb_host.store import store_outgoing
+    cfg = _hcfg(tmp_path)
+    r = store_outgoing(cfg, "node1", "m1", "hello", [])
+    for n in ("body.txt", "provenance.json"):
+        assert (os.stat(os.path.join(r["dir"], n)).st_mode & 0o777) == 0o600
+
+
+def test_store_outgoing_retry_survives_pattern_change(tmp_path):
+    from rb_host.store import store_outgoing
+    cfg = _hcfg(tmp_path)
+    store_outgoing(cfg, "node1", "m1", "alpha\nSECRETWORD here\nomega", [])
+    pf = tmp_path / "pat.json"
+    pf.write_text(json.dumps({"patterns": ["SECRETWORD"]}), encoding="utf-8")
+    cfg.withheld_patterns_file = str(pf)
+    store_outgoing(cfg, "node1", "m1", "alpha\nSECRETWORD here\nomega", [])  # same body: ok
+    with pytest.raises(ValueError):
+        store_outgoing(cfg, "node1", "m1", "another body", [])
+
+
+def test_store_incoming_replaces_body_atomically(tmp_path):
+    cfg = _hcfg(tmp_path)
+    item = {"id": "i1", "kind": "reply", "body": "first", "attachments": []}
+    store_incoming(cfg, "node1", item, FakeClient({}))
+    d = tmp_path / "data" / "inbox" / "node1" / "i1"
+    held = open(str(d / "body.txt"), encoding="utf-8")  # a concurrent reader
+    try:
+        item["body"] = "second"
+        store_incoming(cfg, "node1", item, FakeClient({}))
+        # replaced by rename: the reader's file is neither truncated nor rewritten
+        assert held.read() == "first"
+    finally:
+        held.close()
+    assert (d / "body.txt").read_text(encoding="utf-8") == "second"
+    assert not [p for p in d.iterdir() if p.name.endswith(".tmp")]
+
+
+def test_blanked_event_body_stays_an_event(tmp_path):
+    cfg = _hcfg(tmp_path)
+    item = {"id": "e1", "kind": "event", "body": '{"event":"job_finished","x":"pp_ltf_x"}',
+            "attachments": []}
+    out = store_incoming(cfg, "node1", item, FakeClient({}))
+    assert json.loads(out["body"])["event"] == "withheld" and "pp_ltf_x" not in out["body"]
+    text = (tmp_path / "data" / "inbox" / "node1" / "e1" / "body.txt").read_text(encoding="utf-8")
+    assert text == out["body"]
+
+
+@pytest.mark.parametrize("sep", ["\u2028", "\u0085"])
+def test_store_incoming_quarantines_name_split_by_separator(tmp_path, sep):
+    from rb_node.withheld import FALLBACK_PATTERNS
+    pat = next(p for p in FALLBACK_PATTERNS if p.isidentifier())
+    bad = pat[:3] + sep + pat[3:] + ".png"
+    cfg = _hcfg(tmp_path)
+    item = {"id": "m9", "body": "", "attachments": [{"name": bad}, {"name": "good.txt"}]}
+    cl = FakeClient({bad: b"zz", "good.txt": b"fine"})
+    out = store_incoming(cfg, "node1", item, cl)
+    assert out["quarantined"] == 1 and out["files"] == ["good.txt"]

@@ -68,24 +68,26 @@ def test_host_config_flow(tmp_path, monkeypatch, capsys):
 
 
 def test_host_check_reports(tmp_path, monkeypatch, capsys):
+    import hubfake
+    hub = hubfake.install(monkeypatch, tmp_path)
     monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "host.json"))
-    monkeypatch.setattr(hc.Path, "home", lambda: tmp_path)
     assert host_cli.main(["config", "check"]) == 1
-    assert "rb config init" in capsys.readouterr().out
+    assert "rb setup" in capsys.readouterr().out
     hc.init()
     hc.add_node("node1")
     assert host_cli.main(["config", "check"]) == 1
     out = capsys.readouterr().out
-    assert "'rb-node1' is not a Host" in out and "MCP server not registered" in out
+    assert "ssh has no Host block for rb-node1" in out and "MCP server not registered" in out
 
 
 def test_mcp_entry_runs_through_uv():
     e = hc.mcp_entry()["research-bridge"]
-    assert e["command"] == "uv" and e["args"][:2] == ["run", "--directory"]
+    assert e["command"].endswith("uv") and e["args"][:2] == ["run", "--directory"]
     assert e["args"][-3:] == ["python", "-m", "rb_host.server"] and "--extra" in e["args"]
 
 
 def test_node_config_flow(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(node_cli, "_interactive", lambda: True)
     p = tmp_path / "node.json"
     monkeypatch.setenv("RB_NODE_CONFIG", str(p))
     assert node_cli.main(["config", "show"]) == 1
@@ -117,8 +119,112 @@ def test_node_config_flow(tmp_path, monkeypatch, capsys):
 def test_node_check_template_placeholder():
     probs = nc.node_check({"job_template": ["python", "train.py"]})
     assert any("{config}" in p for p in probs)
+    for ph in ("{config}", "{config_dir}", "{config_stem}"):
+        probs = nc.node_check({"job_template": ["python", "train.py", ph]})
+        assert not any("placeholder" in p for p in probs), ph
 
 
+def test_node_set_allowed_gpus_validates_type():
+    assert nc.node_set({}, "allowed_gpus", [4, 5])["allowed_gpus"] == [4, 5]
+    assert nc.node_set({}, "allowed_gpus", [])["allowed_gpus"] == []
+    for bad in ([4, 4], ["4"], [-1], [True], 4, "4"):
+        with pytest.raises(nc.ConfigError):
+            nc.node_set({}, "allowed_gpus", bad)
+
+
+def test_allowed_gpus_is_not_a_guarded_key():
+    """Same rule as job_template: set from the console, no terminal needed (neither widens
+    what the bridge reads or writes, nor weakens masking or approval)."""
+    assert "allowed_gpus" not in node_cli.GUARDED_KEYS
+    assert "job_template" not in node_cli.GUARDED_KEYS
+
+
+def test_set_research_root_moves_dependent_defaults(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    data = nc.node_defaults()
+    out = nc.node_set(data, "trm_root", "/srv/tree")
+    assert out["trm_root"] == "/srv/tree"
+    assert out["queue_dir"] == "/srv/tree/scripts/queue"
+    assert "/srv/tree/scripts/queue/jobs" in out["write_roots"]
+    assert data["write_roots"][0] in out["write_roots"]  # mailbox entry unchanged
+    assert out["withheld_source"] == data["withheld_source"]  # already the new default
+    # user-changed queue_dir is left alone
+    data2 = dict(nc.node_defaults(), queue_dir="/custom/q")
+    out2 = nc.node_set(data2, "trm_root", "/srv/tree")
+    assert out2["queue_dir"] == "/custom/q"
+    # same value: no cascade
+    data3 = dict(nc.node_defaults(), queue_dir="/custom/q")
+    assert nc.node_set(data3, "trm_root", data3["trm_root"]) == data3
+
+
+def test_set_research_root_moves_old_withheld_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    from rb_node.config import default_dependents
+    data = nc.node_defaults()
+    data["withheld_source"] = default_dependents(data["trm_root"])["old_withheld"]
+    out = nc.node_set(data, "trm_root", "/srv/tree")
+    assert out["withheld_source"].endswith("/.research-bridge/withheld-patterns.json")
+
+
+@pytest.mark.parametrize("key,value", [("approval_path", "/x/a.json"), ("read_roots", '["/"]'),
+                                       ("write_roots", '["/"]'), ("withheld_source", "/x")])
+def test_guarded_keys_need_a_terminal(key, value, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RB_NODE_CONFIG", str(tmp_path / "node.json"))
+    assert node_cli.main(["config", "init"]) == 0
+    monkeypatch.setattr(node_cli, "_interactive", lambda: False)
+    assert node_cli.main(["config", "set", key, value]) == 1
+    assert "interactive terminal" in capsys.readouterr().err
+
+
+def test_tilde_expanded_in_path_keys(tmp_path, monkeypatch):
+    monkeypatch.setattr(node_cli, "_interactive", lambda: True)
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    p = tmp_path / "node.json"
+    monkeypatch.setenv("RB_NODE_CONFIG", str(p))
+    assert node_cli.main(["config", "init"]) == 0
+    assert node_cli.main(["config", "set", "trm_root", "~/x"]) == 0
+    assert node_cli.main(["config", "set", "read_roots", '["~/a", "lab/b"]']) == 0
+    from rb_node.config import load_config
+    import json as _json
+    stored = _json.loads(p.read_text(encoding="utf-8"))
+    assert stored["trm_root"] == str(home / "x")
+    assert stored["read_roots"] == [str(home / "a"), "lab/b"]
+    stored["queue_dir"] = "~/q"
+    p.write_text(_json.dumps(stored), encoding="utf-8")
+    assert load_config().queue_dir == str(home / "q")
+
+
+def test_default_withheld_source_is_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    from rb_node.config import NodeConfig
+    assert NodeConfig().withheld_source.endswith("/.research-bridge/withheld-patterns.json")
+
+
+def test_default_config_paths_follow_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    from rb_node.config import NodeConfig, PATH_KEYS, PATH_LIST_KEYS
+    cfg = NodeConfig()
+    for k in PATH_KEYS:
+        v = getattr(cfg, k)
+        if v and v.startswith("/"):
+            assert v.startswith(str(home)), k
+    for k in PATH_LIST_KEYS:
+        for v in getattr(cfg, k):
+            if v.startswith("/"):
+                assert v.startswith(str(home)), (k, v)
+
+
+@pytest.mark.parametrize("name", ["id", "a.b", "", "x" * 33, "-a"])
+def test_add_node_refuses_unusable_names(name, tmp_path, monkeypatch):
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "host.json"))
+    with pytest.raises(hc.ConfigError):
+        hc.add_node(name)
+
+
+def test_node_name_message_states_the_real_rule():
+    assert "'.'" not in hc.node_name_problem("a.b") and "32" in hc.node_name_problem("a.b")
 def test_node_check_reports_empty_allowed_gpus():
     assert any("allowed_gpus is empty" in p for p in nc.node_check({}))
     assert not any("allowed_gpus" in p for p in nc.node_check({"allowed_gpus": [4]}))
