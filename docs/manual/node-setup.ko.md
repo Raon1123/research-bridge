@@ -210,7 +210,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 **업데이트:** 노드의 체크아웃에서 `scripts/node-install.sh --update`를 실행한다(`--ff-only`로 pull하고, 새 릴리스를 복사하고, 심볼릭 링크를 바꾸고, 설치 기록을 다시 쓰고, doctor를 실행한다). `node.json`, 메일함, 승인 verifier는 유지된다. 세션이 실행하는 경우에는 사용자의 승인이 필요하다. 허브는 그 차이를 `rb doctor`의 `node_version`으로 보여 준다.
 
-**2026-11-10 현재 상태:** 등록된 노드는 아직 `rb_node` 0.1.0, 곧 이 브랜치 이전의 코드를 실행하고 있다. 그 코드에는 `doctor`와 `link`가 없고, `hello`에 protocol 필드 없이 답한다. 허브는 이를 protocol 1로 보고 그 검사를 `unknown`으로 보고한다. 이 브랜치의 체크아웃에서 `scripts/node-install.sh`를 처음 실행하면 갱신된다(옛 디렉터리를 한 번 옮기는 과정은 §2의 3단계에 설명돼 있다).
+**2026-11-10 현재 상태:** 등록된 노드는 아직 `rb_node` 0.1.0, 곧 `claude/node-allowed-gpus` 브랜치의 병합 전 코드(`main`의 PR 48 이전)를 실행하고 있다. 그 코드에는 `doctor`와 `link`가 없고, `hello`에 protocol 필드 없이 답한다. 허브는 이를 protocol 1로 보고 그 검사를 `unknown`으로 보고한다. `main` 체크아웃에서 `scripts/node-install.sh`를 처음 실행하면 갱신된다(옛 디렉터리를 한 번 옮기는 과정은 §2의 3단계에 설명돼 있다).
 
 **제거:** `authorized_keys`의 두 줄을 삭제하고, 이어서 `~/.local/bin/rb-node`, `~/.local/share/research-bridge/`, 그리고 내용이 더 이상 필요 없을 때 `~/.research-bridge/`를 삭제한다.
 
