@@ -13,7 +13,7 @@ research-bridge connects Claude sessions on a **hub** to Claude sessions on an e
 | | Hub | Node |
 |---|---|---|
 | System | Linux; a systemd user manager for the optional timer and page | Linux (the installer uses GNU `mv -T`) |
-| Python | uv selects or downloads a Python 3.10 or later for the hub environment (`.python-version` asks for it) | its own `python3` 3.8 or later on `PATH`; no uv |
+| Python | 3.10 or later for the hub environment; the `--python '>=3.10'` option of the install command makes uv select it | its own `python3` 3.8 or later on `PATH`; no uv |
 | Programs | [uv](https://docs.astral.sh/uv/), git, OpenSSH client (`ssh`, `ssh-keygen`, `ssh-agent`, `ssh-add`, `ssh-keyscan`), the Claude command-line interface (CLI, `claude`; used to register the MCP server), `ip` (optional; used to find the hub address) | git, OpenSSH server; optional: `pdftotext` (without it pdf files are denied), the Claude CLI (the responder that answers messages when no live session does) |
 | Access | a terminal for the commands that ask questions | a console login as the node user |
 
@@ -22,7 +22,7 @@ research-bridge connects Claude sessions on a **hub** to Claude sessions on an e
 In a terminal, from a clone of this repository:
 
 ```
-uv sync --extra host
+uv sync --extra host --python '>=3.10'
 uv run --extra host python scripts/demo_dashboard.py
 ```
 
@@ -57,7 +57,7 @@ Replace `~/research-bridge` with the directory where you cloned in step 1. `rb-n
 1. **Hub terminal: install.** Use the main checkout, not a git worktree: the MCP entry and the unit files hold this path. The `alias rb=...` line above must name this directory.
    ```
    git clone <REPO_URL> research-bridge && cd research-bridge
-   uv sync --extra host
+   uv sync --extra host --python '>=3.10'
    ```
 2. **Hub terminal: hub pattern file.** The data root is `$RB_HOST_ROOT` if set, otherwise `~/.local/share/research-bridge`; `rb setup` creates it itself if it is missing, but this step needs it now. Put the withheld pattern file there as `withheld_patterns.json`. Without it, `rb doctor` reports a fail and `rb setup` prints a node command without a pattern file. The file is JSON (JavaScript Object Notation) of this shape, where each pattern is a Python regular expression (the real file is the session-calendar export kept in the vault on the laptop):
    ```
@@ -188,7 +188,7 @@ It runs `git pull --ff-only`, installs the code as a new release and switches to
 | `unreachable` | cannot reach ALIAS (network or address) | wrong host, network down, SSH server (`sshd`) not running | `rb doctor --node NODE` |
 | `timeout` | ALIAS did not answer in time | slow network or node | retry; if it repeats, `rb doctor --node NODE` |
 | `closed` | connection to ALIAS closed (exit N) | the node side failed | on the node: `rb-node doctor` (old code: `scripts/node-install.sh --update` first, or `rb-node config check`) |
-| (`uv sync`) | The current Python platform is not compatible with the lockfile's supported environments | uv picked a Python older than 3.10 that comes first on `PATH` | `uv sync --extra host --python 3.12` |
+| (`uv sync`) | The current Python platform is not compatible with the lockfile's supported environments | the environment was created without the `--python` option and uv picked a Python older than 3.10 that comes first on `PATH` | `uv sync --extra host --python '>=3.10'` (it replaces the environment) |
 
 When `rb agent` or `rb setup` cannot start an agent it prints one of: `no usable runtime directory for an ssh-agent socket` (no `/run/user/<uid>`; log in directly instead of through `su`), `<path> exists and is not a dead socket owned by you`, or `ssh-agent did not start (...)`.
 

@@ -37,9 +37,9 @@ Hub data: `RB_HOST_ROOT`, default `D:/raw/research-bridge/` on Windows and `~/.l
 
 ## Environment and tests
 
-The runtime environment is managed by **uv**. Do not use `python -m venv` or `pip`. `uv sync --extra host` creates and fills `.venv`; run everything through `uv run`:
+The runtime environment is managed by **uv**. Do not use `python -m venv` or `pip`. `uv sync --extra host --python '>=3.10'` creates and fills `.venv` (the option keeps uv from picking an older Python found first on `PATH`); run everything through `uv run`:
 
-    uv sync --extra host
+    uv sync --extra host --python '>=3.10'
     uv run --extra host pytest -q
 
 Prefix shell commands with `rtk` (installed on the laptop and the Linux hub). `rtk pytest` hides output; use `rtk proxy uv run --extra host pytest -q`. The `rb` command is not on the path under uv-only use: run `uv run --extra host rb ...` (for a session, `rtk uv run --extra host rb ...`).

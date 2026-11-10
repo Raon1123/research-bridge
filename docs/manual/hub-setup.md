@@ -24,7 +24,7 @@ The hub runs `rb_host`: the MCP server (Model Context Protocol, the interface Cl
 ## 1. Requirements
 
 - Linux with a systemd user manager (for the timer and the page; §13) and a runtime directory `/run/user/<uid>` of mode 700 (created by a normal login session).
-- Python 3.10 or later; `uv sync --extra host` selects it (3.12 on the first Linux hub). The `mcp` package, version 1.27 or later and below 2, is installed by that command.
+- Python 3.10 or later; the `--python '>=3.10'` option of the install command makes uv select it (3.12 on the first Linux hub). Without the option uv can pick an older Python that comes first on `PATH`, and the command then fails. The `mcp` package, version 1.27 or later and below 2, is installed by that command.
 - uv, git, and the OpenSSH client tools: `ssh`, `ssh-keygen`, `ssh-keyscan`, `ssh-agent`, `ssh-add`. `ip` (from iproute2) is used once to guess the hub address; `loginctl` and `systemctl` are used for the units.
 - The Claude Code CLI (`claude`), only to register the MCP server (§6). `rb` itself never edits `~/.claude.json`.
 - Network: the hub opens SSH connections to the node (hub to node only). The node never connects to the hub.
@@ -33,7 +33,7 @@ The hub runs `rb_host`: the MCP server (Model Context Protocol, the interface Cl
 
 In the main checkout of the repository (not in a git worktree, because a worktree is deleted later and the MCP entry and the unit files would point at a missing path):
 
-    uv sync --extra host
+    uv sync --extra host --python '>=3.10'
     uv run --extra host pytest -q
 
 Do not use `python -m venv` or `pip`. The tests start a local subprocess as the node and never contact a real node; the dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the vault is not needed.

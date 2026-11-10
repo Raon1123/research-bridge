@@ -26,7 +26,7 @@
 ## 1. Requirements
 
 - systemd user manager가 있는 Linux(타이머와 페이지에 필요하다. §13), 그리고 모드 700의 런타임 디렉터리 `/run/user/<uid>`(일반 로그인 세션이 만든다).
-- Python 3.10 이상. `uv sync --extra host`가 이를 선택한다(첫 Linux 허브에서는 3.12). 버전 1.27 이상 2 미만의 `mcp` 패키지가 이 명령으로 설치된다.
+- Python 3.10 이상. 설치 명령의 `--python '>=3.10'` 옵션이 uv가 이를 고르게 한다(첫 Linux 허브에서는 3.12). 옵션이 없으면 uv가 `PATH`에서 먼저 발견된 더 낮은 Python을 고를 수 있고, 그러면 명령이 실패한다. 버전 1.27 이상 2 미만의 `mcp` 패키지가 이 명령으로 설치된다.
 - uv, git, OpenSSH 클라이언트 도구: `ssh`, `ssh-keygen`, `ssh-keyscan`, `ssh-agent`, `ssh-add`. `ip`(iproute2)는 허브 주소를 추정할 때 한 번 쓰이고, `loginctl`과 `systemctl`은 unit에 쓰인다.
 - Claude Code CLI(`claude`). MCP 서버를 등록할 때만 필요하다(§6). `rb` 자체는 `~/.claude.json`을 편집하지 않는다.
 - 네트워크: 허브가 노드로 SSH 연결을 연다(허브에서 노드로만). 노드는 허브에 연결하지 않는다.
@@ -35,7 +35,7 @@
 
 저장소의 메인 체크아웃에서 실행한다(git worktree는 안 된다. worktree는 나중에 삭제되어 MCP 항목과 unit 파일이 없는 경로를 가리키게 된다).
 
-    uv sync --extra host
+    uv sync --extra host --python '>=3.10'
     uv run --extra host pytest -q
 
 `python -m venv`나 `pip`는 쓰지 않는다. 테스트는 로컬 하위 프로세스를 노드로 띄우며 실제 노드에는 접속하지 않는다. 대시보드와 bridge-edge 테스트는 저장소의 `vault-export/` 사본을 쓰므로 vault가 필요 없다.

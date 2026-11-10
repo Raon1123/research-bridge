@@ -15,7 +15,7 @@ research-bridge는 **허브(hub)**의 Claude 세션과 실험 서버인 **노드
 | | 허브 | 노드 |
 |---|---|---|
 | 시스템 | Linux. 선택 사항인 타이머와 페이지에는 systemd 사용자 관리자가 필요하다 | Linux (설치 스크립트가 GNU `mv -T`를 쓴다) |
-| Python | uv가 허브 환경용 Python 3.10 이상을 고르거나 내려받는다(`.python-version`이 이를 요청한다) | `PATH`에 있는 자체 `python3` 3.8 이상. uv는 필요 없다 |
+| Python | 허브 환경에는 3.10 이상. 설치 명령의 `--python '>=3.10'` 옵션이 uv가 이를 고르게 한다 | `PATH`에 있는 자체 `python3` 3.8 이상. uv는 필요 없다 |
 | 프로그램 | [uv](https://docs.astral.sh/uv/), git, OpenSSH 클라이언트(`ssh`, `ssh-keygen`, `ssh-agent`, `ssh-add`, `ssh-keyscan`), Claude 명령줄 인터페이스(CLI, `claude`; MCP 서버를 등록하는 데 쓴다), `ip`(선택 사항; 허브 주소를 찾는 데 쓴다) | git, OpenSSH 서버. 선택 사항: `pdftotext`(없으면 pdf 파일은 거부된다), Claude CLI(살아 있는 세션이 없을 때 메시지에 응답하는 응답기) |
 | 접근 | 질문을 던지는 명령을 실행할 터미널 | 노드 사용자로 하는 콘솔 로그인 |
 
@@ -24,7 +24,7 @@ research-bridge는 **허브(hub)**의 Claude 세션과 실험 서버인 **노드
 터미널에서, 이 저장소의 클론 안에서 실행한다.
 
 ```
-uv sync --extra host
+uv sync --extra host --python '>=3.10'
 uv run --extra host python scripts/demo_dashboard.py
 ```
 
@@ -59,7 +59,7 @@ alias rb='uv run --directory ~/research-bridge --extra host rb'
 1. **허브 터미널: 설치.** git worktree가 아니라 메인 체크아웃을 쓴다. MCP 항목과 unit 파일에 이 경로가 기록되기 때문이다. 위의 `alias rb=...` 줄은 이 디렉터리를 가리켜야 한다.
    ```
    git clone <REPO_URL> research-bridge && cd research-bridge
-   uv sync --extra host
+   uv sync --extra host --python '>=3.10'
    ```
 2. **허브 터미널: 허브 패턴 파일.** 데이터 루트는 `$RB_HOST_ROOT`가 설정돼 있으면 그 값이고, 아니면 `~/.local/share/research-bridge`이다. 없으면 `rb setup`이 직접 만들지만 이 단계에는 지금 필요하다. 보류 패턴 파일을 `withheld_patterns.json`이라는 이름으로 그 안에 둔다. 이 파일이 없으면 `rb doctor`가 fail을 보고하고, `rb setup`은 패턴 파일 없는 노드 명령을 출력한다. 파일은 JSON (JavaScript Object Notation)이며 모양은 아래와 같고, 각 패턴은 Python 정규식이다(실제 파일은 노트북의 vault에 보관된 session-calendar 내보내기이다).
    ```
@@ -190,7 +190,7 @@ scripts/node-install.sh --update
 | `unreachable` | cannot reach ALIAS (network or address) | 호스트가 틀렸거나, 네트워크가 끊겼거나, SSH 서버(`sshd`)가 실행 중이 아니다 | `rb doctor --node NODE` |
 | `timeout` | ALIAS did not answer in time | 네트워크 또는 노드가 느리다 | 재시도한다. 반복되면 `rb doctor --node NODE` |
 | `closed` | connection to ALIAS closed (exit N) | 노드 쪽이 실패했다 | 노드에서: `rb-node doctor` (오래된 코드는 먼저 `scripts/node-install.sh --update` 또는 `rb-node config check`) |
-| (`uv sync`) | The current Python platform is not compatible with the lockfile's supported environments | `PATH`에서 먼저 발견된 3.10 미만 Python을 uv가 골랐다 | `uv sync --extra host --python 3.12` |
+| (`uv sync`) | The current Python platform is not compatible with the lockfile's supported environments | `--python` 옵션 없이 환경을 만들어서, `PATH`에서 먼저 발견된 3.10 미만 Python을 uv가 골랐다 | `uv sync --extra host --python '>=3.10'` (환경을 새로 만든다) |
 
 `rb agent` 또는 `rb setup`이 agent를 시작하지 못하면 다음 중 하나를 출력한다. `no usable runtime directory for an ssh-agent socket`(`/run/user/<uid>`가 없다. `su`를 거치지 말고 직접 로그인한다), `<path> exists and is not a dead socket owned by you`, `ssh-agent did not start (...)`.
 
