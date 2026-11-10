@@ -8,7 +8,7 @@ This section is newer than everything below it. Where they disagree (for example
 
 Observed on node1:
 
-- `rb_node` is installed by `scripts/node-install.sh`; `install.json` records a clean commit of branch `claude/node-allowed-gpus` (`rb-node git-status` shows which; the installed code equals commit `1d6a913`). The branch is not pushed. After it is merged, reinstall from `main` so the record names a `main` commit.
+- `rb_node` is installed by `scripts/node-install.sh`; `install.json` records a clean commit of branch `claude/node-allowed-gpus` (`rb-node git-status` shows which; the installed code equals commit `db1d412`). The branch is not pushed. After it is merged, reinstall from `main` so the record names a `main` commit.
 - `node.json`: `job_template` is the Hydra by-name form (`--config-dir {config_dir} --config-name {config_stem}`), `allowed_gpus` is `[4, 5, 6, 7]`, the read roots exist, `withheld_source` is the JSON pattern file (mode 600), the approval verifier is set. `rb-node config check` reports one item: `harness_root` is empty (decision 4).
 - The node audit log has hub ops from 2026-11-06 on (`hello`, `git_status`, `queue_status`, `gpu_status`, `read_doc`). It has no `msg_*`, `respond` or `job_submit` entry: the message and job paths have not run from the hub.
 - The research queue is busy: four workers on GPUs 4–7 and about 50 queued jobs. A bridge job gets the highest number plus one, so it starts only after those.
