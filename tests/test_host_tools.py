@@ -53,6 +53,7 @@ def env(tmp_path, monkeypatch):
     host.write_text(json.dumps({"nodes": {"n1": {"alias": "x"}}, "data_root": str(root),
                                 "withheld_patterns_file": str(wp)}), encoding="utf-8")
     monkeypatch.setenv("RB_HOST_CONFIG", str(host))
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "rbroot"))
     nenv = {"RB_NODE_CONFIG": str(nodecfg), "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
     calls = []
 
@@ -73,7 +74,8 @@ def test_exact_tool_set():
 
 
 def test_nodes(env):
-    assert server.nodes() == {"nodes": ["n1"]}
+    out = server.nodes()
+    assert out["nodes"] == ["n1"] and set(out["status"]) == {"n1"}
 
 
 def test_submit_job_no_ssh_and_pending(env, monkeypatch):
@@ -565,3 +567,236 @@ def test_fetch_file_rejects_unsafe_names(env, bad):
 def test_poll_docstring_states_masking_and_recheck():
     assert "masked on the node" in server.poll.__doc__
     assert "checked again on the laptop" in server.poll.__doc__
+
+
+# -- sync-and-page: delivered flag, outbox, status ---------------------------------------
+def _fake_smi(d, code=0):
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "nvidia-smi"
+    if code == 0:
+        p.write_text("#!/bin/sh\necho '0, Fake GPU, 100, 24000, 3'\necho '1, Fake GPU, 200, 24000, 4'\n",
+                     encoding="ascii")
+    else:
+        p.write_text("#!/bin/sh\nexit 1\n", encoding="ascii")
+    p.chmod(0o755)
+
+
+@pytest.fixture
+def synced(env):
+    """env with a fake nvidia-smi first on the node's PATH, so run_pass does not depend on the machine."""
+    import os
+    _fake_smi(env["tmp"] / "fakebin")
+    env["nenv"]["PATH"] = str(env["tmp"] / "fakebin") + os.pathsep + os.environ.get("PATH", "")
+    env["cfg"] = jobs.load_cfg()
+    return env
+
+
+def _hub_patterns(env, patterns):
+    (env["tmp"] / "withheld.json").write_text(json.dumps({"patterns": patterns}), encoding="utf-8")
+
+
+def _reply(env, body="answer", files=(), reply_to="m0"):
+    return Mailbox(env["mb"]).post_out("reply", body, list(files), reply_to)
+
+
+def test_nodes_status_from_sync_file(synced):
+    from rb_host import sync
+    out = server.nodes()
+    assert out["nodes"] == ["n1"] and out["status"]["n1"]["synced"] is False
+    _reply(synced)
+    st = sync.run_pass(synced["cfg"], "n1")
+    assert st["ok"] is True
+    out = server.nodes()["status"]["n1"]
+    assert out["synced"] is True and out["ok"] is True and out["stale"] is False
+    assert out["undelivered"] == 1 and out["node_seen_at"] and out["last_ok_at"]
+    server.poll("n1")
+    assert server.nodes()["status"]["n1"]["undelivered"] == 0
+
+
+def test_ledger_line_never_contains_body(synced):
+    from rb_host import sync
+    server.send_message("n1", "MARKER-BODY-7f3a hello")
+    oid = _reply(synced, "MARKER-REPLY-91c2")
+    sync.run_pass(synced["cfg"], "n1")
+    r = server.poll("n1")
+    assert r["items"][0]["body"] == "MARKER-REPLY-91c2"
+    text = (synced["root"] / "ledger.jsonl").read_text(encoding="utf-8")
+    assert "MARKER-BODY-7f3a" not in text and "MARKER-REPLY-91c2" not in text
+    assert all("body" not in json.loads(line) for line in text.splitlines())
+    assert synced["ledger"].get(oid)["delivered"] is True
+
+
+def test_send_message_writes_masked_outbox(env):
+    _hub_patterns(env, ["secretfam_"])
+    r = server.send_message("n1", "ok\nsecretfam_1\nend")
+    mid = r["msg_id"]
+    assert r["status"] == "sent"
+    assert (env["root"] / "outbox" / "n1" / mid / "body.txt").read_text(encoding="utf-8") == "ok\n\nend"
+    msg = json.loads((env["mb"] / "in" / mid / "message.json").read_text(encoding="utf-8"))
+    assert msg["body"] == "ok\nsecretfam_1\nend"
+
+
+def test_send_message_failed_keeps_outbox(env, monkeypatch):
+    def bad(cfg, node):
+        raise TransportError("down")
+    monkeypatch.setattr(jobs, "connect", bad)
+    r = server.send_message("n1", "hi there")
+    assert r["status"] == "pending_send" and "error" in r
+    assert (env["root"] / "outbox" / "n1" / r["msg_id"] / "body.txt").read_text() == "hi there"
+
+
+def test_send_message_rejects_unsafe_msg_id(env):
+    with pytest.raises(ValueError, match="unsafe msg_id"):
+        server.send_message("n1", "hi", msg_id="../../x")
+    assert not (env["root"] / "outbox").exists()
+    assert not (env["root"] / "ledger.jsonl").exists() or "x" not in env["ledger"]._latest()
+    assert env["calls"] == []
+    assert not (env["tmp"] / "x").exists()
+
+
+def test_send_message_rejects_inbound_id(env):
+    oid = _reply(env)
+    server.poll("n1")
+    with pytest.raises(ValueError, match="inbound"):
+        server.send_message("n1", "x", msg_id=oid)
+    assert env["ledger"].get(oid)["status"] == "received"
+
+
+def test_poll_returns_sync_stored_items_exactly_once(synced):
+    from rb_host import sync
+    oid = _reply(synced, "stored body")
+    sync.run_pass(synced["cfg"], "n1")
+    assert synced["ledger"].get(oid)["delivered"] is False
+    r = server.poll("n1")
+    assert [i["msg_id"] for i in r["items"]] == [oid]
+    assert r["items"][0]["stored"] is True and r["items"][0]["body"] == "stored body"
+    assert synced["ledger"].get(oid)["delivered"] is True
+    assert server.poll("n1")["items"] == []
+
+
+def test_legacy_records_not_redelivered(env):
+    d = env["root"] / "inbox" / "n1" / "old1"
+    d.mkdir(parents=True)
+    (d / "body.txt").write_text("old", encoding="utf-8")
+    env["ledger"].append({"kind": "message", "id": "old1", "direction": "in", "node": "n1",
+                          "msg_kind": "reply", "status": "received", "created": "t"})
+    assert server.poll("n1")["items"] == []
+
+
+def test_poll_remasks_stored_body(synced):
+    from rb_host import sync
+    _reply(synced, "fine\nsecretfam_x\nend")
+    sync.run_pass(synced["cfg"], "n1")
+    _hub_patterns(synced, ["secretfam_"])
+    r = server.poll("n1")
+    assert r["items"][0]["body"] == "fine\n\nend"
+
+
+def test_poll_returns_stored_items_when_node_unreachable(synced, monkeypatch):
+    from rb_host import sync
+    oid = _reply(synced)
+    sync.run_pass(synced["cfg"], "n1")
+
+    def bad(cfg, node):
+        raise TransportError("down")
+    monkeypatch.setattr(jobs, "connect", bad)
+    r = server.poll("n1")
+    assert [i["msg_id"] for i in r["items"]] == [oid] and "n1" in r["errors"]
+
+
+def test_poll_node_filter(synced):
+    from rb_host import sync
+    host = json.loads((synced["tmp"] / "host.json").read_text(encoding="utf-8"))
+    host["nodes"]["n2"] = {"alias": "y"}
+    (synced["tmp"] / "host.json").write_text(json.dumps(host), encoding="utf-8")
+    cfg = jobs.load_cfg()
+    for n in ("n1", "n2"):
+        d = synced["root"] / "inbox" / n / ("r-" + n)
+        d.mkdir(parents=True)
+        (d / "body.txt").write_text(n, encoding="utf-8")
+        synced["ledger"].append({"kind": "message", "id": "r-" + n, "direction": "in", "node": n,
+                                 "msg_kind": "reply", "delivered": False, "status": "received",
+                                 "created": "t"})
+    assert [i["node"] for i in server.claim_undelivered(cfg, ["n1"])] == ["n1"]
+    assert synced["ledger"].get("r-n2")["delivered"] is False
+    assert synced["calls"] == []
+
+
+def test_poll_ledger_locked_reported(env, monkeypatch):
+    def locked(self, *a, **k):
+        raise TimeoutError("locked")
+    monkeypatch.setattr(Ledger, "claim", locked)
+    r = server.poll("n1")
+    assert r["errors"]["ledger"] == "ledger_locked"
+
+
+def test_poll_partial_fetch_returns_appended_items(env, monkeypatch):
+    src = env["tmp"] / "a.txt"
+    src.write_text("zz", encoding="utf-8")
+    o1 = _reply(env, "first")
+    o2 = _reply(env, "second", [src])
+    failing = {"on": True}
+    real = jobs.connect
+
+    def wrapped(cfg, node):
+        c = real(cfg, node)
+        orig = c.get_file
+
+        def gf(kind, ref, dest):
+            if failing["on"] and ref.startswith(o2):
+                raise TransportError("down")
+            return orig(kind, ref, dest)
+        c.get_file = gf
+        return c
+    monkeypatch.setattr(jobs, "connect", wrapped)
+    r = server.poll("n1")
+    assert [i["msg_id"] for i in r["items"]] == [o1] and "n1" in r["errors"]
+    assert env["ledger"].get(o1)["delivered"] is True
+    failing["on"] = False
+    r2 = server.poll("n1")
+    assert [i["msg_id"] for i in r2["items"]] == [o2] and "errors" not in r2
+    assert (env["mb"] / "state" / "acked" / o1).exists() and (env["mb"] / "state" / "acked" / o2).exists()
+
+
+def test_poll_masks_stored_attachment_names(synced):
+    from rb_host import sync
+    src = synced["tmp"] / "secretfam_r.txt"
+    src.write_text("zz", encoding="utf-8")
+    _reply(synced, "b", [src])
+    sync.run_pass(synced["cfg"], "n1")
+    _hub_patterns(synced, ["secretfam_"])
+    assert server.poll("n1")["items"][0]["files"] == ["(withheld)"]
+
+
+def test_poll_missing_body_file(synced):
+    from rb_host import sync
+    oid = _reply(synced)
+    sync.run_pass(synced["cfg"], "n1")
+    (synced["root"] / "inbox" / "n1" / oid / "body.txt").unlink()
+    it = server.poll("n1")["items"][0]
+    assert it["body"] == "" and it["body_missing"] is True
+    assert synced["ledger"].get(oid)["delivered"] is True
+
+
+def test_thread_rows_have_body_fields(synced):
+    from rb_host import sync
+    mid = server.send_message("n1", "q")["msg_id"]
+    oid = _reply(synced, "a", reply_to=mid)
+    sync.run_pass(synced["cfg"], "n1")
+    rows = server.thread(mid)
+    assert {r["id"] for r in rows} == {r["id"] for r in synced["ledger"].thread(mid)}
+    by = {r["id"]: r for r in rows}
+    assert by[mid]["has_body"] is True
+    assert by[mid]["stored_dir"] == str(synced["root"] / "outbox" / "n1" / mid)
+    assert by[oid]["stored_dir"] == str(synced["root"] / "inbox" / "n1" / oid)
+
+
+def test_tool_docstrings_describe_approval_and_shape():
+    for name in ("nodes", "send_message", "poll", "thread", "read_doc", "fetch_file",
+                 "queue_status", "gpu_status", "submit_job", "cancel_job"):
+        doc = getattr(server, name).__doc__
+        assert doc and len(doc.strip().splitlines()) > 1, name
+    for name in ("submit_job", "cancel_job"):
+        doc = getattr(server, name).__doc__
+        assert "rb approve" in doc and "pending_approval" in doc
+    assert "each item is returned by one poll only" in server.poll.__doc__.replace("\n", " ")
