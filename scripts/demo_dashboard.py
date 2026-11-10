@@ -230,6 +230,16 @@ def hub_page_address(web_srv: http.server.HTTPServer) -> str:
     return "http://127.0.0.1:%d/enter?key=%s" % (web_srv.server_address[1], key)
 
 
+def hub_page_line(web_srv: http.server.HTTPServer) -> Tuple[bool, str]:
+    """(available, the start-up line for the hub page). The page drops every connection when
+    it cannot check who connects, so without /proc/net/tcp it is not served."""
+    if not web.proc_tcp_readable():
+        return False, ("hub page: not available (error: the hub page needs /proc/net/tcp to "
+                       "check who connects (Linux only))")
+    return True, ("hub page: %s (opens once within 60 minutes; then /threads, /jobs, /nodes)"
+                  % hub_page_address(web_srv))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8799)
@@ -245,12 +255,13 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     try:
         srv, web_srv = start(root, a.port, a.web_port if a.web_port is not None else a.port + 1)
-        threading.Thread(target=web_srv.serve_forever, daemon=True).start()
+        available, hub_line = hub_page_line(web_srv)
+        if available:
+            threading.Thread(target=web_srv.serve_forever, daemon=True).start()
         print("demo data: %s" % root, flush=True)
         print("open http://127.0.0.1:%d/board and /rb/pending (passphrase: %s)" % (
             srv.server_address[1], PASSPHRASE), flush=True)
-        print("hub page: %s (opens once within 60 minutes; then /threads, /jobs, /nodes)"
-              % hub_page_address(web_srv), flush=True)
+        print(hub_line, flush=True)
         srv.serve_forever()
     except KeyboardInterrupt:
         pass

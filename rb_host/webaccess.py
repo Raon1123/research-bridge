@@ -72,6 +72,8 @@ def _parse(text: str, strict: bool = False) -> Dict[str, List[dict]]:
     for name, extra in (("keys", "session_seconds"), ("sessions", None)):
         items = data.get(name)
         if not isinstance(items, list):
+            if strict and name in data:
+                raise AccessError("the access file has a %s entry that is not a list" % name)
             continue
         for e in items:
             if (isinstance(e, dict) and isinstance(e.get("sha256"), str)
@@ -84,6 +86,8 @@ def _parse(text: str, strict: bool = False) -> Dict[str, List[dict]]:
                 if extra:
                     item[extra] = e[extra]
                 out[name].append(item)
+            elif strict:
+                raise AccessError("the access file has an invalid %s entry" % name)
     return out
 
 
@@ -210,6 +214,21 @@ def revoke_all(cfg: Any) -> Tuple[int, int]:
             state = {"keys": [], "sessions": []}
         _atomic_write(lk.dir / "access.json", json.dumps({"keys": [], "sessions": []}, indent=2))
         return len(state["keys"]), len(state["sessions"])
+
+
+def counts_strict(cfg: Any) -> Tuple[int, int]:
+    """Like `counts`, but a file that exists and cannot be read or is not valid raises
+    AccessError instead of counting as empty. Writes nothing."""
+    try:
+        text = (_dir(cfg) / "access.json").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return 0, 0
+    except (OSError, ValueError) as exc:
+        raise AccessError("cannot read the access file (%s)" % type(exc).__name__)
+    now = _now()
+    st = _parse(text, strict=True)
+    return (sum(1 for e in st["keys"] if e["expires_at"] > now),
+            sum(1 for e in st["sessions"] if e["expires_at"] > now))
 
 
 def counts(cfg: Any) -> Tuple[int, int]:

@@ -128,3 +128,22 @@ def test_script_prints_flushed_lines_and_removes_its_temp_dir_on_sigterm(tmp_pat
         if p.poll() is None:
             p.kill()
         p.stdout.close()
+
+
+def test_hub_page_not_served_without_proc_net_tcp(tmp_path, monkeypatch):
+    from rb_host import web
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "missing-host.json"))
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
+    monkeypatch.chdir(os.getcwd())
+    demo = _load_demo()
+    srv, web_srv = demo.start(tmp_path / "demo", 0, 0)
+    try:
+        ok, line = demo.hub_page_line(web_srv)
+        assert ok and "/enter?key=" in line
+        monkeypatch.setattr(web, "proc_tcp_readable", lambda: False)
+        ok, line = demo.hub_page_line(web_srv)
+        assert not ok and line.startswith("hub page: not available")
+        assert "the hub page needs /proc/net/tcp to check who connects (Linux only)" in line
+    finally:
+        srv.server_close()
+        web_srv.server_close()

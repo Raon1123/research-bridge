@@ -751,7 +751,8 @@ def test_connection_of_another_account_is_dropped(srv, monkeypatch, capfd):
             pass
     assert data == b"" and calls == []
     err = capfd.readouterr().err
-    assert err.splitlines() == ["refused: connection not owned by this account"]
+    assert err.splitlines() == [
+        "refused: 1 connection(s) not owned by this account or over the limit"]
 
 
 @pytest.mark.parametrize("bad", [lambda *a: None, lambda *a: 1 / 0])
@@ -829,3 +830,150 @@ def test_without_fcntl_other_commands_still_work(tmp_path):
                          capture_output=True, text=True, timeout=60, env=env)
     assert out.returncode == 0, out.stderr
     assert "issue-failed" in out.stdout and out.stdout.strip().endswith("0")
+
+
+# -- accept loop, limits, prefetch body, strict status ------------------------------------------
+def _connect(srv, send=True):
+    port = srv.server_address[1]
+    c = socket.create_connection(("127.0.0.1", port), timeout=10)
+    if send:
+        c.sendall(("GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nConnection: close\r\n\r\n"
+                   % port).encode())
+    return c
+
+
+def _drain(c):
+    data = b""
+    try:
+        while True:
+            chunk = c.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    except ConnectionResetError:
+        pass
+    return data
+
+
+def test_queue_and_limit_constants():
+    assert web.MAX_CONNECTIONS == 32 and web.QUEUE_SIZE == 128
+    assert web._Server.request_queue_size == 128
+
+
+def test_refused_client_gets_no_bytes_and_no_handler(srv, monkeypatch):
+    calls = []
+    monkeypatch.setattr(web._Handler, "_serve", lambda self, head: calls.append(1))
+    monkeypatch.setattr(web, "socket_owner", lambda *a: os.getuid() + 1)
+    c = _connect(srv)  # the request is sent; it must not be read or answered
+    assert _drain(c) == b"" and calls == []
+    c.close()
+
+
+def test_slow_check_does_not_stall_the_accept_loop(srv, monkeypatch):
+    gate = threading.Event()
+    foreign = socket.socket()
+    foreign.bind(("127.0.0.1", 0))
+    fport = foreign.getsockname()[1]
+    seen = threading.Event()
+    me = os.getuid()
+
+    def lookup(text, client, server):
+        if client[1] == fport:
+            seen.set()
+            gate.wait(20)
+        return me
+    monkeypatch.setattr(web, "socket_owner", lookup)
+    try:
+        foreign.connect(("127.0.0.1", srv.server_address[1]))
+        assert seen.wait(10)  # the slow check is running in its own thread
+        assert req(srv, "/healthz", cookie=None)[0] == 200  # and an owned connection is served
+    finally:
+        gate.set()
+        foreign.close()
+
+
+def test_connection_cap_closes_without_lookup(srv, monkeypatch):
+    gate = threading.Event()
+    calls = []
+    me = os.getuid()
+
+    def lookup(*a):
+        calls.append(1)
+        gate.wait(30)
+        return me
+    monkeypatch.setattr(web, "socket_owner", lookup)
+    held = []
+    try:
+        for _ in range(web.MAX_CONNECTIONS):
+            held.append(_connect(srv, send=False))
+        deadline = time.time() + 10
+        while len(calls) < web.MAX_CONNECTIONS and time.time() < deadline:
+            time.sleep(0.01)
+        assert len(calls) == web.MAX_CONNECTIONS
+        extra = _connect(srv)
+        assert _drain(extra) == b"" and len(calls) == web.MAX_CONNECTIONS
+        extra.close()
+    finally:
+        gate.set()
+        for c in held:
+            c.close()
+    deadline = time.time() + 10
+    while time.time() < deadline:  # slots are released again
+        try:
+            if req(srv, "/healthz", cookie=None)[0] == 200:
+                break
+        except OSError:
+            pass
+    assert req(srv, "/healthz", cookie=None)[0] == 200
+
+
+def test_refusal_log_is_rate_limited(srv, monkeypatch, capfd):
+    now = [1000.0]
+    monkeypatch.setattr(web, "_clock", lambda: now[0])
+    monkeypatch.setattr(web, "socket_owner", lambda *a: os.getuid() + 1)
+    capfd.readouterr()
+    for _ in range(5):
+        c = _connect(srv)
+        _drain(c)
+        c.close()
+    now[0] += 11
+    c = _connect(srv)
+    _drain(c)
+    c.close()
+    lines = capfd.readouterr().err.splitlines()
+    tail = " connection(s) not owned by this account or over the limit"
+    assert lines == ["refused: 1" + tail, "refused: 5" + tail]
+
+
+def test_prefetch_401_has_a_complete_body(cfg, srv):
+    key = webaccess.issue_key(cfg, 10, 12)
+    port = srv.server_address[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+        s.sendall(("GET /enter?key=%s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nSec-Purpose: prefetch\r\n"
+                   "Connection: close\r\n\r\n" % (key, port)).encode())
+        data = _drain(s)
+    head, _, body = data.partition(b"\r\n\r\n")
+    length = int(re.search(rb"Content-Length: (\d+)", head, re.I).group(1))
+    assert len(body) == length and body.decode() == NEED
+    code, _h, hbody = req(srv, "/enter?key=" + key, method="HEAD", cookie=None,
+                          extra="Sec-Purpose: prefetch\r\n")
+    assert code == 401 and hbody == ""
+
+
+def test_status_reports_corrupt_file_like_issuing(cfg, hostjson, capsys):
+    acc = Path(cfg.data_root) / "web" / "access.json"
+    acc.parent.mkdir()
+    for content in ("{broken", "[]", '{"keys": 5}', '{"keys": [{"sha256": "x"}]}',
+                    '{"sessions": {}}'):
+        acc.write_text(content, encoding="utf-8")
+        assert cli.main(["web", "key", "--status"]) == 1
+        status_line = capsys.readouterr().out.strip().splitlines()
+        assert len(status_line) == 1 and "rb web key --revoke" in status_line[0], content
+        assert cli.main(["web", "key"]) == 1  # issuing aborts the same way
+        issue_line = capsys.readouterr().out.strip().splitlines()
+        assert issue_line == status_line, content
+        assert acc.read_text(encoding="utf-8") == content  # nothing rewritten
+        assert webaccess.counts(cfg) == (0, 0)  # the page's reader stays tolerant
+    acc.unlink()
+    assert cli.main(["web", "key", "--status"]) == 0
+    assert capsys.readouterr().out.strip() == "0 pending key(s), 0 live session(s)"

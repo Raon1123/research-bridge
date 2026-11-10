@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -442,11 +443,12 @@ class _Handler(BaseHTTPRequestHandler):
     def _enter(self, raw: str, head: bool) -> None:
         """GET /enter?key=...: exchange a one-time key for a session cookie. HEAD never does."""
         keys = []  # type: List[str]
+        skip = False
         purpose = " ".join((self.headers.get_all("Sec-Purpose") or [])
                            + (self.headers.get_all("Purpose") or [])).lower()
         if "prefetch" in purpose or "preview" in purpose:
-            head = True  # a prefetch or preview never uses a key
-        if not head and "?" in raw:
+            skip = True  # a prefetch or preview never uses a key; the 401 body is complete on GET
+        if not (head or skip) and "?" in raw:
             keys = [v for k, v in urllib.parse.parse_qsl(raw.split("?", 1)[1].split("#")[0],
                                                           keep_blank_values=True) if k == "key"]
         got = webaccess.redeem(self.server.cfg, keys[0]) if len(keys) == 1 else None  # type: ignore[attr-defined]
@@ -568,22 +570,67 @@ def proc_tcp_readable() -> bool:
         return False
 
 
+MAX_CONNECTIONS = 32  # connections in the account check or being served at once
+QUEUE_SIZE = 128
+REFUSAL_LOG_INTERVAL_S = 10.0
+
+
+def _clock() -> float:
+    return time.monotonic()
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
+    request_queue_size = QUEUE_SIZE
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+        self._slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        self._refused = 0
+        self._last_log = None  # type: Optional[float]
+        self._log_lock = threading.Lock()
+        super().__init__(*a, **k)
+
+    def _refuse(self) -> None:
+        """Count a refusal; write at most one line per interval (no address, no port)."""
+        with self._log_lock:
+            self._refused += 1
+            now = _clock()
+            if self._last_log is not None and now - self._last_log < REFUSAL_LOG_INTERVAL_S:
+                return
+            n, self._refused, self._last_log = self._refused, 0, now
+        sys.stderr.write("refused: %d connection(s) not owned by this account or over the limit\n"
+                         % n)
 
     def verify_request(self, request: Any, client_address: Any) -> bool:
-        """Accept only connections whose client socket belongs to this account (fail closed)."""
+        """Runs in the accept thread, so it only takes a slot: at once, without blocking and
+        without reading anything. The account check runs in the connection's own thread."""
+        if self._slots.acquire(False):
+            return True
+        self._refuse()
+        return False
+
+    def _owned(self, request: Any, client_address: Any) -> bool:
         if not self.peer_check:  # type: ignore[attr-defined]
             return True
         try:
             with open(PROC_TCP, encoding="ascii") as fh:
                 uid = socket_owner(fh.read(), client_address, request.getsockname())
-            ok = uid is not None and uid == os.getuid()
+            return uid is not None and uid == os.getuid()
         except Exception:
-            ok = False
-        if not ok:
-            sys.stderr.write("refused: connection not owned by this account\n")
-        return ok
+            return False  # fail closed
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        """The account check comes first, before any request byte is read."""
+        try:
+            if not self._owned(request, client_address):
+                self._refuse()
+                return
+            self.finish_request(request, client_address)
+        except Exception:
+            self.handle_error(request, client_address)
+        finally:
+            self.shutdown_request(request)
+            self._slots.release()
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         sys.stderr.write("request error: %s\n" % sys.exc_info()[0].__name__)
@@ -630,6 +677,10 @@ def serve(cfg: Any, bind: str, port: int) -> None:
         srv.server_close()
 
 
+def _access_error(exc: Exception) -> str:
+    return "error: %s; nothing was changed; to replace the file run: rb web key --revoke" % exc
+
+
 def key_main(args: argparse.Namespace) -> int:
     """rb web key: issue a one-time access key, or revoke everything, or show counts."""
     if args.revoke or args.status:
@@ -648,7 +699,11 @@ def key_main(args: argparse.Namespace) -> int:
                 return 1
             print("revoked %d pending key(s) and %d session(s)" % (k, n))
         else:
-            k, n = webaccess.counts(cfg)
+            try:
+                k, n = webaccess.counts_strict(cfg)
+            except AccessError as exc:
+                print(_access_error(exc))
+                return 1
             print("%d pending key(s), %d live session(s)" % (k, n))
         return 0
     lo, hi = webaccess.KEY_MINUTES
@@ -668,7 +723,7 @@ def key_main(args: argparse.Namespace) -> int:
     try:
         key = webaccess.issue_key(cfg, args.minutes, args.session_hours)
     except AccessError as exc:
-        print("error: %s; nothing was changed; to replace the file run: rb web key --revoke" % exc)
+        print(_access_error(exc))
         return 1
     except FileNotFoundError:
         print("error: the data directory %s does not exist; run: rb setup" % cfg.data_root)
