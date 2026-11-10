@@ -221,6 +221,12 @@ def test_queue_and_gpu_status(cfg, monkeypatch):
     (Path(cfg.queue_dir) / "jobs" / "a.json").write_text("{}", encoding="utf-8")
     r = call(cfg, ("queue_status", {}))[0]["result"]
     assert [(e["name"], e["state"]) for e in r["entries"]] == [("a.json", "jobs")]
+    assert r["withheld_entries"] == 0
+    # a job name that hits a withheld pattern never leaves the node (hard rule 3)
+    (Path(cfg.queue_dir) / "done" / "0002_H108N_test.job").write_text("", encoding="utf-8")
+    r = call(cfg, ("queue_status", {}))[0]["result"]
+    assert ("(withheld)", "done") in [(e["name"], e["state"]) for e in r["entries"]]
+    assert r["withheld_entries"] == 1 and "H108N" not in json.dumps(r)
     monkeypatch.setattr("rb_node.remote.shutil.which", lambda n: None)
     assert call(cfg, ("gpu_status", {}))[0]["result"] == {"gpus": [], "error": "nvidia-smi not found"}
 

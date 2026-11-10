@@ -314,11 +314,17 @@ def read_doc(node: str, ref: str) -> dict:
 
     Arguments: node (configured node name); ref (an id such as H-123 or EXP-015, or a path
     relative to a read root set in the node configuration). Lines that match a withheld pattern are
-    blanked on the node. Returns the node's result ({"text", ...}) or {"error": code} such as
+    blanked on the node and again on the hub with the hub's patterns (`hub_withheld_lines` counts
+    the hub's blanks). Returns the node's result ({"text", ...}) or {"error": code} such as
     "not_found" or "denied". Raises ValueError for an unknown node.
     """
     args = {"id": ref} if _DOC_ID.match(ref) else {"path": ref}
-    return _run(node, lambda c: c.call("read_doc", **args))
+    res = _run(node, lambda c: c.call("read_doc", **args))
+    if isinstance(res, dict) and isinstance(res.get("text"), str):
+        # the hub checks again with its own patterns (hard rule 3), as it does for poll bodies
+        text, n = Withheld.load(Path(load_cfg().withheld_patterns_file)).mask_text(res["text"])
+        res = dict(res, text=text, hub_withheld_lines=n)
+    return res
 
 
 def fetch_file(node: str, path: str) -> dict:
@@ -364,10 +370,25 @@ def fetch_file(node: str, path: str) -> dict:
 def queue_status(node: str) -> dict:
     """Read the node's job queue (read-only).
 
-    Argument: node (configured node name). Returns {"entries": [{"name", "mtime", "state"}]} or
-    {"error": text}. Raises ValueError for an unknown node.
+    Argument: node (configured node name). Returns {"entries": [{"name", "mtime", "state"}],
+    "withheld_entries"} or {"error": text}. A job name that matches a withheld pattern (on the
+    node, or again on the hub) is returned as "(withheld)"; withheld_entries counts them.
+    Raises ValueError for an unknown node.
     """
-    return _run(node, lambda c: c.call("queue_status"))
+    res = _run(node, lambda c: c.call("queue_status"))
+    if not isinstance(res, dict) or "error" in res:
+        return res
+    wh = Withheld.load(Path(load_cfg().withheld_patterns_file))
+    entries, hidden = [], 0
+    for e in res.get("entries", []):
+        if not isinstance(e, dict):
+            continue
+        name = e.get("name")
+        if not isinstance(name, str) or name == "(withheld)" or wh.name_hit(name):
+            e = dict(e, name="(withheld)")
+            hidden += 1
+        entries.append(e)
+    return {"entries": entries, "withheld_entries": hidden}
 
 
 def gpu_status(node: str) -> dict:
