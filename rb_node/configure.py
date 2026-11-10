@@ -130,8 +130,8 @@ def node_check(data: Dict[str, Any]) -> List[str]:
     tpl = cfg.job_template
     if not tpl:
         probs.append("job_template is empty: job_submit is refused (no_job_template)")
-    elif not any("{config}" in a for a in tpl):
-        probs.append("job_template has no {config} placeholder")
+    elif not any(k in a for a in tpl for k in ("{config}", "{config_dir}", "{config_stem}")):
+        probs.append("job_template has no {config}, {config_dir} or {config_stem} placeholder")
     if not cfg.harness_root:
         probs.append("harness_root is empty: harness push/pull are refused (no_harness_root)")
     elif not Path(cfg.harness_root).is_dir():
