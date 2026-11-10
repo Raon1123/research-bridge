@@ -127,3 +127,12 @@ def test_withheld_extra_counts_compiled_only(hcfg, tmp_path):
     assert r["state"]["withheld_loaded"] == 1
     assert r["state"]["withheld_rejected"] == 1
     assert r["state"]["withheld_source_set"] is True
+
+
+def test_hello_job_template_set_needs_config_placeholder(hcfg):
+    hcfg.job_template = ["python", "train.py"]
+    assert hello(hcfg)["state"]["job_template_set"] is False
+    hcfg.job_template = ["python", "train.py", "--config", "{config}"]
+    assert hello(hcfg)["state"]["job_template_set"] is True
+    hcfg.job_template = []
+    assert hello(hcfg)["state"]["job_template_set"] is False

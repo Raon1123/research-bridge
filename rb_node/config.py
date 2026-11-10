@@ -14,14 +14,9 @@ def _home(p: str) -> str:
     return os.path.expanduser(p)
 
 
-DEFAULT_TRM = _home("~/project/trm")
-
-
 def default_trm() -> str:
     return _home("~/project/trm")
 
-
-DEFAULT_TRM = default_trm()  # import-time value, kept for callers that import the name
 
 PATH_KEYS = ("trm_root", "queue_dir", "withheld_source", "claude_bin", "mailbox_root",
              "audit_path", "approval_path", "harness_root")

@@ -6,6 +6,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -423,11 +424,13 @@ def test_script_update_swap_is_symlink(sh_env):
     env, home, tree, _ = sh_env
     share = home / ".local" / "share" / "research-bridge"
     targets = []
-    for _ in range(3):
+    for _ in range(4):
         assert sh(env, "--research-root", str(tree)).returncode == 0
         targets.append(os.readlink(str(share / "rb_node")))
-    assert len(set(targets)) == 3
-    assert len([d for d in (share / "releases").iterdir() if d.is_dir()]) <= 3
+        time.sleep(1.1)  # release names carry second-resolution stamps; pruning orders by mtime
+    assert len(set(targets)) == 4
+    kept = sorted(d.name for d in (share / "releases").iterdir() if d.is_dir() and d.name != "legacy")
+    assert len(kept) == 2 and targets[-1].split("/")[1] in kept
 
 
 def test_script_legacy_directory_moved(sh_env):
@@ -440,13 +443,37 @@ def test_script_legacy_directory_moved(sh_env):
     assert (share / "releases" / "legacy" / "rb_node" / "old.py").is_file()
 
 
-def test_script_flag_aliases(sh_env):
+def _alias_run(tmp_path, name, args):
+    stub = tmp_path / ("stub-" + name)
+    stub.mkdir()
+    kg = stub / "ssh-keygen"
+    kg.write_text("#!/bin/sh\necho '256 SHA256:TESTFINGERPRINT x (ED25519)'\n", encoding="utf-8")
+    kg.chmod(0o755)
+    hk = tmp_path / ("hk-" + name)
+    hk.mkdir()
+    (hk / "ssh_host_ed25519_key.pub").write_text("x", encoding="utf-8")
+    home = tmp_path / ("home-" + name)
+    home.mkdir()
+    env = {"HOME": str(home), "PATH": "%s:%s:/usr/bin:/bin" % (stub, os.path.dirname(sys.executable)),
+           "RB_NODE_HOSTKEY_GLOB": str(hk / "ssh_host_*_key.pub"), "PYTHONDONTWRITEBYTECODE": "1"}
+    r = sh(env, *args)
+    lines = [ln for ln in r.stdout.splitlines() if "serve-remote" in ln]
+    cfg = json.loads((home / ".research-bridge" / "node.json").read_text(encoding="utf-8"))
+    return r, [ln.replace(str(home), "HOME") for ln in lines], \
+        {k: str(v).replace(str(home), "HOME") for k, v in cfg.items()}
+
+
+def test_script_flag_aliases(sh_env, tmp_path):
     env, home, tree, _ = sh_env
-    r = sh(env, "--trm-root", str(tree), "--hub-key", K1, "--hub-from", "192.0.2.10")
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "serve-remote" in r.stdout
-    r = sh(env, "--research-root", str(tree), "--hub-key", K1, "--hub-subnet", "192.0.2.10")
-    assert r.returncode == 0 and "serve-remote" in r.stdout
+    r1, lines1, cfg1 = _alias_run(tmp_path, "old", ["--trm-root", str(tree), "--hub-key", K1,
+                                                    "--hub-from", "192.0.2.10"])
+    r2, lines2, cfg2 = _alias_run(tmp_path, "new", ["--research-root", str(tree), "--hub-key", K1,
+                                                    "--hub-from", "192.0.2.10"])
+    assert r1.returncode == 0 and r2.returncode == 0, r1.stderr + r2.stderr
+    assert lines1 and lines1 == lines2 and cfg1 == cfg2
+    r3, lines3, _ = _alias_run(tmp_path, "subnet", ["--research-root", str(tree), "--hub-key", K1,
+                                                    "--hub-subnet", "192.0.2.10"])
+    assert r3.returncode == 0 and lines3 == lines2
 
 
 def test_script_same_key_refused(sh_env):
@@ -454,6 +481,34 @@ def test_script_same_key_refused(sh_env):
     r = sh(env, "--research-root", str(tree), "--hub-key", K1, "--harness-key", K1,
            "--hub-from", "192.0.2.10")
     assert r.returncode == 2 and "hard rule 9" in r.stderr
+    assert not (home / ".local").exists() and not (home / ".research-bridge").exists()
+
+
+def test_script_bad_hub_from_refused_before_any_write(sh_env):
+    env, home, tree, _ = sh_env
+    r = sh(env, "--research-root", str(tree), "--hub-key", K1, "--hub-from", "not an address")
+    assert r.returncode == 2
+    assert not (home / ".local").exists() and not (home / ".research-bridge").exists()
+
+
+def test_script_refuses_hub_data_directory(sh_env):
+    env, home, tree, _ = sh_env
+    share = home / ".local" / "share" / "research-bridge"
+    share.mkdir(parents=True)
+    (share / "host.json").write_text("{}", encoding="utf-8")
+    r = sh(env, "--research-root", str(tree))
+    assert r.returncode == 1 and "hub" in r.stderr
+    assert not (share / "releases").exists()
+
+
+def test_script_refuses_python_path_with_space(sh_env, tmp_path):
+    env, home, tree, _ = sh_env
+    spaced = tmp_path / "a b"
+    spaced.mkdir()
+    (spaced / "python3").symlink_to(sys.executable)
+    env2 = dict(env, PATH="%s:%s" % (spaced, env["PATH"]))
+    r = sh(env2, "--research-root", str(tree))
+    assert r.returncode == 1 and "python3 path" in r.stderr
 
 
 def test_script_withheld_file(sh_env, tmp_path):
@@ -496,3 +551,62 @@ def test_deploy_examples_and_trm_link_removed():
         for p in (REPO / d).rglob("*"):
             if p.is_file() and p.suffix in (".py", ".sh", ".example"):
                 assert "trm-link" not in p.read_text(encoding="utf-8", errors="replace"), p
+
+
+def test_authorized_keys_non_utf8_file_kept_byte_for_byte(home, tmp_path, monkeypatch):
+    ssh = home / ".ssh"
+    ssh.mkdir()
+    (ssh / "authorized_keys").write_bytes(b"# stray \xff byte\n")
+    argv = ["authorized-keys", "--hub-key", K1, "--hub-from", "192.0.2.10",
+            "--bindir", str(tmp_path / "bin")]
+    assert install.main(argv) == 0
+    monkeypatch.setattr(install, "_interactive", lambda: True)
+    monkeypatch.setattr(install, "_ask", lambda prompt: True)
+    assert install.main(argv + ["--apply"]) == 0
+    data = (ssh / "authorized_keys").read_bytes()
+    assert data.startswith(b"# stray \xff byte\n") and b"serve-remote" in data
+
+
+def test_authorized_keys_symlink_not_replaced(tmp_path, monkeypatch, capsys):
+    real = tmp_path / "managed"
+    real.write_text("# x\n", encoding="utf-8")
+    path = tmp_path / "authorized_keys"
+    path.symlink_to(real)
+    text, changes = install.plan_authorized_keys("# x\n", new_lines())
+    monkeypatch.setattr(install, "_interactive", lambda: True)
+    monkeypatch.setattr(install, "_ask", lambda p: True)
+    assert install.apply_authorized_keys(path, text, changes) is False
+    assert path.is_symlink() and real.read_text(encoding="utf-8") == "# x\n"
+
+
+def test_write_private_ignores_leftover_tmp_symlink(tmp_path):
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    (tmp_path / "f.tmp").symlink_to(victim)
+    install._write_private(tmp_path / "f", b"new")
+    assert victim.read_text(encoding="utf-8") == "keep"
+    assert (tmp_path / "f").read_bytes() == b"new"
+
+
+def test_config_init_force_keeps_custom_withheld_source_without_terminal(home, monkeypatch):
+    cfgp = node_json(home)
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgp))
+    data = json.loads(cfgp.read_text(encoding="utf-8"))
+    data["withheld_source"] = "/custom.json"
+    cfgp.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(cli, "_interactive", lambda: False)
+    assert cli.main(["config", "init", "--force"]) == 1
+    assert json.loads(cfgp.read_text(encoding="utf-8"))["withheld_source"] == "/custom.json"
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    assert cli.main(["config", "init", "--force"]) == 0
+
+
+def test_withheld_custom_source_missing_needs_terminal(home, tmp_path, monkeypatch):
+    cfgp = node_json(home)
+    data = json.loads(cfgp.read_text(encoding="utf-8"))
+    data["withheld_source"] = str(tmp_path / "gone.json")
+    cfgp.write_text(json.dumps(data), encoding="utf-8")
+    src = pattern_file(tmp_path / "new.json", ["harmless"])
+    monkeypatch.setattr(install, "_interactive", lambda: False)
+    assert install.install_withheld(src, dest_of(home), cfgp) == 1
+    assert json.loads(cfgp.read_text(encoding="utf-8"))["withheld_source"] == data["withheld_source"]

@@ -58,10 +58,16 @@ def main(argv: List[str]) -> int:
     if not apply:
         return 0
     path = target / ".mcp.json"
-    if path.exists():
+    if os.path.lexists(str(path)):
         print("%s exists; merge by hand or run: claude mcp add --scope project rb-node -- %s "
               "serve-local" % (path, data["mcpServers"]["rb-node"]["command"]))
         return 1
-    path.write_text(text + "\n", encoding="utf-8")
+    try:
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+    except OSError as exc:
+        sys.stderr.write("rb-node link: cannot write %s: %s\n" % (path, exc.strerror or exc))
+        return 1
     print("wrote %s" % path)
     return 0

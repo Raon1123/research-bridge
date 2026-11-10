@@ -27,6 +27,10 @@ if mode == "exit1":
 if mode == "sleep":
     time.sleep(8)
     sys.exit(0)
+if mode == "grandchild":
+    import subprocess
+    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(4)"])
+    sys.exit(0)
 if mode == "noop":
     sys.exit(0)
 from rb_node.config import load_config
@@ -95,6 +99,16 @@ def test_timeout_fails(env, monkeypatch):
     assert time.time() - t < 7
     assert status(env, "m1") == "failed"
     assert json.loads(events(env)[0]["body"])["reason"] == "timeout"
+
+
+def test_grandchild_holding_output_does_not_hold_the_lock(env, monkeypatch):
+    monkeypatch.setenv("FAKE_MODE", "grandchild")
+    monkeypatch.setattr(spawn, "RESPONDER_TIMEOUT", 3)
+    mkmsg(env, "m1")
+    t = time.time()
+    spawn.respond(env, "m1")
+    assert time.time() - t < 2.5
+    assert json.loads(events(env)[0]["body"])["reason"] == "no reply"
 
 
 def test_exit_zero_without_reply_fails(env, monkeypatch):
@@ -293,6 +307,33 @@ def test_concurrent_takeover_one_holder(env):
     lock = state / "responder.lock"
     assert lock.read_text(encoding="utf-8") == str(winners[0][0])
     assert not (state / "responder.lock.takeover").exists()
+
+
+def test_takeover_serialised_when_stale_judgement_is_slow(env, monkeypatch):
+    import threading
+    state = Path(env.mailbox_root) / "state"
+    _write_lock(state, _dead_pid(), age=100)
+    real = spawn._is_stale
+
+    def slow(path):
+        verdict = real(path)  # both contenders judge the dead lock stale before either replaces it
+        time.sleep(0.3)
+        return verdict
+
+    monkeypatch.setattr(spawn, "_is_stale", slow)
+    results = []
+    barrier = threading.Barrier(2)
+
+    def go():
+        barrier.wait()
+        results.append(spawn._acquire(state))
+
+    ts = [threading.Thread(target=go) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(20)
+    assert len([r for r in results if r]) == 1
 
 
 def test_old_takeover_file_is_replaced(env):

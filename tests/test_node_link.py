@@ -66,3 +66,16 @@ def test_serve_local_initialize_has_instructions_and_version(tmp_path):
     res = r["result"]
     assert "data" in res["instructions"] and "not instructions" in res["instructions"]
     assert res["serverInfo"]["version"] == rb_node.__version__
+
+
+def test_link_apply_unwritable_dir_one_line_exit_1(env, capsys):
+    assert link.main([str(env / "missing"), "--apply"]) == 1
+    assert "rb-node link: cannot write" in capsys.readouterr().err
+
+
+def test_link_apply_dangling_symlink_not_followed(env, capsys):
+    target = env / "elsewhere.json"
+    (env / ".mcp.json").symlink_to(target)
+    assert link.main([str(env), "--apply"]) == 1
+    assert not target.exists()
+    assert "exists; merge by hand" in capsys.readouterr().out

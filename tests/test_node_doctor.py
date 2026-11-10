@@ -351,3 +351,17 @@ def test_doctor_cli_prints_all_lines(home, tmp_path, monkeypatch, capsys):
     assert cli.main(["doctor"]) == 0
     out = capsys.readouterr().out
     assert "[ok]" in out and BLOB not in out
+
+
+def test_authorized_keys_same_blob_on_harness_line_fail(home):
+    bindir = home / ".local" / "bin"
+    bindir.mkdir(parents=True)
+    (bindir / "rb-node").write_text("#!/bin/sh\n", encoding="utf-8")
+    (bindir / "rb-node").chmod(0o755)
+    text = ('restrict,from="192.0.2.1",command="%s/rb-node serve-remote" ssh-ed25519 %s a\n'
+            'restrict,from="192.0.2.1",command="%s/rb-node harness-receive" ssh-ed25519 %s b\n'
+            % (bindir, BLOB, bindir, BLOB))
+    checks = by_id(doctor.system_checks(ak_cfg(home, text)))
+    assert checks["ak_duplicate"].level == "fail"
+    assert "line 2" in checks["ak_duplicate"].message
+    assert "hard rule 9" in checks["ak_duplicate"].message

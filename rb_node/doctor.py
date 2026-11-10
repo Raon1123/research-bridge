@@ -43,7 +43,8 @@ def state(cfg: NodeConfig, withheld: Withheld) -> dict:
     return {
         "configured": True,
         "approval_verifier": verifier,
-        "job_template_set": bool(cfg.job_template),
+        "job_template_set": bool(cfg.job_template)
+        and any("{config}" in str(a) for a in cfg.job_template),
         "withheld_source_set": bool(withheld.source_set),
         "withheld_loaded": withheld.extra_count,
         "withheld_rejected": withheld.rejected_count,
@@ -183,8 +184,10 @@ def _withheld_check(cfg: NodeConfig) -> Check:
     if w.source_error:
         return Check("withheld", "fail", "withheld pattern file is not valid JSON", fix)
     if w.rejected_count:
-        return Check("withheld", "fail", "%d pattern(s) do not compile (indexes %s)"
-                     % (w.rejected_count, ", ".join(str(i) for i in w.rejected_indexes)), fix)
+        idx = ", ".join(str(i) for i in w.rejected_indexes)
+        return Check("withheld", "fail",
+                     "%d pattern(s) do not compile (positions in the flattened string list: %s)"
+                     % (w.rejected_count, idx), fix)
     if w.extra_count == 0:
         return Check("withheld", "fail", "withheld pattern file has no pattern", fix)
     return _ok("withheld", "%d pattern(s) loaded besides the fallback" % w.extra_count)
@@ -310,20 +313,23 @@ def _ak_checks() -> List[Check]:
            _ak_check("ak_harness", "warn", entries, "harness-receive", " (harness channel only)",
                      fix.replace("--hub-key", "--harness-key"))]
     dup = None
+    dup_harness = False
     for e in entries:
         if _forced(e, "serve-remote") is None:
             continue
         for other in entries:
-            if other is not e and other["blob"] == e["blob"] and \
-                    _forced(other, "harness-receive") is None:
+            if other is not e and other["blob"] == e["blob"]:
                 dup = other["lineno"]
+                dup_harness = _forced(other, "harness-receive") is not None
                 break
         if dup:
             break
     if dup:
-        out.append(Check("ak_duplicate", "fail",
-                         "the serve-remote key also appears on line %d without the forced command"
-                         % dup, "remove line %d from ~/.ssh/authorized_keys" % dup))
+        msg = ("the serve-remote key is also the harness key on line %d (AGENTS.md hard rule 9)"
+               % dup if dup_harness else
+               "the serve-remote key also appears on line %d without the forced command" % dup)
+        out.append(Check("ak_duplicate", "fail", msg,
+                         "remove line %d from ~/.ssh/authorized_keys" % dup))
     else:
         out.append(_ok("ak_duplicate", "the bridge key appears only on its forced-command line"))
     return out

@@ -64,6 +64,7 @@ PY=$(command -v python3 || true)
 [ -n "$PY" ] || { echo "python3 not found" >&2; exit 1; }
 "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' \
   || { echo "python3 >= 3.8 required" >&2; exit 1; }
+case "$PY" in *[!A-Za-z0-9_./+-]*) echo "python3 path has characters the wrapper cannot hold: $PY" >&2; exit 1;; esac
 command -v git >/dev/null || { echo "git not found" >&2; exit 1; }
 command -v pdftotext >/dev/null || echo "note: pdftotext missing; pdf files will be denied"
 command -v claude >/dev/null || echo "note: claude not found on PATH; the responder needs claude_bin"
@@ -73,6 +74,10 @@ BIN="$HOME/.local/bin"
 RB="$HOME/.research-bridge"
 NODEJSON=${RB_NODE_CONFIG:-$RB/node.json}
 RBN="$BIN/rb-node"
+if [ -e "$DEST/host.json" ] || [ -e "$DEST/ledger.jsonl" ]; then
+  echo "$DEST holds hub data (host.json or ledger.jsonl); this machine is a hub: not installing a node here" >&2
+  exit 1
+fi
 pyinst() { PYTHONPATH="$SRC" "$PY" -m rb_node.install "$@"; }
 
 # Decide the research root before anything is written.
@@ -91,6 +96,16 @@ fi
 if [ -n "$ROOT" ]; then
   [ -d "$ROOT" ] || { echo "research root is not a directory: $ROOT" >&2; exit 2; }
   ROOT=$(cd "$ROOT" && pwd)
+fi
+
+# Validate keys and --hub-from before anything is written.
+if { [ -n "$HUBKEY" ] || [ -n "$HUBKEYFILE" ]; } && [ -n "$FROM" ]; then
+  set -- authorized-keys --hub-from "$FROM" --bindir "$BIN" --check
+  [ -z "$HUBKEY" ] || set -- "$@" --hub-key "$HUBKEY"
+  [ -z "$HUBKEYFILE" ] || set -- "$@" --hub-pubkey "$HUBKEYFILE"
+  [ -z "$HARNESSKEY" ] || set -- "$@" --harness-key "$HARNESSKEY"
+  [ -z "$HARNESSKEYFILE" ] || set -- "$@" --harness-pubkey "$HARNESSKEYFILE"
+  pyinst "$@" || exit 2
 fi
 
 # -- --update --------------------------------------------------------------------------------

@@ -266,6 +266,14 @@ def _write_log(cfg: NodeConfig, msg_id: str, out: bytes, err: bytes) -> None:
         pass
 
 
+def _slurp(path: str) -> bytes:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+
 def _run_one(cfg: NodeConfig, mb: Mailbox, msg_id: str) -> None:
     _prune_logs(Path(cfg.mailbox_root) / "state")
     mb.set_status(msg_id, "responding")
@@ -277,16 +285,22 @@ def _run_one(cfg: NodeConfig, mb: Mailbox, msg_id: str) -> None:
                 "--allowedTools", ALLOWED_TOOLS, "--disallowedTools", DISALLOWED_TOOLS,
                 "--max-turns", MAX_TURNS,
                 "--output-format", "json"]
+        # Output goes to files in the private temp directory, not pipes: a grandchild that keeps
+        # a pipe open after claude exits cannot hold the responder lock until the timeout.
+        out_p, err_p = os.path.join(tmp, "stdout"), os.path.join(tmp, "stderr")
         try:
-            r = subprocess.run(argv, cwd=cfg.trm_root, timeout=RESPONDER_TIMEOUT,
-                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-            _write_log(cfg, msg_id, r.stdout or b"", r.stderr or b"")
-            if r.returncode != 0:
-                reason = "exit code %d" % r.returncode
-        except subprocess.TimeoutExpired as exc:
-            _write_log(cfg, msg_id, exc.stdout or b"", exc.stderr or b"")
-            reason = "timeout"
+            with open(out_p, "wb") as fo, open(err_p, "wb") as fe:
+                try:
+                    r = subprocess.run(argv, cwd=cfg.trm_root, timeout=RESPONDER_TIMEOUT,
+                                       stdin=subprocess.DEVNULL, stdout=fo, stderr=fe)
+                    rc = r.returncode  # type: Optional[int]
+                except subprocess.TimeoutExpired:
+                    rc = None
+            _write_log(cfg, msg_id, _slurp(out_p), _slurp(err_p))
+            if rc is None:
+                reason = "timeout"
+            elif rc != 0:
+                reason = "exit code %d" % rc
         except OSError as exc:
             reason = "spawn error: %s" % type(exc).__name__
     if _status(mb, msg_id) == "answered":

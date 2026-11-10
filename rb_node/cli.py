@@ -75,6 +75,15 @@ def _config(rest: List[str]) -> int:
             if path.exists() and not ns.force:
                 sys.stderr.write("%s exists; use --force to overwrite\n" % path)
                 return 1
+            if path.exists() and not _interactive():
+                try:
+                    old_ws = c.read_json(path).get("withheld_source")
+                except (c.ConfigError, OSError):
+                    old_ws = None
+                if old_ws and old_ws != c.node_defaults().get("withheld_source"):
+                    sys.stderr.write("rb-node config init --force would reset withheld_source; "
+                                     "run it in an interactive terminal\n")
+                    return 1
             c.write_json(path, c.node_defaults())
             print("wrote %s" % path)
             return 0

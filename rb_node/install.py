@@ -14,6 +14,7 @@ import ipaddress
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -141,12 +142,18 @@ def plan_authorized_keys(existing: str, new_lines: List[str]) -> Tuple[str, List
 
 
 def _write_private(path: Path, data: bytes) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(data)
-    os.chmod(str(tmp), 0o600)
-    os.replace(str(tmp), str(path))
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _backup(path: Path) -> Path:
@@ -159,6 +166,11 @@ def _backup(path: Path) -> Path:
     return bak
 
 
+def _read_ak(path: Path) -> str:
+    """Read authorized_keys without failing on stray non-UTF-8 bytes (kept byte for byte)."""
+    return path.read_bytes().decode("utf-8", "surrogateescape")
+
+
 def apply_authorized_keys(path: Path, new_text: str, changes: List[str]) -> bool:
     path = Path(path)
     for c in changes:
@@ -166,7 +178,10 @@ def apply_authorized_keys(path: Path, new_text: str, changes: List[str]) -> bool
     if not _interactive():
         print("not a terminal: authorized_keys not changed; apply the lines above by hand")
         return False
-    old = path.read_text(encoding="utf-8") if path.exists() else None
+    if path.is_symlink():
+        print("%s is a symlink: not changed; apply the lines above by hand" % path)
+        return False
+    old = _read_ak(path) if path.exists() else None
     if old == new_text:
         print("authorized_keys is already up to date")
         return False
@@ -177,7 +192,7 @@ def apply_authorized_keys(path: Path, new_text: str, changes: List[str]) -> bool
     os.chmod(str(path.parent), 0o700)
     if old is not None:
         print("backup: %s" % _backup(path))
-    _write_private(path, new_text.encode("utf-8"))
+    _write_private(path, new_text.encode("utf-8", "surrogateescape"))
     print("wrote %s" % path)
     return True
 
@@ -223,6 +238,14 @@ def install_withheld(src: Path, dest: Path, cfg_path: Path, dry_run: bool = Fals
     if not differing and existing and current == str(dest) and dest.is_file():
         print("withheld file unchanged (%d patterns)" % w.extra_count)
         return 0
+    custom_missing = (isinstance(current, str) and bool(current) and current != str(dest)
+                      and not Path(os.path.expanduser(current)).is_file())
+    if custom_missing and not differing:
+        print("withheld_source names a file that is missing; the new file would replace that setting")
+        if not _interactive():
+            sys.stderr.write("replacing withheld_source needs an interactive terminal; "
+                             "nothing changed\n")
+            return 1
     if differing:
         old_n = _count(differing[0])
         print("current file: %d patterns; new file: %d patterns" % (old_n, w.extra_count))
@@ -290,6 +313,7 @@ def _authorized_keys(rest: List[str]) -> int:
     ap.add_argument("--bindir", required=True)
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--check", action="store_true", help="validate the keys and --hub-from only")
     ns = ap.parse_args(rest)
     try:
         bridge, harness = _keys(ns)
@@ -300,10 +324,12 @@ def _authorized_keys(rest: List[str]) -> int:
     if harness is not None and harness[1] == bridge[1]:
         sys.stderr.write("bridge and harness keys must differ (AGENTS.md hard rule 9)\n")
         return 2
+    if ns.check:
+        return 0
     lines = ak_lines(bridge, harness, hub_from, Path(ns.bindir))
     path = doctor.authorized_keys_path()
     try:
-        existing = path.read_text(encoding="utf-8")
+        existing = _read_ak(path)
     except OSError:
         existing = ""
     text, changes = plan_authorized_keys(existing, lines)
