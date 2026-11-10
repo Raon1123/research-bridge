@@ -128,6 +128,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     state = mb.root / "state"
     key = _key(args)
     # SEC-01: before any lookup or write, so a refused call leaves nothing behind
+    approval.require_safe_path(cfg)
     approval.check(Path(cfg.approval_path), state, args)
     prior = _idem_lookup(state, key, "job_submit")
     if prior is not None:
@@ -176,6 +177,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
 def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
     state = mb.root / "state"
     key = _key(args)
+    approval.require_safe_path(cfg)
     approval.check(Path(cfg.approval_path), state, args)
     prior = _idem_lookup(state, key, "job_cancel")
     if prior is not None:

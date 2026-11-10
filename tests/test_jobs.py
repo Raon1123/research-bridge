@@ -187,6 +187,24 @@ def test_cancel_without_key_refused(tcfg):
     assert r["error"]["code"] == "not_authorized" and len(_jobs(tcfg)) == 1
 
 
+def test_approval_path_inside_a_root_is_refused(tcfg, tmp_path):
+    root = tmp_path / "wroot"
+    root.mkdir()
+    tcfg.write_roots = [str(root)]
+    tcfg.approval_path = str(root / "a" / ".." / "approve.json")
+    sha = _upload_config(tcfg, "s9")
+    r = call(tcfg, ("job_submit", _submit_args("s9", sha)),
+                   ("job_cancel", _cancel_args("s9", "c-s9")), ("approve_params", {}))
+    assert [x["error"]["code"] for x in r] == ["approval_path_unsafe"] * 3
+    assert _nothing_written(tcfg, "s9")
+
+
+def test_approval_path_inside_mailbox_is_refused(tcfg):
+    tcfg.approval_path = str(Path(tcfg.mailbox_root) / "in" / "m1" / "attachments" / "approve.json")
+    r = call(tcfg, ("approve_params", {}))[0]
+    assert r["error"]["code"] == "approval_path_unsafe"
+
+
 def test_approve_params_public_only(tcfg):
     r = call(tcfg, ("approve_params", {}))[0]
     assert r["result"] == {"salt": RECORD["salt"], "iterations": 1000}

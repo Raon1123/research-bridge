@@ -87,6 +87,7 @@ def test_mcp_entry_runs_through_uv():
 
 
 def test_node_config_flow(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(node_cli, "_interactive", lambda: True)
     p = tmp_path / "node.json"
     monkeypatch.setenv("RB_NODE_CONFIG", str(p))
     assert node_cli.main(["config", "show"]) == 1
@@ -142,7 +143,18 @@ def test_set_research_root_moves_old_withheld_default(tmp_path, monkeypatch):
     assert out["withheld_source"].endswith("/.research-bridge/withheld-patterns.json")
 
 
+@pytest.mark.parametrize("key,value", [("approval_path", "/x/a.json"), ("read_roots", '["/"]'),
+                                       ("write_roots", '["/"]'), ("withheld_source", "/x")])
+def test_guarded_keys_need_a_terminal(key, value, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RB_NODE_CONFIG", str(tmp_path / "node.json"))
+    assert node_cli.main(["config", "init"]) == 0
+    monkeypatch.setattr(node_cli, "_interactive", lambda: False)
+    assert node_cli.main(["config", "set", key, value]) == 1
+    assert "interactive terminal" in capsys.readouterr().err
+
+
 def test_tilde_expanded_in_path_keys(tmp_path, monkeypatch):
+    monkeypatch.setattr(node_cli, "_interactive", lambda: True)
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     p = tmp_path / "node.json"

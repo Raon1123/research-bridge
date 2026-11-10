@@ -36,7 +36,8 @@ def _run(argv: List[str]) -> Tuple[int, str, str]:
 def state(cfg: NodeConfig, withheld: Withheld) -> dict:
     """Booleans and counts for `hello` (design section 6.5). No path or pattern text."""
     try:
-        verifier = approval._load(Path(cfg.approval_path)) is not None
+        verifier = (approval._load(Path(cfg.approval_path)) is not None
+                    and not approval.path_inside_roots(cfg))
     except Exception:  # unreadable path of any kind: report False, never raise
         verifier = False
     claude = cfg.claude_bin

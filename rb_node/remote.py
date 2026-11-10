@@ -370,6 +370,7 @@ class Node:
         return {"trm": trm, "install": inst}
 
     def approve_params(self, args: dict) -> dict:
+        approval.require_safe_path(self.cfg)
         return approval.params(Path(self.cfg.approval_path))
 
     # -- dispatch ----------------------------------------------------------

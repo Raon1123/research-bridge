@@ -10,6 +10,11 @@ SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-rec
                "approve-key", "config", "git-status", "install-record", "doctor", "link")
 
 
+# keys a session driven by bridge messages must not move: the approval verifier path, the roots
+# that bound what the bridge reads and writes, and the withheld pattern source (SEC-01)
+GUARDED_KEYS = ("withheld_source", "approval_path", "read_roots", "write_roots")
+
+
 def _interactive() -> bool:
     """True when a person is at a terminal (stdin and stdout). Tests replace this."""
     try:
@@ -64,7 +69,7 @@ def _config(rest: List[str]) -> int:
     s = sub.add_parser("set", help="set one key; lists take JSON, e.g. '[\"a\", \"b\"]'")
     s.add_argument("key")
     s.add_argument("value")
-    sub.add_parser("check", help="list what is missing; exit 1 if anything is")
+    sub.add_parser("check", help="list what is missing; exit 1 when a check fails")
     ns = ap.parse_args(rest)
     path = config_path()
     try:
@@ -77,13 +82,15 @@ def _config(rest: List[str]) -> int:
                 return 1
             if path.exists() and not _interactive():
                 try:
-                    old_ws = c.read_json(path).get("withheld_source")
+                    old = c.read_json(path)
                 except (c.ConfigError, OSError):
-                    old_ws = None
-                if old_ws and old_ws != c.node_defaults().get("withheld_source"):
-                    sys.stderr.write("rb-node config init --force would reset withheld_source; "
-                                     "run it in an interactive terminal\n")
-                    return 1
+                    old = {}
+                dflt = c.node_defaults()
+                for k in GUARDED_KEYS:
+                    if old.get(k) and old.get(k) != dflt.get(k):
+                        sys.stderr.write("rb-node config init --force would reset %s; "
+                                         "run it in an interactive terminal\n" % k)
+                        return 1
             c.write_json(path, c.node_defaults())
             print("wrote %s" % path)
             return 0
@@ -95,9 +102,9 @@ def _config(rest: List[str]) -> int:
             print(json.dumps(data, ensure_ascii=False, indent=2))
             return 0
         if ns.action == "set":
-            if ns.key == "withheld_source" and not _interactive():
-                sys.stderr.write("rb-node config set withheld_source must be run by the user in "
-                                 "an interactive terminal\n")
+            if ns.key in GUARDED_KEYS and not _interactive():
+                sys.stderr.write("rb-node config set %s must be run by the user in "
+                                 "an interactive terminal\n" % ns.key)
                 return 1
             c.write_json(path, c.node_set(data, ns.key, c.parse_value(ns.value)))
             print("%s set" % ns.key)

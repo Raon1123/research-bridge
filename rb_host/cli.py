@@ -407,7 +407,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cl.add_argument("--node-home", default="")
     cs.add_parser("show", help="print both files")
     cs.add_parser("mcp", help="print the ~/.claude.json entry for the MCP server")
-    cs.add_parser("check", help="list what is missing or would leak; exit 1 if anything")
+    cs.add_parser("check", help="list what is missing or would leak; exit 1 when a check fails")
     c.set_defaults(fn=_config)
     args = ap.parse_args(argv)
     return args.fn(args)
