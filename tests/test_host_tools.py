@@ -319,6 +319,23 @@ def test_status_tools(env):
     assert "gpus" in server.gpu_status("n1")
 
 
+def test_queue_names_and_doc_text_checked_again_on_hub(env, monkeypatch):
+    # an older node sends job names and document lines unchecked; the hub hides them itself
+    raw = {"entries": [{"name": "0001_plain_k1.job", "mtime": 1.0, "state": "done"},
+                       {"name": "0002_H108N_test.job", "mtime": 2.0, "state": "done"},
+                       {"name": "0003_pp_ltf_test.job", "mtime": 3.0, "state": "jobs"}]}
+    monkeypatch.setattr(server, "_run", lambda node, fn: json.loads(json.dumps(raw)))
+    r = server.queue_status("n1")
+    assert [e["name"] for e in r["entries"]] == ["0001_plain_k1.job", "(withheld)", "(withheld)"]
+    assert r["withheld_entries"] == 2 and [e["state"] for e in r["entries"]] == ["done", "done", "jobs"]
+    monkeypatch.setattr(server, "_run", lambda node, fn: {"error": "timeout"})
+    assert server.queue_status("n1") == {"error": "timeout"}
+    monkeypatch.setattr(server, "_run", lambda node, fn: {
+        "text": "keep\na cleanr1_test line\nkeep too", "withheld_lines": 0})
+    d = server.read_doc("n1", "EXP-001")
+    assert d["text"] == "keep\n\nkeep too" and d["hub_withheld_lines"] == 1
+
+
 def test_cli_refuses_non_interactive_pm04(env, monkeypatch, capsys):
     # a session (stdin is a pipe or a file) cannot approve or reject, even when it can
     # pipe "y" and the passphrase; there is no --yes

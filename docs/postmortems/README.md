@@ -46,5 +46,6 @@ The scale comes from the anti-goals in the research-bridge design §4.
 | 2026-11-06 | [One SSH error message for two causes (hub key-agent setup)](2026-11-06-hub-key-agent-setup.md) | draft, unaudited |
 | 2026-11-10 | [Node-local review and checks on node1](2026-11-10-node-local-checks.md) | draft, unaudited |
 | 2026-11-10 | [The test suite overwrote the real ~/.claude.json](2026-11-10-test-suite-overwrote-claude-json.md) | draft, unaudited |
+| 2026-11-10 | [queue_status sent withheld job names to the hub](2026-11-10-queue-status-withheld.md) | draft, unaudited |
 
 The format follows the vault postmortem `90_Claude/60_Tools/session-calendar/POSTMORTEM-20261004.md` (fields and audit lines), adapted to this project's severity scale.

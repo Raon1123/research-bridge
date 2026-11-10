@@ -310,7 +310,10 @@ class Node:
 
     # -- status ------------------------------------------------------------
     def queue_status(self, args: dict) -> dict:
+        # Job file names carry run names, so they leave the node only after the withheld check
+        # (hard rule 3): a hit keeps its state and mtime, the name becomes "(withheld)".
         entries = []  # type: List[dict]
+        hidden = 0
         for state in QUEUE_STATES:
             d = Path(self.cfg.queue_dir) / state
             if not d.is_dir():
@@ -323,8 +326,11 @@ class Node:
                     continue
             found.sort(reverse=True)
             for mtime, name in found[:200]:
+                if self.withheld.name_hit(name):
+                    name = "(withheld)"
+                    hidden += 1
                 entries.append({"name": name, "mtime": mtime, "state": state})
-        return {"entries": entries}
+        return {"entries": entries, "withheld_entries": hidden}
 
     def gpu_status(self, args: dict) -> dict:
         exe = shutil.which("nvidia-smi")
