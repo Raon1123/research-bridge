@@ -90,7 +90,12 @@ Not done or not verified:
 
 ## Pending decisions
 
-All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. The first three: push and merge this branch; transport authentication (#25) before or after the first live run; approval surfaces (no form on the hub page, the self-approval residual). Open work by workstream: the same file, §4.
+All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. The first two: push and merge this branch; transport authentication (#25) before or after the first live run. Open work by workstream: the same file, §4.
+
+Decided by the user on 2026-11-10 (no longer waiting; items 3, 7, 8, 11, 13 and 20 of the triage list §5 are closed except where noted):
+
+- The user confirmed the six defaults: (1) outgoing bodies are stored under `outbox/` after the withheld check, masked; (2) the ten MCP tools stay with their names and arguments; (3) the hub page has no approval form, approval stays `rb approve` in a hub terminal (the self-approval residual of PM-04 in `2026-11-03-whole-branch-review.md` stays accepted, as before); (4) unattended sync runs only through `rb service install`, run by the user; (5) the Windows instructions shrink to an appendix; (6) the `trm` names in config keys and on the wire are not renamed now.
+- The user chose a one-time access key for the hub page: `rb web key` in a hub terminal prints an address; the browser exchanges the key once for a session cookie (defaults 10 minutes for the key, 12 hours for the session). No password and no login form. Design: `docs/design/2026-11-10-sync-and-hub-page.md` §6.6a. Residual risk: another local account can capture a key or cookie sent to port 8767 while the page service is not running; a Unix-socket forward would remove it and stays a possible later change.
 
 ## Verification commands
 

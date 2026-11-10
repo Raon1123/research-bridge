@@ -355,7 +355,7 @@ No unit holds `SSH_AUTH_SOCK`, a key path or a passphrase. The unit finds the ag
 
 ## 14. Hub page
 
-`rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767) serves a read-only page: conversations, job records, pending approvals and the sync state. A request reads files only; the page opens no node connection, starts no process and writes nothing. `--bind` accepts only `127.0.0.1`; any other value is refused with a message that names the SSH forward below. It is normally started by `rb-web.service` (§13.3). It changes no data, but starting it is not session-safe: a session needs the user's go-ahead (`AGENTS.md`).
+`rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767) serves a read-only page: conversations, job records, pending approvals and the sync state. A request reads files only; the page opens no node connection, starts no process and writes nothing except the access file `web/access.json` when a key is used (below). `--bind` accepts only `127.0.0.1`; any other value is refused with a message that names the SSH forward below. It is normally started by `rb-web.service` (§13.3). It changes no data, but starting it is not session-safe: a session needs the user's go-ahead (`AGENTS.md`).
 
 | Route | Content | Refresh |
 |---|---|---|
@@ -364,7 +364,8 @@ No unit holds `SSH_AUTH_SOCK`, a key path or a passphrase. The unit finds the ag
 | `/thread/<id>` | one conversation: every record with time, direction, status, body, attachments | 60 s |
 | `/jobs` | job records by status, with `job_finished` events | 60 s |
 | `/nodes` | status file and board sources per node | 60 s |
-| `/healthz` | JSON `{"ok": true, "ledger_mtime_ns": ...}` | none |
+| `/healthz` | JSON `{"ok": true}` (liveness only; needs no key) | none |
+| `/enter?key=KEY` | exchanges a one-time key for a session cookie, then redirects to `/` | none |
 
 Only `GET` and `HEAD` are answered (other methods get 405, unknown routes 404). The `Host` header must be `127.0.0.1:PORT`, `localhost:PORT` or `[::1]:PORT`, otherwise 403. The page carries no script, form or external resource. Every text from a record is masked again with the hub patterns; a banner appears if the pattern file is unusable or a node reports `withheld_extra` 0.
 
@@ -372,7 +373,15 @@ Only `GET` and `HEAD` are answered (other methods get 405, unknown routes 404). 
 
     ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>
 
-then open `http://localhost:8767/`. The browser's `Host` header carries the laptop-side port, so a forward to a different local port (for example one an editor chose automatically) gets 403 by design. Loopback is reachable by every account on the hub; on a hub with other accounts this page is readable by them.
+then open `http://localhost:8767/`. The browser's `Host` header carries the laptop-side port, so a forward to a different local port (for example one an editor chose automatically) gets 403 by design. Loopback is reachable by every account on the hub, so the page requires an access key.
+
+**Access key** (decided by the user on 2026-11-10). In a hub terminal run `rb web key [--port PORT] [--minutes N] [--session-hours H]` (defaults: port 8767, 10 minutes, 12 hours). It prints the address `http://127.0.0.1:PORT/enter?key=KEY`, the time the key expires (it works once), and the length of the browser session. Open the address in the browser (through the forward above when the browser is on the laptop). The page answers 303, stores a cookie named `rb_web_PORT` (`HttpOnly`, `SameSite=Strict`) and shows the overview; the browser stays signed in for the session length. Every route except `/healthz` answers 401 with the text `access key required: run "rb web key" in a hub terminal and open the address it prints` when the cookie is missing, expired or revoked; the answer is the same for an id that does not exist.
+
+- Limits: key lifetime 1 to 60 minutes, session length 1 to 168 hours, at most 20 pending keys and 50 sessions (the entry that expires first is dropped when a list is full). Values outside the limits give one error line and exit code 1.
+- `rb web key --revoke` removes every key and session and prints the counts; `rb web key --status` prints the counts only.
+- State is the file `<data_root>/web/access.json` (directory mode 0700, file mode 0600). It holds SHA-256 hashes only, never a key or a cookie value. The command needs no terminal check, because a process of the same user can read the data directory anyway; the key protects against other accounts on the hub.
+- The key allows reading only. It does not approve or reject a job; approval stays with `rb approve` (hard rule 1). The access log never contains the key, the query string or the cookie.
+- Residual risk: the page is plain HTTP on loopback. A key or cookie sent to `127.0.0.1:PORT` while the page service is not running can be captured by another local account that listens on that port.
 
 ## 15. Reference: `rb` commands
 
@@ -385,6 +394,7 @@ then open `http://localhost:8767/`. The browser's `Host` header carries the lapt
 | `rb service status` | no | §13.3 |
 | `rb sync [--node NAME] [--watch SECONDS]` | no | §13.1 |
 | `rb web serve [--port N] [--bind 127.0.0.1]` | no | §14 |
+| `rb web key [--port N] [--minutes N] [--session-hours H] [--revoke] [--status]` | no | §14 |
 | `rb pending` | no | List jobs waiting for approval. |
 | `rb approve JOB_ID` | yes | §7 |
 | `rb reject JOB_ID` | yes | §7 |

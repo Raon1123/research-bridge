@@ -10,7 +10,7 @@ research-bridge is one SSH-key-authenticated channel between the **hub** and an 
 - masked reading of server hypothesis (H-xxx) and experiment (EXP-xxx) documents;
 - job submission with a budget (one GPU from the node's `allowed_gpus` and GPU-hours, chosen by the user), approved in two steps;
 - a manual, staging-only harness sync channel;
-- display of all of it in two places: the read-only hub page (`rb web serve`, loopback port 8767 on the hub, reached from the laptop through an SSH local forward) and, on the laptop only, the 8765 dashboard and the session browser (vault side). The 8765 dashboard is not present on the hub. Routes of both and the forward command: `docs/session-dashboard.md`.
+- display of all of it in two places: the read-only hub page (`rb web serve`, loopback port 8767 on the hub, reached from the laptop through an SSH local forward) and, on the laptop only, the 8765 dashboard and the session browser (vault side). The 8765 dashboard is not present on the hub. Routes of both and the forward command: `docs/session-dashboard.md`. `rb web key` issues a one-time read-only access key for the hub page; it approves nothing.
 
 Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md` (later designs: `docs/design/README.md`). Plan (Tasks 0–13): `docs/superpowers/plans/2026-10-27-research-bridge.md`. Project facts (what the node serves): `docs/projects/`, the current test project is `docs/projects/trm.md`. Setup: `README.md` and `docs/manual/`; provisioning steps: `docs/provisioning.md`.
 
@@ -76,7 +76,7 @@ A session may tell the user which command to type and what its last output line 
 ## Ask the user before
 
 - any command on node1, including read-only ones (use the existing `node1` alias only after a go-ahead);
-- any hub command that contacts the node: `rb doctor` without `--offline`, `rb sync`, `rb git-status`, `rb board refresh`, `rb harness push` and `rb harness pull`. `rb doctor --offline`, `rb config check`, `rb board show`, `rb web serve` and `rb share build` open no connection;
+- any hub command that contacts the node: `rb doctor` without `--offline`, `rb sync`, `rb git-status`, `rb board refresh`, `rb harness push` and `rb harness pull`. `rb doctor --offline`, `rb config check`, `rb board show`, `rb web serve`, `rb web key` and `rb share build` open no connection;
 - editing `~/.ssh/config`, `~/.ssh/authorized_keys` on any host, or `~/.claude.json`;
 - generating or moving SSH keys;
 - `git push`, tag, or merging branches;

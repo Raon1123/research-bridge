@@ -53,7 +53,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 
 ## The hub page (port 8767)
 
-`rb web serve` is the read-only page of the hub. It shows the sync state of each node, pending job approvals, conversations (threads) between hub sessions and node sessions, job records and the board caches. Design: `docs/design/2026-11-10-sync-and-hub-page.md` (sections 6.6 and 7); code: `rb_host/web.py`. The page has no authentication: while it runs, any account on the hub machine can read the stored (masked) conversations through it, although the data directory is mode 700. Whether to close this is undecided and is the user's call (see section 15, question 1 of the design document).
+`rb web serve` is the read-only page of the hub. It shows the sync state of each node, pending job approvals, conversations (threads) between hub sessions and node sessions, job records and the board caches. Design: `docs/design/2026-11-10-sync-and-hub-page.md` (sections 6.6 and 7); code: `rb_host/web.py`. Access needs a one-time key (decided by the user on 2026-11-10; design section 6.6a): `rb web key` in a hub terminal prints `http://127.0.0.1:8767/enter?key=...`; the browser exchanges the key once for a session cookie. See the table below.
 
 | Item | Value |
 |---|---|
@@ -61,6 +61,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 | Address | `http://127.0.0.1:8767/` on the hub. The server accepts only the bind address `127.0.0.1`; any other value ends with `error: --bind accepts only 127.0.0.1; from another machine use: ssh -N -L PORT:127.0.0.1:PORT <hub>` |
 | From the laptop | an SSH local forward through the user's own login to the hub, then the same port in the browser: `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>` and `http://localhost:8767/`. Use the same port number on both sides: the page accepts only the `Host` headers `127.0.0.1:P`, `localhost:P` and `[::1]:P` for the port it listens on, so a forward to a different local port answers 403 |
 | Methods | `GET` and `HEAD` only; anything else answers 405 |
+| Access | every route except `/healthz` needs the session cookie `rb_web_<port>`. Without it: 401, `text/plain`, body `access key required: run "rb web key" in a hub terminal and open the address it prints` (the same for every protected route, including an unknown `/thread/<id>`). `rb web key [--port P] [--minutes 1..60] [--session-hours 1..168]` prints the address `http://127.0.0.1:P/enter?key=KEY` (defaults 10 minutes, 12 hours). `GET /enter?key=KEY` with an unused, unexpired key answers 303 to `/` and sets the cookie (`HttpOnly; SameSite=Strict; Path=/; Max-Age`); a second use, an expired or a wrong key answers 401; `HEAD /enter` never uses a key. `rb web key --revoke` removes all keys and sessions; `--status` prints the counts. State: `<data root>/web/access.json` (mode 0600, directory 0700; SHA-256 hashes only, never a key or token), at most 20 pending keys and 50 sessions. The key allows reading only; it approves nothing |
 | Needs | a usable `host.json` (otherwise one error line, `rb setup` is named as the next command) |
 
 | Route | Shows |
@@ -70,7 +71,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 | `/thread/<id>` | one conversation: every message with direction, kind, attachments (name, size, hash start, status) and the body |
 | `/jobs` | job records by status, with the `job_finished` events beside them |
 | `/nodes` | per node: all fields of the sync status file and the board caches |
-| `/healthz` | `{"ok": true, ...}` as JSON |
+| `/healthz` | `{"ok": true}` as JSON; open without a session; liveness only |
 
 Anything else answers 404.
 
@@ -79,6 +80,6 @@ What the page does not do:
 - It has no approval form. Approving or rejecting a job stays with `rb approve` and `rb reject` in a hub terminal, which ask for the approval passphrase (hard rule 1); the page only prints the command.
 - It opens no connection to a node, writes no file and does not change the ledger. It reads the ledger, the stored message bodies, the sync status files (`<data root>/sync/<node>.json`) and the board cache.
 - It contains no script, no form and no external resource. Message bodies are escaped text and are masked again with the hub's pattern file when shown; a banner appears when that file cannot be read or when a node reports `withheld_extra` = 0.
-- It is not an authentication boundary on the hub: any account on the hub can reach the loopback port. Only the user's own SSH login protects it from other machines.
+- Other accounts on the hub can reach the loopback port but get 401 without a session. The remaining risk is in design section 7: a key or cookie sent to `127.0.0.1:8767` can be captured by another local account that listens on that port while the page service is not running. Only the user's own SSH login protects the page from other machines.
 
-Check: `curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8767/healthz` in the hub terminal prints `200` while the page runs.
+Check: `curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8767/healthz` in the hub terminal prints `200` while the page runs (the check needs no key).
