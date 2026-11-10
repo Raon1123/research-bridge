@@ -573,3 +573,19 @@ def test_differences_show_the_picked_identity(hub):
     cfg["identityfile"][1] = str(key.parent / "x" / "node1_ed25519")
     got = setup._differences("rb-node1", cfg, args, key)
     assert str(key.parent / "x" / "node1_ed25519") in got[0] and "id_ed25519," not in got[0]
+
+
+@pytest.mark.parametrize("body", [{"nodes": ["node1"]}, {"nodes": "x"}, {"nodes": 5},
+                                  {"nodes": {}, "data_root": 5}, {"data_root": ["a"]},
+                                  {"nodes": {"node1": "x"}}])
+def test_setup_host_json_wrong_types_one_line(hub, capsys, tmp_path, body):
+    hp = tmp_path / "data" / "host.json"
+    hp.parent.mkdir()
+    hp.write_text(json.dumps(body), encoding="utf-8")
+    code = cli.main(ARGS)
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "Traceback" not in out and "not valid JSON" not in out
+    assert "wrong types" in out and "rb setup" in out
+    assert len([ln for ln in out.splitlines() if ln.startswith("error:")]) == 1
+    assert hub.names("interactive") == [] and hub.asks == []

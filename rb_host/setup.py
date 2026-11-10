@@ -573,9 +573,15 @@ def _resolve(a: Args) -> int:
     path = configure.host_path()
     if path.is_file():
         try:
-            entry = (read_json(path).get("nodes") or {}).get(a.node)
+            data = read_json(path)
         except ConfigError:
-            entry = None
+            data = None  # step 1 reports an unreadable file
+        bad = configure.wrong_types(data) if data is not None else []
+        if bad:
+            print("error: host.json has wrong types: %s; fix %s, then run rb setup"
+                  % ("; ".join(bad), path))
+            return 1
+        entry = (data.get("nodes") or {}).get(a.node) if data is not None else None
         if isinstance(entry, dict):
             if isinstance(entry.get("alias"), str) and entry["alias"]:
                 a.alias = entry["alias"]

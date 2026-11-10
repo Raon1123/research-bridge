@@ -184,6 +184,21 @@ def mcp_registered(checkout: Path) -> Tuple[bool, str]:
     return True, ""
 
 
+def wrong_types(data: Any) -> List[str]:
+    """Problems with the types of the keys of a parsed host.json (empty when all are fine)."""
+    if not isinstance(data, dict):
+        return ["the top level must be an object"]
+    bad = []  # type: List[str]
+    nodes = data.get("nodes")
+    if nodes is not None and (not isinstance(nodes, dict)
+                              or not all(isinstance(v, dict) for v in nodes.values())):
+        bad.append("nodes must be an object whose values are objects")
+    for key in ("data_root", "withheld_patterns_file"):
+        if key in data and not isinstance(data[key], str):
+            bad.append("%s must be a string" % key)
+    return bad
+
+
 HOST_SETUP_HINT = "run: rb setup --node NAME --host HOST --user USER"
 
 
