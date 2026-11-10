@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from rb_node.protocol import CHUNK
 from rb_node.withheld import Withheld
 
-from . import jobs, threads
+from . import jobs, store, threads
 from .client import NodeClient, RemoteError, TransportError
 from .jobs import ledger_for, load_cfg
 from .store import (_remote_name, _safe_name, _within, store_incoming, store_outgoing,
@@ -235,7 +235,7 @@ def claim_undelivered(cfg: Any, names: List[str]) -> List[dict]:
             item["body"] = ""
             item["body_missing"] = True
         else:
-            item["body"] = wh.mask_text(text)[0]
+            item["body"] = store.mask_body(wh, text, r.get("msg_kind"))[0]
         out.append(item)
     return out
 
@@ -292,9 +292,16 @@ def thread(msg_id: str) -> List[dict]:
     read body.txt there with a file tool. Bodies are never in the ledger.
     """
     cfg = load_cfg()
+    wh = Withheld.load(Path(cfg.withheld_patterns_file))
     rows = []
     for r in ledger_for(cfg).thread(msg_id):
         d = threads.stored_dir(cfg, r)
+        for k in ("reply_to",):
+            if isinstance(r.get(k), str) and wh.name_hit(r[k]):
+                r = dict(r, **{k: "(withheld)"})
+        if isinstance(r.get("files"), list):
+            r = dict(r, files=["(withheld)" if isinstance(f, str) and wh.name_hit(f) else f
+                               for f in r["files"]])
         rows.append(dict(r, has_body=threads.body_path(cfg, r) is not None,
                          stored_dir=str(d) if d is not None else None))
     return rows

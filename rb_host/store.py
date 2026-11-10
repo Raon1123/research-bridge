@@ -86,6 +86,15 @@ def _sha(path: Path) -> str:
     return h.hexdigest()
 
 
+def mask_body(wh: Withheld, text: str, kind: Any) -> Any:
+    """(masked text, blanked line count). An event whose body was blanked entirely becomes a
+    `withheld` event, as on the node, so it stays an event (hard rule 7)."""
+    body, n = wh.mask_text(text)
+    if n and not body.strip() and kind == "event":
+        body = json.dumps({"event": "withheld", "withheld_lines": n})
+    return body, n
+
+
 def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     """Fetch and check one polled item. Files that fail go to quarantine/, never inbox/.
 
@@ -100,7 +109,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     inbox = root / "inbox" / node / msg_id
     quar = root / "quarantine" / node / msg_id
     stage_dir = quar / (".stage-%d-%s" % (os.getpid(), uuid.uuid4().hex[:8]))
-    body, body_hits = wh.mask_text(str(item.get("body", "")))
+    body, body_hits = mask_body(wh, str(item.get("body", "")), item.get("kind"))
     inbox.mkdir(parents=True, exist_ok=True)
     # the masked body is stored before the caller acks the item (PM-09)
     _atomic_write(inbox / "body.txt", body)

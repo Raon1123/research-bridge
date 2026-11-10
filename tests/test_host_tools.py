@@ -806,6 +806,13 @@ def test_thread_rows_have_body_fields(synced):
     assert by[oid]["stored_dir"] == str(synced["root"] / "inbox" / "n1" / oid)
 
 
+def test_thread_hides_files_that_hit_a_hub_pattern(synced):
+    mid = server.send_message("n1", "q")["msg_id"]
+    synced["ledger"].update(mid, files=["ok.txt", "pp_ltf_x.txt"], reply_to="pp_ltf_y")
+    row = [r for r in server.thread(mid) if r["id"] == mid][0]
+    assert row["files"] == ["ok.txt", "(withheld)"] and row["reply_to"] == "(withheld)"
+
+
 def test_tool_docstrings_describe_approval_and_shape():
     for name in ("nodes", "send_message", "poll", "thread", "read_doc", "fetch_file",
                  "queue_status", "gpu_status", "submit_job", "cancel_job"):

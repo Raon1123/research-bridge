@@ -383,3 +383,13 @@ def test_store_incoming_replaces_body_atomically(tmp_path):
         held.close()
     assert (d / "body.txt").read_text(encoding="utf-8") == "second"
     assert not [p for p in d.iterdir() if p.name.endswith(".tmp")]
+
+
+def test_blanked_event_body_stays_an_event(tmp_path):
+    cfg = _hcfg(tmp_path)
+    item = {"id": "e1", "kind": "event", "body": '{"event":"job_finished","x":"pp_ltf_x"}',
+            "attachments": []}
+    out = store_incoming(cfg, "node1", item, FakeClient({}))
+    assert json.loads(out["body"])["event"] == "withheld" and "pp_ltf_x" not in out["body"]
+    text = (tmp_path / "data" / "inbox" / "node1" / "e1" / "body.txt").read_text(encoding="utf-8")
+    assert text == out["body"]
