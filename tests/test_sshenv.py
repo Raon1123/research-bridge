@@ -318,6 +318,19 @@ def test_claude_json_path_isolated(tmp_path):
     assert tmp_path in Path.home().parents
 
 
+def test_real_home_is_out_of_reach_even_after_undo(monkeypatch):
+    # monkeypatch.undo() drops the per-test isolation; conftest.py's session values must remain
+    import pwd
+    real = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    monkeypatch.undo()
+    home = Path.home()
+    assert home != real and real not in home.parents
+    assert configure.claude_json_path() == home / ".claude.json"
+    assert configure.claude_json_path() != real / ".claude.json"
+    for name in ("SSH_AUTH_SOCK", "RB_HOST_ROOT", "RB_HOST_CONFIG"):
+        assert name not in os.environ
+
+
 def test_sshenv_does_not_import_mcp():
     code = "import sys, rb_host.sshenv; sys.exit(1 if 'mcp' in sys.modules else 0)"
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0

@@ -493,12 +493,11 @@ def test_render_only_problems():
 
 def test_config_check_runs_offline_part(hub, monkeypatch, tmp_path, capsys):
     seen = []
-    monkeypatch.setattr(doctor, "main", lambda node, offline_only, only_problems=False:
-                        seen.append((node, offline_only, only_problems)) or 0)
-    assert cli.main(["config", "check"]) == 0
+    with monkeypatch.context() as m:  # never monkeypatch.undo(): it also undoes the HOME isolation
+        m.setattr(doctor, "main", lambda node, offline_only, only_problems=False:
+                  seen.append((node, offline_only, only_problems)) or 0)
+        assert cli.main(["config", "check"]) == 0
     assert seen == [(None, True, True)]
-    monkeypatch.undo()
-    hub = hubfake.install(monkeypatch, tmp_path)
     _complete(hub, monkeypatch, tmp_path)
     capsys.readouterr()
     assert cli.main(["config", "check"]) == 0
