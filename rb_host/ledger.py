@@ -8,7 +8,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional
 
 LOCK_STALE_S = 30.0    # a lock file older than this belongs to a crashed process
 LOCK_TIMEOUT_S = 10.0  # how long to wait for the lock before giving up
@@ -159,6 +159,19 @@ class Ledger:
             new.update(fields)
             self._write(new)
             return new
+
+    def claim(self, match: Callable[[dict], bool], **fields: object) -> List[dict]:
+        """Under the lock: one read, then one appended line `dict(r, **fields)` for every latest
+        record that `match` accepts. Returns the written records in ledger order. Two callers
+        never receive the same record, because the second reads what the first wrote."""
+        with self.locked():
+            out = []  # type: List[dict]
+            for r in list(self._latest().values()):
+                if match(r):
+                    new = dict(r, **fields)
+                    self._write(new)
+                    out.append(new)
+            return out
 
     def thread(self, msg_id: str) -> List[dict]:
         return [r for r in self._latest().values()

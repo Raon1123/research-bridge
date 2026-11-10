@@ -266,3 +266,35 @@ def test_no_host_config_load_is_empty(tmp_path, monkeypatch):
     s = _by_id(b)
     assert s["vault:portfolio"]["ok"] is False and s["vault:portfolio"]["error"] == "missing"
     assert s["rb:ledger"]["ok"] is True
+
+
+def test_failed_source_keeps_previous_items(env):
+    cfg = env["cfg"]
+    board.refresh(cfg, "n1", ["state"])
+    before = json.loads((env["root"] / "board" / "n1_state.json").read_text(encoding="utf-8"))
+    assert before["ok"] and before["items"] and before["attempted_at"] == before["fetched_at"]
+    cfg.nodes["n1"]["board"]["state"] = "lab/state/MISSING.md"
+    board.refresh(cfg, "n1", ["state"])
+    after = json.loads((env["root"] / "board" / "n1_state.json").read_text(encoding="utf-8"))
+    assert after["items"] == before["items"] and after["ok"] is False
+    assert after["error"] == "not_found"
+    assert after["fetched_at"] == before["fetched_at"] and after["attempted_at"]
+
+
+def test_failed_source_without_previous_has_null_fetched_at(env):
+    cfg = env["cfg"]
+    cfg.nodes["n1"]["board"]["state"] = "lab/state/MISSING.md"
+    board.refresh(cfg, "n1", ["state"])
+    rec = json.loads((env["root"] / "board" / "n1_state.json").read_text(encoding="utf-8"))
+    assert rec["fetched_at"] is None and rec["items"] == [] and rec["attempted_at"]
+
+
+def test_vault_defaults_omitted_on_linux(tmp_path):
+    import os
+    from rb_host.config import HostConfig
+    if os.name == "nt":
+        pytest.skip("Windows keeps the vault defaults")
+    b = board.load(HostConfig(data_root=str(tmp_path)))
+    ids = {s["source"] for s in b["sources"]}
+    assert "vault:portfolio" not in ids and "vault:priorities" not in ids
+    assert "rb:ledger" in ids
