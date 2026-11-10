@@ -107,13 +107,16 @@ def _age(seconds: Optional[float]) -> str:
     return "%d d ago" % (s // 86400)
 
 
+NAV = ('<nav><a href="/">overview</a> | <a href="/threads">threads</a> | '
+       '<a href="/jobs">jobs</a> | <a href="/nodes">nodes</a></nav>')
+
+
 def _page(title: str, body: str, refresh: int) -> bytes:
     return ('<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta http-equiv="refresh" content="%d"><title>%s</title><style>%s</style></head>'
-            "<body>\n<h1>%s</h1>\n<p>Pages: <code>/</code> <code>/threads</code> "
-            "<code>/jobs</code> <code>/nodes</code>. Read only: this page changes nothing.</p>\n"
-            "%s</body></html>\n" % (refresh, _e(title), STYLE, _e(title), body)).encode("utf-8")
+            "<body>\n<h1>%s</h1>\n%s\n<p>Read only: this page changes nothing.</p>\n"
+            "%s</body></html>\n" % (refresh, _e(title), STYLE, _e(title), NAV, body)).encode("utf-8")
 
 
 def _banners(cfg: Any, wh: Withheld) -> str:

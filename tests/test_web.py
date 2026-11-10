@@ -262,6 +262,7 @@ def test_body_and_fields_escaped_and_cleaned(cfg, srv):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body and "<script" not in body
     assert "x&lt;b&gt;" in body and "‮" not in body
     assert "https://example.org/x" in body and 'href="https' not in body
+    assert body.count("<nav>") == 1 and '<a href="/nodes">' in body
     for route in ROUTES:
         assert "‮" not in req(srv, route)[2]
     assert "<script" not in "".join(req(srv, r)[2] for r in ROUTES)
@@ -329,6 +330,9 @@ def test_ids_that_do_not_fit_the_route_are_not_linked(cfg, srv):
     assert req(srv, "/thread/has%20space")[0] == 404
 
 
+FIXED_ROUTES = {"/", "/threads", "/jobs", "/nodes"}
+
+
 def test_security_headers(srv):
     for route in ROUTES:
         code, headers, body = req(srv, route)
@@ -338,8 +342,12 @@ def test_security_headers(srv):
         assert headers["cache-control"] == "no-store"
         assert headers["referrer-policy"] == "no-referrer"
         assert "<script" not in body and "src=" not in body
-        for href in re.findall(r'href="([^"]*)"', body):
-            assert href.startswith("/thread/"), (route, href)
+        hrefs = re.findall(r'href="([^"]*)"', body)
+        for href in hrefs:
+            assert href in FIXED_ROUTES or href.startswith("/thread/"), (route, href)
+        if route != "/healthz":
+            assert [h for h in hrefs if h in FIXED_ROUTES][:4] == ["/", "/threads", "/jobs", "/nodes"]
+            assert body.count("<nav>") == 1
 
 
 def test_page_opens_no_connection(srv, monkeypatch):
