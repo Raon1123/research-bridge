@@ -190,17 +190,29 @@ def test_offline_mcp_entry_problems(hub, monkeypatch, tmp_path):
     assert r.next.startswith("claude mcp add-json --scope user research-bridge")
     cj.write_text(json.dumps({"mcpServers": {"research-bridge": dict(
         _entry(tmp_path / "uv"), command="/nonexistent/uv")}}), encoding="utf-8")
-    assert by_id(doctor.offline())["mcp_entry"][0].message == "MCP entry points at a missing path"
+    msg = by_id(doctor.offline())["mcp_entry"][0].message
+    assert msg.startswith("MCP entry points at a missing path; registered: ")
     wt = tmp_path / "a" / ".claude" / "worktrees" / "w"
     wt.mkdir(parents=True)
     cj.write_text(json.dumps({"mcpServers": {"research-bridge": {
         "command": str(tmp_path / "uv"), "args": ["run", "--directory", str(wt)]}}}), encoding="utf-8")
-    assert by_id(doctor.offline())["mcp_entry"][0].message == "MCP entry points at a worktree"
+    assert by_id(doctor.offline())["mcp_entry"][0].message == (
+        "MCP entry points at a worktree; registered: %s" % wt)
     old = _entry(tmp_path / "uv")
     del old["env"]["RB_HOST_CONFIG"]
     cj.write_text(json.dumps({"mcpServers": {"research-bridge": old}}), encoding="utf-8")
     r = by_id(doctor.offline())["mcp_entry"][0]
     assert r.level == "warn" and "differs" in r.message and r.next.startswith("claude mcp add-json")
+    assert "differs in: env RB_HOST_CONFIG;" in r.message
+    assert r.message.endswith("registered: " + configure.registered_where(old))
+    # A stray directory (the 2026-11-10 test leak pointed at a pytest temporary path) is named.
+    stray = tmp_path / "pytest-x" / "checkout"
+    stray.mkdir(parents=True)
+    moved = _entry(tmp_path / "uv")
+    moved["args"][moved["args"].index("--directory") + 1] = str(stray)
+    cj.write_text(json.dumps({"mcpServers": {"research-bridge": moved}}), encoding="utf-8")
+    r = by_id(doctor.offline())["mcp_entry"][0]
+    assert "differs in: args;" in r.message and r.message.endswith("registered: %s" % stray)
 
 
 def test_offline_services_not_installed_warn(hub, monkeypatch, tmp_path):
