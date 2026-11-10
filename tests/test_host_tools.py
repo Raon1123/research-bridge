@@ -125,6 +125,20 @@ def test_approve_queues_and_is_idempotent(env):
     assert len(list(_jobs_dir(env).glob("*.job"))) == 1
 
 
+def test_second_job_with_a_reused_key_is_not_marked_queued(env):
+    j1 = _submit(env, "same")
+    cfgf = env["tmp"] / "run2.yaml"
+    cfgf.write_text("a: 2\n", encoding="utf-8")
+    j2 = server.submit_job("n1", str(cfgf), [0], 2, "other", note="n")["job_id"]
+    env["ledger"].update(j2, idempotency_key="same")  # as if approved from a second hub data root
+    cfg = server.load_cfg()
+    assert jobs.approve(env["ledger"], cfg, j1, PW)["status"] == "queued"
+    with pytest.raises(Exception):
+        jobs.approve(env["ledger"], cfg, j2, PW)
+    assert env["ledger"].get(j2)["status"] != "queued"
+    assert len(list(_jobs_dir(env).glob("*.job"))) == 1
+
+
 def test_cancel_approve(env):
     jid = _submit(env)
     cfg = server.load_cfg()

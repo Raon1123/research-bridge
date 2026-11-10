@@ -55,7 +55,7 @@ def cfg(tmp_path):
     (root / "host.json").parent.mkdir(parents=True, exist_ok=True)
     (root / "host.json").write_text('{"marker": "HOSTJSON-MARKER"}', encoding="utf-8")
     wp = tmp_path / "withheld.json"
-    wp.write_text(json.dumps({"patterns": []}), encoding="utf-8")
+    wp.write_text(json.dumps({"patterns": ["unrelatedfam_"]}), encoding="utf-8")
     c = HostConfig(nodes={"n1": {"alias": "x"}}, data_root=str(root),
                    withheld_patterns_file=str(wp))
     led = Ledger(root / "ledger.jsonl")
@@ -289,6 +289,12 @@ def test_withheld_banner_when_pattern_file_missing(cfg, srv):
     os.unlink(cfg.withheld_patterns_file)
     for route in ("/", "/threads", "/thread/msgid-7f3a", "/jobs", "/nodes"):
         assert "withheld pattern file" in req(srv, route)[2].lower(), route
+
+
+@pytest.mark.parametrize("text", ['[]', '{}', '{"patterns": ["("]}'])
+def test_withheld_banner_when_file_gives_no_usable_pattern(cfg, srv, text):
+    Path(cfg.withheld_patterns_file).write_text(text, encoding="utf-8")
+    assert "no usable pattern" in req(srv, "/")[2].lower()
 
 
 def test_withheld_banner_when_node_has_no_extra_patterns(cfg, srv):

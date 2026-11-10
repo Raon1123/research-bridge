@@ -208,6 +208,13 @@ def approve(ledger: Ledger, cfg: HostConfig, job_id: str, passphrase: str) -> di
         else:  # transport failure etc.: stays approved so the user can retry
             ledger.update(job_id, approving=None, approving_at=None)
         raise
+    queued = result.get("queued") if isinstance(result, dict) else None
+    if rec["op"] == "submit" and not (isinstance(queued, str)
+                                      and queued.endswith("_%s.job" % job_id)):
+        # an old node replays a stored result by idempotency key alone: it may name another job
+        ledger.update(job_id, approving=None, approving_at=None)
+        raise ValueError("the node answered with another job's queue file; nothing was queued "
+                         "for %s (idempotency key reused?)" % job_id)
     return ledger.update(job_id, status=DONE[rec["op"]], result=result,
                          approving=None, approving_at=None)
 

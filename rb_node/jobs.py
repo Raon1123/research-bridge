@@ -33,18 +33,23 @@ def _idem_load(state: Path) -> dict:
         return {}
 
 
-def _idem_lookup(state: Path, key: str, op: str) -> Optional[dict]:
+def _idem_lookup(state: Path, key: str, op: str, job_id: Optional[str] = None) -> Optional[dict]:
     entry = _idem_load(state).get(key)
     if entry is None:
         return None
     if entry.get("op") != op:
         raise ProtocolError("conflict", "idempotency_key already used by another op")
+    stored = entry.get("job_id")  # absent in entries written by earlier versions
+    if isinstance(stored, str) and isinstance(job_id, str) and stored != job_id:
+        raise ProtocolError("conflict", "idempotency_key already used for another job")
     return entry["result"]
 
 
-def _idem_store(state: Path, key: str, op: str, result: dict) -> None:
+def _idem_store(state: Path, key: str, op: str, result: dict, job_id: Optional[str] = None) -> None:
     data = _idem_load(state)
     data[key] = {"op": op, "result": result}
+    if job_id is not None:
+        data[key]["job_id"] = job_id
     _write_json(_idem_path(state), data)  # tmp + os.replace
 
 
@@ -130,7 +135,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     # SEC-01: before any lookup or write, so a refused call leaves nothing behind
     approval.require_safe_path(cfg)
     approval.check(Path(cfg.approval_path), state, args)
-    prior = _idem_lookup(state, key, "job_submit")
+    prior = _idem_lookup(state, key, "job_submit", args.get("job_id"))
     if prior is not None:
         return prior
     # PM-12: after approval and replay. None = GPU list unreadable; empty = read, no GPUs.
@@ -170,7 +175,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
         fh.write(body)
     os.replace(str(tmp), str(target))
     result = {"queued": str(target), "git": {k: git.get(k) for k in ("head", "dirty_files") if k in git}}
-    _idem_store(state, key, "job_submit", result)
+    _idem_store(state, key, "job_submit", result, job_id)
     return result
 
 
@@ -179,7 +184,7 @@ def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
     key = _key(args)
     approval.require_safe_path(cfg)
     approval.check(Path(cfg.approval_path), state, args)
-    prior = _idem_lookup(state, key, "job_cancel")
+    prior = _idem_lookup(state, key, "job_cancel", args.get("job_id"))
     if prior is not None:
         return prior
     job_id = _check_id(_str(args, "job_id"))
@@ -210,5 +215,5 @@ def cancel(cfg: NodeConfig, mb: Mailbox, args: dict) -> dict:
         _mkdir(state / "cancel")
         (state / "cancel" / job_id).write_text("cancel\n", encoding="utf-8")
         result = {"cancelled": "requested"}
-    _idem_store(state, key, "job_cancel", result)
+    _idem_store(state, key, "job_cancel", result, job_id)
     return result

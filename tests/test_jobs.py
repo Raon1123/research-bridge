@@ -92,6 +92,14 @@ def test_same_idempotency_key_one_queue_file(tcfg):
     assert "k-j2" in idem
 
 
+def test_same_idempotency_key_for_another_job_is_a_conflict(tcfg):
+    sha1 = _upload_config(tcfg, "j7")
+    sha2 = _upload_config(tcfg, "j8")
+    call(tcfg, ("job_submit", _submit_args("j7", sha1, idempotency_key="shared")))
+    r = call(tcfg, ("job_submit", _submit_args("j8", sha2, idempotency_key="shared")))[0]
+    assert not r["ok"] and r["error"]["code"] == "conflict" and len(_jobs(tcfg)) == 1
+
+
 @pytest.mark.parametrize("kw", [
     {"gpu_hours": 0}, {"gpu_hours": -1}, {"gpu_hours": 169}, {"gpus": []}, {"gpus": ["0"]},
     {"gpus": "0"}, {"config_name": "train.sh"}])
