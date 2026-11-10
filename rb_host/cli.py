@@ -7,8 +7,8 @@ import os
 import sys
 from typing import List, Optional
 
-from . import jobs
-from .config import default_root
+from . import configure, jobs
+from .config import HostConfig, default_root
 from .client import RemoteError, TransportError
 
 
@@ -41,10 +41,21 @@ def _need_terminal(what: str) -> bool:
     return False
 
 
+def _host_cfg() -> Optional[HostConfig]:
+    """host.json, or None after one error line (no traceback)."""
+    try:
+        return jobs.load_cfg()
+    except (FileNotFoundError, ValueError) as exc:
+        print(configure.host_json_error(exc))
+        return None
+
+
 def _approve(args: argparse.Namespace) -> int:
     if not _need_terminal("approve"):
         return 1
-    cfg = jobs.load_cfg()
+    cfg = _host_cfg()
+    if cfg is None:
+        return 1
     led = jobs.ledger_for(cfg)
     rec = led.get(args.job_id)
     if rec is None or rec.get("kind") != "job":
@@ -81,7 +92,9 @@ def _approve(args: argparse.Namespace) -> int:
 def _reject(args: argparse.Namespace) -> int:
     if not _need_terminal("reject"):
         return 1
-    cfg = jobs.load_cfg()
+    cfg = _host_cfg()
+    if cfg is None:
+        return 1
     try:
         out = jobs.reject(jobs.ledger_for(cfg), args.job_id)
     except ValueError as exc:
@@ -92,7 +105,10 @@ def _reject(args: argparse.Namespace) -> int:
 
 
 def _pending(args: argparse.Namespace) -> int:
-    led = jobs.ledger_for(jobs.load_cfg())
+    cfg = _host_cfg()
+    if cfg is None:
+        return 1
+    led = jobs.ledger_for(cfg)
     for r in led.pending_jobs():
         print(jobs.describe(r))
         print("---")
@@ -101,7 +117,9 @@ def _pending(args: argparse.Namespace) -> int:
 
 def _harness(args: argparse.Namespace) -> int:
     from . import harness
-    cfg = jobs.load_cfg()
+    cfg = _host_cfg()
+    if cfg is None:
+        return 1
     try:
         if args.action == "diff":
             out = harness.diff(cfg, args.stamp)
@@ -152,19 +170,55 @@ def _git_status(args: argparse.Namespace) -> int:
     """Ask the node for the git state of its research tree and installed code (read only)."""
     import json
     from .client import NodeClient
+    cfg = _host_cfg()
+    if cfg is None:
+        return 1
     try:
-        cfg = jobs.load_cfg()
         name = args.node or (next(iter(cfg.nodes)) if len(cfg.nodes) == 1 else "")
         if not name:
             print("error: --node is required")
             return 1
         with NodeClient(cfg.alias(name)) as c:
             res = c.call("git_status")
-    except (FileNotFoundError, ValueError, RemoteError, TransportError) as exc:
+    except (ValueError, RemoteError, TransportError) as exc:
         print("error: %s" % exc)
         return 1
     print(json.dumps(res, ensure_ascii=False, indent=2))
     return 0
+
+
+def _setup(args: argparse.Namespace) -> int:
+    from . import setup
+    if not args.yes_print_only and not _need_terminal("setup"):
+        return 1
+    return setup.main(setup.Args(node=args.node, host=args.host, port=args.port, user=args.user,
+                                 keydir=args.keydir, hub_from=args.hub_from,
+                                 research_root=args.research_root, print_only=args.yes_print_only))
+
+
+def _agent(args: argparse.Namespace) -> int:
+    from . import setup
+    if not _need_terminal("agent"):
+        return 1
+    if _host_cfg() is None:
+        return 1
+    return setup.agent_main(args.node)
+
+
+def _doctor(args: argparse.Namespace) -> int:
+    from . import doctor
+    return doctor.main(args.node, offline_only=args.offline)
+
+
+def _service(args: argparse.Namespace) -> int:
+    from . import service
+    if args.action == "status":
+        return service.status()
+    if not args.print and not _need_terminal("service install"):
+        return 1
+    if _host_cfg() is None:
+        return 1
+    return service.install(args.interval, args.port, args.print)
 
 
 def _sync(args: argparse.Namespace) -> int:
@@ -278,11 +332,8 @@ def _config(args: argparse.Namespace) -> int:
             print("Add under \"mcpServers\" in ~/.claude.json (rb does not edit that file):")
             print(json.dumps(c.mcp_entry(), indent=2)[1:-1].strip())
         else:
-            probs = c.check()
-            for p in probs:
-                print("- " + p)
-            print("ok" if not probs else "%d item(s) to fix" % len(probs))
-            return 1 if probs else 0
+            from . import doctor
+            return doctor.main(None, offline_only=True, only_problems=True)
     except c.ConfigError as exc:
         print("error: %s" % exc)
         return 1
@@ -293,6 +344,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="rb")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("pending").set_defaults(fn=_pending)
+    su = sub.add_parser("setup", help="link a node: host.json, keys, ssh config, host key, agent, "
+                        "node command, MCP command")
+    su.add_argument("--node", required=True, metavar="NAME")
+    su.add_argument("--host", default="")
+    su.add_argument("--port", type=int, default=None)
+    su.add_argument("--user", default="")
+    su.add_argument("--keydir", default="", help="key directory (default ~/.ssh/research-bridge)")
+    su.add_argument("--hub-from", default="", help="address the node sees this hub as")
+    su.add_argument("--research-root", default="", help="research tree on the node (printed only)")
+    su.add_argument("--yes-print-only", action="store_true",
+                    help="show every change and command; write and ask nothing")
+    su.set_defaults(fn=_setup)
+    ag = sub.add_parser("agent", help="load the bridge and harness keys into the ssh-agent")
+    ag.add_argument("--node")
+    ag.set_defaults(fn=_agent)
+    dr = sub.add_parser("doctor", help="check the hub side (and the node, unless --offline)")
+    dr.add_argument("--node")
+    dr.add_argument("--offline", action="store_true", help="no SSH connection")
+    dr.set_defaults(fn=_doctor)
+    sv_ = sub.add_parser("service", help="systemd user units for unattended sync and the hub page")
+    sva = sv_.add_subparsers(dest="action", required=True)
+    svi = sva.add_parser("install", help="write the three unit files after a y; prints systemctl commands")
+    svi.add_argument("--interval", type=int, default=300, metavar="SECONDS")
+    svi.add_argument("--port", type=int, default=8767)
+    svi.add_argument("--print", action="store_true", help="show the units, write nothing")
+    sva.add_parser("status", help="state of the three units and lingering")
+    sv_.set_defaults(fn=_service)
     a = sub.add_parser("approve")
     a.add_argument("job_id")
     a.set_defaults(fn=_approve)

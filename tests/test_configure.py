@@ -68,20 +68,21 @@ def test_host_config_flow(tmp_path, monkeypatch, capsys):
 
 
 def test_host_check_reports(tmp_path, monkeypatch, capsys):
+    import hubfake
+    hub = hubfake.install(monkeypatch, tmp_path)
     monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "host.json"))
-    monkeypatch.setattr(hc.Path, "home", lambda: tmp_path)
     assert host_cli.main(["config", "check"]) == 1
-    assert "rb config init" in capsys.readouterr().out
+    assert "rb setup" in capsys.readouterr().out
     hc.init()
     hc.add_node("node1")
     assert host_cli.main(["config", "check"]) == 1
     out = capsys.readouterr().out
-    assert "'rb-node1' is not a Host" in out and "MCP server not registered" in out
+    assert "ssh has no Host block for rb-node1" in out and "MCP server not registered" in out
 
 
 def test_mcp_entry_runs_through_uv():
     e = hc.mcp_entry()["research-bridge"]
-    assert e["command"] == "uv" and e["args"][:2] == ["run", "--directory"]
+    assert e["command"].endswith("uv") and e["args"][:2] == ["run", "--directory"]
     assert e["args"][-3:] == ["python", "-m", "rb_host.server"] and "--extra" in e["args"]
 
 
