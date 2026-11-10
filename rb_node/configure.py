@@ -137,45 +137,5 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
 
 def node_check(data: Dict[str, Any]) -> List[str]:
     """Problems that block a feature, one line each. Empty list = ready."""
-    from .config import NodeConfig
-    probs: List[str] = []
-    known = {f.name for f in fields(NodeConfig)}
-    for k in data:
-        if k not in known:
-            probs.append("unknown key %r is ignored" % k)
-    cfg = NodeConfig(**{k: v for k, v in data.items() if k in known})
-    tpl = cfg.job_template
-    if not tpl:
-        probs.append("job_template is empty: job_submit is refused (no_job_template)")
-    elif not any("{config}" in a for a in tpl):
-        probs.append("job_template has no {config} placeholder")
-    if not cfg.harness_root:
-        probs.append("harness_root is empty: harness push/pull are refused (no_harness_root)")
-    elif not Path(cfg.harness_root).is_dir():
-        probs.append("harness_root does not exist: %s" % cfg.harness_root)
-    if not Path(cfg.trm_root).is_dir():
-        probs.append("trm_root does not exist: %s" % cfg.trm_root)
-    for r in cfg.read_roots:
-        p = Path(r) if os.path.isabs(r) else Path(cfg.trm_root) / r
-        if not p.is_dir():
-            probs.append("read root does not exist: %s" % p)
-    if not cfg.withheld_source:
-        probs.append("withheld_source unset: only the fallback patterns apply")
-    elif not cfg.withheld_source.endswith(".json"):
-        probs.append("withheld_source is not JSON: only the fallback patterns apply")
-    elif not Path(cfg.withheld_source).is_file():
-        probs.append("withheld_source not found: %s" % cfg.withheld_source)
-    if not Path(cfg.claude_bin).is_file():
-        probs.append("claude_bin not found: %s" % cfg.claude_bin)
-    ap = Path(cfg.approval_path).absolute()
-    roots = [Path(r) if os.path.isabs(r) else Path(cfg.trm_root) / r
-             for r in list(cfg.read_roots) + list(cfg.write_roots)]
-    for r in roots:
-        try:
-            ap.relative_to(r.absolute())
-            probs.append("approval_path is inside a read/write root: %s" % r)
-        except ValueError:
-            pass
-    if not ap.is_file():
-        probs.append("approval verifier missing: run `rb-node approve-key set` on the console")
-    return probs
+    from . import doctor
+    return [c.message for c in doctor.config_checks(data) if c.level != "ok"]

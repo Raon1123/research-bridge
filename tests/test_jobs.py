@@ -202,6 +202,8 @@ def test_cli_approve_key_set_and_clear(tmp_path, monkeypatch, capsys):
     answers = iter(["short", "a long passphrase", "a different one!", "a long passphrase",
                     "a long passphrase"])
     monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr(cli, "_ask", lambda prompt: True)
     assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # too short
     assert cli.main(["approve-key", "set"]) == 1 and not path.exists()  # mismatch
     assert cli.main(["approve-key", "set"]) == 0
@@ -211,6 +213,37 @@ def test_cli_approve_key_set_and_clear(tmp_path, monkeypatch, capsys):
     key = approval.derive("a long passphrase", rec["salt"], rec["iterations"])
     approval.check(path, tmp_path / "state", {"approval_key": key})
     assert cli.main(["approve-key", "bogus"]) == 2
+    assert cli.main(["approve-key", "clear"]) == 0 and not path.exists()
+
+
+def test_approve_key_set_requires_terminal(tmp_path, monkeypatch, capsys):
+    from rb_node import cli
+    path = tmp_path / "approve.json"
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"approval_path": str(path)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    monkeypatch.setattr(cli, "_interactive", lambda: False)
+
+    def boom(prompt=""):
+        raise AssertionError("getpass must not be called")
+    monkeypatch.setattr("getpass.getpass", boom)
+    assert cli.main(["approve-key", "set"]) == 1 and not path.exists()
+    assert "interactive terminal" in capsys.readouterr().err
+    path.write_text("{}", encoding="utf-8")
+    assert cli.main(["approve-key", "clear"]) == 1 and path.exists()
+
+
+def test_approve_key_clear_asks(tmp_path, monkeypatch):
+    from rb_node import cli
+    path = tmp_path / "approve.json"
+    path.write_text("{}", encoding="utf-8")
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"approval_path": str(path)}), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr(cli, "_ask", lambda prompt: False)
+    assert cli.main(["approve-key", "clear"]) == 1 and path.exists()
+    monkeypatch.setattr(cli, "_ask", lambda prompt: True)
     assert cli.main(["approve-key", "clear"]) == 0 and not path.exists()
 
 
