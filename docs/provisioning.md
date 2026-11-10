@@ -41,7 +41,7 @@ Run only after every B2 row holds. Use test text that names no withheld series.
 |---|---|---|---|
 | 1 | session on the hub, after go-ahead | MCP `send_message("node1", "<short test question>", [<path of a small pdf>])` | `{"msg_id": ..., "status": "sent"}`; a masked copy under `<data_root>/outbox/node1/<msg_id>/`. |
 | 2 | session, a few minutes later | MCP `poll()` | The responder's reply; its files under `<data_root>/inbox/node1/<reply id>/` with `body.txt` and `provenance.json`. |
-| 3 | session | MCP `read_doc("node1", "H-001")` (or another document id from `docs/projects/trm.md`) | The document text, with any withheld line blanked. |
+| 3 | session | MCP `read_doc("node1", "<an EXP or H id that exists on the node>")` (for `trm`, `EXP-001` exists; `H-001` does not) | The document text, with any withheld line blanked. |
 | 4 | user, hub terminal | `rb sync --node node1` | Exit 0; `<data_root>/sync/node1.json` has `"ok": true` (this is the PR 45 check "`rb sync` over a real SSH connection"). |
 | 5 | session, after go-ahead | MCP `submit_job("node1", <path of a tiny config>, [<one GPU id>], 0.01, <new idempotency key>)` | A `pending_approval` record and its job id; nothing is sent to the node yet. Needs `job_template` (decision 12). |
 | 6 | user, hub terminal | `rb pending`, then `rb approve <job_id>` | y/N question, then the approval passphrase; the job is queued on the node. |
@@ -53,7 +53,7 @@ Run only after every B2 row holds. Use test text that names no withheld series.
 
 ### Node-local checks (2026-11-10, run on node1's console)
 
-The hub was not involved. The B3 live run (message, `read_doc`, job through `rb approve`) is still to do; see `docs/HANDOFF.md`.
+The hub was not involved. The B2 and B3 results are below.
 
 | Check | Result |
 |---|---|
@@ -74,8 +74,31 @@ The hub was not involved. The B3 live run (message, `read_doc`, job through `rb 
 
 Not covered by these checks: delivery over SSH, the forced command, masking on `poll`, approval with the passphrase, and a job claimed by the real queue runner.
 
-### Live run (plan Step 8)
+### Security checks (B2, 2026-11-10)
 
-As of 2026-11-10: not run.
+Rows 1 to 8 were run by the user with `scripts/b2-hub.sh` (hub terminal) and `scripts/b2-node.sh` (node console); row 9 by the hub session.
 
-(Fill in after the run: date, who ran each row, outcome per row, deviations. Then write the postmortem of the first live run.)
+| Row | Result |
+|---|---|
+| 1 to 3 | PASS: no shell on the bridge key, the requested command ignored, the harness key refused `ls` with `unknown command` |
+| 4 | recorded by the user; not judged (decision 5) |
+| 5, 6 | PASS: `rb-node doctor` and `rb doctor --node node1` with no failure (the node's earlier `install` warning, record 0.1.0 against running code 0.2.0, was cleared by running `scripts/node-install.sh` again) |
+| 7, 8 | PASS: the Claude command line accepted the responder's arguments (exit 0) and did not run `id` |
+| 9 | PASS: `read_doc("node1", "../../.ssh/authorized_keys")` returned `denied` |
+
+### Live run (B3, 2026-11-10)
+
+| Row | Who | Result |
+|---|---|---|
+| 1 | session | PASS: `send_message` with a 639-byte test pdf returned `sent`; a masked copy is under `outbox/node1/<msg_id>/` |
+| 2 | session | PASS: `poll` returned the responder's reply, which named the word in the pdf; `inbox/node1/<reply id>/` holds `body.txt` and `provenance.json`; nothing quarantined. The same `poll` returned the `job_finished` event of the console test job `rbtest-20261110` (`budget_exceeded`) |
+| 3 | session | PASS: `read_doc("node1", "EXP-001")` returned the text with 13 lines blanked on the node. `H-001` gave `not_found` (no such heading in the registry); the row's example id is not a fact of this project |
+| — | session | **Stopped before row 5:** `queue_status` returned withheld job names unmasked (S0). Fixed in PR 53 (node and hub); after the node reinstall and a session restart, `queue_status` returned 116 names as `(withheld)` and none that matches a fallback pattern. `docs/postmortems/2026-11-10-queue-status-withheld.md` |
+| 4 | user | PASS: `rb sync --node node1` exit 0; `sync/node1.json` has `"ok": true`, node 0.2.0 protocol 2, 4 patterns on each side |
+| 5 | session | PASS: `submit_job` (config with `defaults: [cfg_pretrain, _self_]`, `project_name`, `run_name`, `epochs: 1`; GPU 4; 0.01 GPU-hour) returned `pending_approval`, job `75b0b3a9df614fc4becb47f0c079b7a9` |
+| 6 | user | PASS: `rb approve` at 2026-11-10 13:59Z; the ledger records `approved`, then `queued` |
+| 7 | session | open: the job waits behind the research queue (about 75 jobs ahead at submission) |
+| 8 | user | PASS: `rb service install`; `rb-sync.timer` and `rb-web.service` active, linger yes, the timer's sync exited with success |
+| 9 | user | PASS: the hub page through the SSH forward shows the node, the thread of rows 1 and 2 and the job |
+
+Postmortem of the run: `docs/postmortems/2026-11-10-first-live-run.md`.

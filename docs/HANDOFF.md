@@ -1,4 +1,4 @@
-# research-bridge state — 2026-11-10
+# research-bridge state — 2026-11-10 (after the first live run)
 
 Read `AGENTS.md` first. The previous text of this file (the 2026-11-05 plan with laptop-hub steps) is in git history: `git log -p -- docs/HANDOFF.md`.
 
@@ -6,7 +6,7 @@ Commands: `rb` below means `uv run --extra host rb`, run in the repository's mai
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
-Written by a session on node1 against `main` after PR 46 (merged into `claude/review-optimize-2026-11-10` on 2026-11-10 together with PR 47; that branch is on `main` as PR 48). It is newer than "The real link" below on what is installed on node1: the node already runs `scripts/node-install.sh` code of the `claude/node-allowed-gpus` branch (`rb_node` before the `doctor`, `link` and protocol 2 of PR 48). Where the two disagree about the node, this section wins.
+Superseded on the node's code (2026-11-10, later): node1 was reinstalled from `main` and runs rb_node 0.2.0 (protocol 2) with the `queue_status` fix of PR 53; `rb-node doctor` reports no warning. The observations below are from before that.
 
 Observed on node1:
 
@@ -36,17 +36,16 @@ Open after these tests:
 
 ## Resume snippet
 
-> The hub is the Linux server (user decision, 2026-11-05); the laptop keeps only the vault and its 8765 dashboard. One node, `node1`, is registered and runs pre-merge code of `claude/node-allowed-gpus`. One-command setup and diagnosis, unattended sync, the read-only hub page and node 0.2.0 are on `main` (PRs 48, 49, merged with merge commits, #20); PR 50 fixed the test suite overwriting the real `~/.claude.json` (§Test suite and `~/.claude.json`). The hub's main checkout is on `main`. Next: the user runs the terminal steps below; a session then runs the live checks of `docs/provisioning.md` after a go-ahead.
+> The hub is the Linux server; the laptop keeps only the vault and its 8765 dashboard and views the hub page through an SSH forward. One node, `node1`, runs rb_node 0.2.0 from `main`. On 2026-11-10 the security checks (B2, rows 1 to 9) all held and the first live run (B3) passed rows 1 to 6, 8 and 9: a message with a pdf was answered, a document was read with withheld lines blanked, `rb sync` ran over SSH, a job was approved with `rb approve` and is queued on the node, and the sync timer and the hub page run as systemd user units. Row 7 (the job's `job_finished` event) waits for the research queue to reach the job. During B3, `queue_status` was found returning withheld job names (S0, fixed in PR 53). Next: `poll` for the job's event; then the open decisions.
 
 ## The real link
 
-Works (checked 2026-11-06): hub keys exist and the node accepts them; the node answers over SSH with rb_node 0.1.0; MCP `gpu_status` and `queue_status` returned results.
+State on 2026-11-10 (B2 and B3, `docs/provisioning.md` §Results "Live run"):
 
-Not done or not verified:
-- The node has no withheld pattern file loaded: `hello` reported `withheld_extra = 0`, so only the five fallback patterns are active. For that reason `read_doc`, `send_message` and `poll` were deliberately not exercised.
-- The 2026-11-06 hub checks did not confirm the approval verifier or `job_template`. The node1 section above (2026-11-10) found the verifier, `job_template` and `allowed_gpus` set; without `job_template` or `allowed_gpus` every job is refused.
-- The node has not been updated to `main`.
-- The security checks (B2) and the first live run (B3) have not started.
+- Works: SSH with the forced commands (B2 rows 1 to 3), node and hub doctor with no failure, the responder's argument list and its refusal to run commands (rows 7, 8), path escape refused (row 9); `send_message` with a pdf and the responder's reply through `poll`; `read_doc` with withheld lines blanked on the node; `rb sync` with `"ok": true`; `submit_job`, `rb approve` and the job queued on the node; `rb-sync.timer` and `rb-web.service` active with linger on; the hub page shows the node, the thread and the job.
+- Withheld pattern files are loaded on both sides (4 patterns each besides the fallbacks).
+- Open: B3 row 7, the `job_finished` event of job `75b0b3a9df614fc4becb47f0c079b7a9` (queued behind the research queue; budget 0.01 GPU-hour, so `budget_exceeded` is the expected status).
+- Found and fixed: `queue_status` returned withheld job names to the hub (`docs/postmortems/2026-11-10-queue-status-withheld.md`, PR 53). Postmortem of the run: `docs/postmortems/2026-11-10-first-live-run.md`.
 
 ## On `main` since 2026-11-10 (PRs 48, 49, 50)
 
@@ -61,32 +60,17 @@ Nothing below has run on the real node yet; on the hub only `rb doctor --offline
 
 ## Next actions
 
-### Only the user, at a terminal
+### A session
 
-1. Restart every Claude session on the hub before the first `rb sync`: the hub's main checkout was moved to `main` and `uv sync --extra host --python '>=3.10'` was run on 2026-11-10, and an MCP server started on the old code never returns the items the new `rb sync` stores as not yet delivered. `rb setup` and `rb service install` run from the main checkout (setup warns in a worktree; the units call the `rb` of the installing environment); later updates are `git pull --ff-only` and the same `uv sync` there.
-2. Hub terminal: `rb doctor --offline`. If `withheld_hub` is not ok, copy the session-calendar withheld pattern file from the laptop to `<data_root>/withheld_patterns.json` (the path `withheld_patterns_file` in `host.json` names).
-3. Node, with your own login (not the `rb-node1` alias, whose key runs only the forced command): copy the same file to `~/withheld-patterns.json`.
-4. Node console, in the node's research-bridge checkout:
-
-       git pull --ff-only
-       scripts/node-install.sh --withheld-file ~/withheld-patterns.json
-       rb-node approve-key set
-       rb-node config set job_template '[..., "{config}"]'
-       rb-node config set allowed_gpus '[4, 5, 6, 7]'
-       rb-node doctor
-
-   The installed script predates `--withheld-file`, so pull first (`git pull --ff-only`, or the installed script's `--update`), then run the new script; later updates are `scripts/node-install.sh --update`. Replace `[..., "{config}"]` with the project's job command as a JSON list containing `{config}`, `{config_dir}` or `{config_stem}` (`docs/manual/node-setup.md` §4.1.1); the value is a project fact (`docs/projects/trm.md`, decision 12). `allowed_gpus` is the list of GPU indices that belong to you (`[4, 5, 6, 7]` is the example from node1); empty, every job is refused with `no_allowed_gpus`. node1 already has both set (see the node1 section above).
-5. Hub terminal: `rb setup --node node1`. It skips what exists, compares the host key when `known_hosts` has no entry, and prints `claude mcp add-json --scope user research-bridge '...'` when the registered entry differs; if so, run `claude mcp remove research-bridge`, then the printed command, and restart the Claude session once.
-6. Hub terminal: `rb doctor --node node1`. Expected: `withheld_hub` ok, `node_version` 0.2.0 with protocol 2, `node_withheld`, `node_approval`, `node_job_template` and `node_allowed_gpus` ok.
-7. The security checks (B2) and the first live run (B3) in `docs/provisioning.md`.
-8. Hub terminal, after the first manual `rb sync --node node1` of B3 succeeds (B3 row 8): `rb service install`, then paste the `systemctl --user ...` line it prints; `rb service status`.
-
-### A session, after the user's go-ahead
-
-- The MCP calls of B3 (`send_message`, `poll`, `read_doc`, `submit_job`), only after step 6 shows `withheld_hub` and `node_withheld` ok; `rb approve` stays the user's.
-- Fill the Results section of `docs/provisioning.md` and write the postmortem of the first live run (`docs/postmortems/README.md`).
-- Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md` (none applied yet).
+- `poll` until the `job_finished` event of job `75b0b3a9df614fc4becb47f0c079b7a9` arrives; record its status in `docs/provisioning.md` §Results (row 7) and close the run's postmortem item.
+- Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md` after the user's go-ahead (none applied yet); #7 and #8 can be closed with the B2 and B3 results.
 - Laptop-only items (8765 dashboard, session browser, shared status page) are listed there too (#13, #18, #19, #39).
+
+### Only the user
+
+- Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
+- The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
+- Node updates from now on: on the node console, `git pull --ff-only` and `scripts/node-install.sh --update` (the checkout is on `main`).
 
 ## Pending decisions
 
@@ -109,7 +93,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 919 passed on 2026-11-10 (PR 50)
+    rtk proxy uv run --extra host pytest -q        # 921 passed on 2026-11-10 (after PR 53, with the node-install re-exec test)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.
