@@ -63,6 +63,8 @@ Rules: identifier forms of different kinds must not overlap (the first kind that
 
 The five fallback patterns of AGENTS.md hard rule 3 stay on for this project as well. They cannot be switched off.
 
+Node-side rule: the node's pattern file (the flat `withheld_source`) holds the union of the patterns of every project served by that node, this one included, not only this project's patterns. Reason: a reply or document for one project can carry text the server session read from another project's tree, and node code older than the profile steps masks with the flat file and the fallback patterns only (project-profiles design §7.2 rules 3 and 6). When a project is added to a node, merge its patterns into that file; when a project is removed, keep its patterns until no undelivered item of it is left on the node.
+
 ## 5. Jobs
 
 | Item | Value |
