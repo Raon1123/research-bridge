@@ -8,7 +8,7 @@ research-bridge is one SSH-key-authenticated channel between the laptop (**host*
 
 - messages with file attachments between laptop Claude sessions and server Claude sessions;
 - masked reading of server hypothesis (H-xxx) and experiment (EXP-xxx) documents;
-- job submission with a budget (GPU ids and GPU-hours chosen by the user), approved in two steps;
+- job submission with a budget (one GPU from the node's `allowed_gpus` and GPU-hours, chosen by the user), approved in two steps;
 - a manual, staging-only harness sync channel;
 - display of all of it in the 8765 dashboard and the session browser (vault side). The dashboard runs now at `http://127.0.0.1:8765`; its location, routes and live status: `docs/session-dashboard.md`.
 
@@ -41,7 +41,7 @@ The runtime environment is managed by **uv**. Do not use `python -m venv` or `pi
 
 Prefix shell commands with `rtk` (installed on the laptop and the Linux hub). `rtk pytest` hides output; use `rtk proxy uv run --extra host pytest -q`.
 
-Last recorded results (2026-11-10, node1, Python 3.12, branch `claude/node-allowed-gpus` on `main` after PR 46): 343 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
+Last recorded results (2026-11-10, node1, Python 3.12, branch `claude/node-allowed-gpus` on `main` after PR 46): 344 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
 
 ## Hard rules
 

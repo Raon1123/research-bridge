@@ -13,10 +13,12 @@ Observed on node1:
 - The node audit log has hub ops from 2026-11-06 on (`hello`, `git_status`, `queue_status`, `gpu_status`, `read_doc`). It has no `msg_*`, `respond` or `job_submit` entry: the message and job paths have not run from the hub.
 - The research queue is busy: four workers on GPUs 4–7 and about 50 queued jobs. A bridge job gets the highest number plus one, so it starts only after those.
 
-Changed on the branch (343 tests pass):
+Changed on the branch (344 tests pass):
 
 - `allowed_gpus` (new `node.json` key). Before, `job_submit` accepted every index `nvidia-smi` reports and `run-job` replaced the worker's `CUDA_VISIBLE_DEVICES` with the requested ids, so an approved job could run on another user's GPU (0–3) or on a GPU a second worker was using. Now: empty or malformed `allowed_gpus` refuses `job_submit` (`no_allowed_gpus`); a GPU outside the list or more than one GPU is `invalid`; `run-job` runs a one-GPU job on the worker's GPU (record and event carry `gpus_used`) and starts nothing outside the list (`failed`, reason `gpu_not_allowed`, exit 126).
 - A by-name template (`{config_stem}`) takes `.yaml` only.
+
+Design: `docs/design/2026-11-10-allowed-gpus.md`. Postmortem: `docs/postmortems/2026-11-10-node-local-checks.md`.
 
 Node-local test results: `docs/provisioning.md` §Results.
 
@@ -121,7 +123,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 
 ## Verification commands
 
-    uv run --extra host pytest -q   # 343 passed on 2026-11-10 (node1, branch claude/node-allowed-gpus)
+    uv run --extra host pytest -q   # 344 passed on 2026-11-10 (node1, branch claude/node-allowed-gpus)
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
     curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
 

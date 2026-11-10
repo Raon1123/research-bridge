@@ -434,7 +434,7 @@ def test_cli_run_job_reads_the_workers_gpu(tmp_path, monkeypatch):
     assert rc == 0 and out.read_text() == "4"
 
 
-@pytest.mark.parametrize("name", ["train.yml", "train.json"])
+@pytest.mark.parametrize("name", ["train.yml", "train.json", "train.YAML"])
 def test_by_name_template_takes_yaml_only(tcfg, name):
     """Checked on the node with Hydra: --config-name finds train.yaml, not train.yml or train.json."""
     tcfg.job_template = ["uv", "run", "pretrain.py", "--config-dir", "{config_dir}",

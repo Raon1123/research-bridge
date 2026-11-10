@@ -162,7 +162,7 @@ def submit(cfg: NodeConfig, mb: Mailbox, args: dict, known_gpus: Optional[Set[in
     if not cfg.job_template:
         raise ProtocolError("no_job_template", "node has no job_template configured")
     if (any("{config_stem}" in t for t in cfg.job_template)
-            and os.path.splitext(config_name)[1].lower() != ".yaml"):
+            and os.path.splitext(config_name)[1] != ".yaml"):  # case matters to Hydra
         # {config_stem} is for loaders that find the config by name (Hydra --config-name),
         # and Hydra only finds <name>.yaml: .yml and .json would be queued and fail at start.
         raise _invalid("config must be .yaml: this node's job_template loads it by name")
