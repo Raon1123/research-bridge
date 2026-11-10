@@ -286,6 +286,7 @@ def linked(hub: Hub, port: int = 22, keydir: Optional[Path] = None, keepalive: b
     hub.write_known_hosts(("%s ssh-ed25519 AAAAhostkey\n" % name).encode())
     data = hub.tmp / "data"
     data.mkdir(exist_ok=True)
+    data.chmod(0o700)
     hp = data / "host.json"
     hp.write_text(json.dumps({"nodes": {"node1": {"alias": "rb-node1",
                                                   "harness_alias": "rb-node1-harness"}}}),

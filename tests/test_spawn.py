@@ -433,3 +433,23 @@ def test_launcher_argv_is_what_callers_use(env, monkeypatch):
     conf = _j.loads(Path(spawn._mcp_config(str(env.trm_root))).read_text(encoding="utf-8"))
     assert conf["mcpServers"]["rb"]["command"] == "/abs/rb-node"
     assert spawn._launcher is not None
+
+
+def test_release_keeps_a_lock_another_process_took_over(tmp_path):
+    lock = tmp_path / "responder.lock"
+    lock.write_text("1", encoding="utf-8")  # not this process's pid
+    spawn._release(lock)
+    assert lock.exists()
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    spawn._release(lock)
+    assert not lock.exists()
+
+
+def test_discard_old_keeps_a_fresh_takeover_file(tmp_path):
+    tk = tmp_path / "responder.lock.takeover"
+    tk.write_text("", encoding="utf-8")
+    assert spawn._discard_old(tk) is False and tk.exists()
+    old = time.time() - spawn.TAKEOVER_STALE - 5
+    os.utime(str(tk), (old, old))
+    assert spawn._discard_old(tk) is True and not tk.exists()
+    assert not list(tmp_path.glob("*.discard.*"))

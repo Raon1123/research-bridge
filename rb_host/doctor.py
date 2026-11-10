@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import stat
 import time
 from collections import namedtuple
@@ -212,7 +213,14 @@ def offline(node: Optional[str] = None) -> List[Result]:
         return res
 
     if Path(cfg.data_root).is_dir():
-        res.append(_ok("data_root", cfg.data_root))
+        mode = stat.S_IMODE(os.stat(cfg.data_root).st_mode) if os.name != "nt" else 0o700
+        if mode & 0o077:
+            res.append(_bad("data_root", "fail",
+                            "data root %s has mode %o: other accounts can read stored messages "
+                            "and attachments" % (cfg.data_root, mode),
+                            "chmod 700 %s" % shlex.quote(cfg.data_root)))
+        else:
+            res.append(_ok("data_root", cfg.data_root))
     else:
         res.append(_bad("data_root", "fail", "data root does not exist: %s" % cfg.data_root, SETUP))
     if cfg.nodes:

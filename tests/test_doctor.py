@@ -550,3 +550,10 @@ def test_board_show_works_without_host_json(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
     assert cli.main(["board", "show"]) == 0
     assert "error" not in capsys.readouterr().out
+
+
+def test_data_root_open_to_other_accounts_fails(hub, monkeypatch, tmp_path):
+    _complete(hub, monkeypatch, tmp_path)
+    (hub.tmp / "data").chmod(0o755)
+    got = by_id(doctor.offline())["data_root"][0]
+    assert got.level == "fail" and got.next.startswith("chmod 700")

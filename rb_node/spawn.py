@@ -85,6 +85,33 @@ def _write_new_lock(path: Path) -> Optional[Path]:
     return path
 
 
+def _discard_old(tk: Path) -> bool:
+    """Remove a leftover takeover file without removing a fresh one a contender just made.
+
+    A plain unlink of the path can delete the file another contender created a moment ago. So
+    the path is renamed to a name only this process uses; the renamed file's age is then judged,
+    and a fresh one is linked back."""
+    mine = tk.with_name("%s.discard.%d" % (tk.name, os.getpid()))
+    try:
+        os.rename(str(tk), str(mine))
+    except OSError:
+        return True  # already gone: someone else discarded it; the caller retries
+    try:
+        fresh = time.time() - mine.stat().st_mtime <= TAKEOVER_STALE
+    except OSError:
+        fresh = False
+    if fresh:
+        try:
+            os.link(str(mine), str(tk))
+        except OSError:
+            pass
+    try:
+        mine.unlink()
+    except OSError:
+        pass
+    return not fresh
+
+
 def _takeover(path: Path) -> Optional[Path]:
     """Replace a stale lock; the takeover file lets exactly one contender judge and replace."""
     tk = path.with_name(path.name + ".takeover")
@@ -99,9 +126,7 @@ def _takeover(path: Path) -> Optional[Path]:
             except OSError:
                 continue
             if attempt == 0 and old:
-                try:
-                    tk.unlink()
-                except OSError:
+                if not _discard_old(tk):
                     return None
                 continue
             return None
@@ -144,6 +169,13 @@ def _acquire(state_dir: Path) -> Optional[Path]:
 
 
 def _release(lock: Path) -> None:
+    """Remove the lock only while it still holds this process's pid (another responder may have
+    taken over a lock that looked stale)."""
+    try:
+        if Path(lock).read_text(encoding="utf-8").strip() != str(os.getpid()):
+            return
+    except (OSError, ValueError):
+        return
     try:
         Path(lock).unlink()
     except OSError:
@@ -321,7 +353,21 @@ def _oldest_new(mb: Mailbox) -> Optional[str]:
     return None
 
 
+def _lead_process_group() -> None:
+    """Make this process a process-group leader, so the dead-holder probe sees a surviving
+    `claude` child even when respond was started by hand or by cron instead of `trigger`."""
+    setpgid = getattr(os, "setpgid", None)
+    if setpgid is None:
+        return
+    try:
+        if os.getpgrp() != os.getpid():
+            setpgid(0, 0)
+    except OSError:
+        pass
+
+
 def respond(cfg: NodeConfig, msg_id: str) -> int:
+    _lead_process_group()
     mb = Mailbox(Path(cfg.mailbox_root))
     state = Path(cfg.mailbox_root) / "state"
     current = msg_id  # type: Optional[str]
