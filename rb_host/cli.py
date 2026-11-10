@@ -105,7 +105,10 @@ def _pending(args: argparse.Namespace) -> int:
     if cfg is None:
         return 1
     led = jobs.ledger_for(cfg)
-    for r in led.pending_jobs():
+    pending = led.pending_jobs()
+    if not pending:
+        print("no pending jobs")
+    for r in pending:
         print(jobs.describe(r))
         print("---")
     return 0

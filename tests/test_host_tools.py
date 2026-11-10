@@ -221,6 +221,9 @@ def test_cli_pending_reject_harness(env, capsys, monkeypatch):
     assert cli.main(["approve", a]) == 0
     assert env["ledger"].get(a)["status"] == "queued"
     capsys.readouterr()
+    assert cli.main(["pending"]) == 0
+    assert capsys.readouterr().out == "no pending jobs\n"
+    capsys.readouterr()
     with pytest.raises(SystemExit):  # harness subcommands need arguments; covered in test_harness.py
         cli.main(["harness", "push"])
 
