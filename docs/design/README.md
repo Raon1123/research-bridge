@@ -31,6 +31,7 @@ Each document carries one status line at the top. Update it in place and keep th
 | 2026-11-02 | [Unified research board](2026-11-02-unified-board.md) | draft |
 | 2026-11-03 | [Node-side job approval (SEC-01)](2026-11-03-node-side-approval.md) | draft; implemented on branch `claude/sec-01-02-fixes` |
 | 2026-11-06 | [Shared research status page](2026-11-06-shared-status-page.md) | built (steps 3–4, commits e68109a, 218d60a); steps 2, 5, 6 open |
+| 2026-11-10 | [Node GPU allowlist and worker-assigned GPU](2026-11-10-allowed-gpus.md) | draft; implemented on branch `claude/node-allowed-gpus` |
 
 The first design stays at `docs/superpowers/specs/` because the plan and `AGENTS.md` refer to that path. New designs go in this directory.
 

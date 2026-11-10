@@ -1,6 +1,36 @@
-# research-bridge handoff — 2026-11-05
+# research-bridge handoff — 2026-11-10
 
 Read `AGENTS.md` first (rules, layout, test commands).
+
+## Node state and node-local tests (2026-11-10, session on node1)
+
+This section is newer than everything below it. Where they disagree (for example "nothing has been installed on node1"), this section wins.
+
+Observed on node1:
+
+- `rb_node` is installed by `scripts/node-install.sh`; `install.json` records a clean commit of branch `claude/node-allowed-gpus` (`rb-node git-status` shows which; the installed code equals commit `db1d412`). The branch is not pushed. After it is merged, reinstall from `main` so the record names a `main` commit.
+- `node.json`: `job_template` is the Hydra by-name form (`--config-dir {config_dir} --config-name {config_stem}`), `allowed_gpus` is `[4, 5, 6, 7]`, the read roots exist, `withheld_source` is the JSON pattern file (mode 600), the approval verifier is set. `rb-node config check` reports one item: `harness_root` is empty (decision 4).
+- The node audit log has hub ops from 2026-11-06 on (`hello`, `git_status`, `queue_status`, `gpu_status`, `read_doc`). It has no `msg_*`, `respond` or `job_submit` entry: the message and job paths have not run from the hub.
+- The research queue is busy: four workers on GPUs 4–7 and about 50 queued jobs. A bridge job gets the highest number plus one, so it starts only after those.
+
+Changed on the branch (345 tests pass):
+
+- `allowed_gpus` (new `node.json` key). Before, `job_submit` accepted every index `nvidia-smi` reports and `run-job` replaced the worker's `CUDA_VISIBLE_DEVICES` with the requested ids, so an approved job could run on another user's GPU (0–3) or on a GPU a second worker was using. Now: empty or malformed `allowed_gpus` refuses `job_submit` (`no_allowed_gpus`); a GPU outside the list or more than one GPU is `invalid`; `run-job` runs a one-GPU job on the worker's GPU (record and event carry `gpus_used`) and starts nothing outside the list (`failed`, reason `gpu_not_allowed`, exit 126).
+- A by-name template (`{config_stem}`) takes `.yaml` only.
+- The uploaded config is stored as `rbjob-<job_id><ext>`, not under the submitted name (user decision 2026-11-10). Before, a config named like one of the tree's own configs was ignored by Hydra without an error and the job would have run the tree's file.
+
+Design: `docs/design/2026-11-10-allowed-gpus.md`. Postmortem: `docs/postmortems/2026-11-10-node-local-checks.md`.
+
+Node-local test results: `docs/provisioning.md` §Results.
+
+Open after these tests:
+
+1. ~~Config name collision~~ — fixed 2026-11-10 (stored as `rbjob-<job_id>.yaml`).
+2. **Config content.** A submitted config is the whole primary config. It must start with `defaults: [cfg_pretrain, _self_]` to inherit the base; without it the job gets only the keys in the file. Queue jobs written by hand pass `+project_name` and `+run_name` as overrides; a submitted config has to set them itself.
+3. **Hub side, not yet run:** `hello` (expect `withheld_extra > 0`), `send_message` with a small pdf then `poll`, `poll` for the `job_finished` event of job `rbtest-20261110` (posted by the console test, status `budget_exceeded`), `cancel_job` + `rb approve` against a console `rb-node run-job ... -- sleep 600`, and a real `submit_job` once the queue has room.
+4. **Multi-GPU jobs** are refused until the queue has a way to give one job several GPUs.
+5. The hub does not know `allowed_gpus`: a wrong GPU in `submit_job` is refused only at approval. Showing the list in `gpu_status` is a possible follow-up.
+6. Not checked in this session (the user's to check): the options on the two bridge lines in node1's `authorized_keys`, and what `~/.ssh/research-bridge/` on node1 holds (hub private keys do not belong on the node).
 
 ## Resume snippet
 
@@ -94,7 +124,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 
 ## Verification commands
 
-    uv run --extra host pytest -q   # 325 passed on 2026-11-06 (Linux hub, main after PRs 38, 40, 42)
+    uv run --extra host pytest -q   # 345 passed on 2026-11-10 (node1, branch claude/node-allowed-gpus)
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
     curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
 

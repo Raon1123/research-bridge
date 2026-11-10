@@ -46,12 +46,19 @@ PYTHONPATH="$HOME/.local/share/research-bridge" exec python3 -m rb_node.cli "$@"
 | `withheld_source` | withheld 패턴이 담긴 파일. JSON 리스트, `{"patterns": [...]}`, `{"families": [{"patterns": [...]}]}` 형식을 받는다. YAML은 파싱하지 않는다(PyYAML 없음). YAML 파일이면 fallback 패턴만 적용된다. |
 | `claude_bin` | Claude CLI의 절대 경로. |
 | `job_template` | `{config}` placeholder를 포함하는 argv 리스트. 예: `["uv", "run", "pretrain.py", "--config", "{config}"]`. 비어 있으면 `submit_job`이 `no_job_template`으로 거부된다. 노드의 소유자가 설정한다. |
+| `allowed_gpus` | 브리지 작업이 쓸 수 있는 GPU 인덱스, 즉 노드 소유자의 GPU. 예: `[4, 5, 6, 7]`. 비어 있으면 `submit_job`은 `no_allowed_gpus`로 거부되고 `run-job`은 아무것도 시작하지 않는다. 목록 밖의 GPU나 둘 이상의 GPU는 `invalid`로 거부된다. |
 | `max_file` | 첨부 파일 크기 상한(바이트, 기본값 50 MB). |
 | `mailbox_root`, `audit_path` | `~/.research-bridge/` 아래에 둔다. |
 | `harness_root` | 노드의 `~/.claude`. 비어 있으면 harness push와 pull이 거부된다(`no_harness_root`). |
 | `approval_path` | job 승인 verifier. 기본값은 `~/.research-bridge/approve.json`. `read_roots`와 `write_roots` 밖에 둔다. 없으면 `job_submit`과 `job_cancel`이 거부된다(`not_authorized`). |
 
 `RB_NODE_CONFIG`로 경로를 덮어쓸 수 있다(테스트에서 사용).
+
+`job_template` 자리표시자(config는 mailbox state 디렉터리 아래 `rbjob-<job_id><ext>`로 저장된다): `{config}`는 저장된 config의 경로, `{config_dir}`는 그 디렉터리, `{config_stem}`은 확장자를 뺀 이름이다. 뒤의 둘은 Hydra처럼 config를 이름으로 찾는 로더를 위한 것이다(`--config-dir {config_dir} --config-name {config_stem}`). 이런 template에서는:
+
+- `.yaml` config만 받는다(Hydra는 `.yml`이나 `.json`을 이름으로 찾지 못한다).
+- 제출한 파일이 primary config 전체가 되므로, 기본 config를 물려받으려면 `defaults`에 넣어야 한다(예: `defaults: [cfg_pretrain, _self_]`).
+- 노드는 제출한 파일을 `rbjob-<job_id>.yaml`로 저장하고, 제출한 이름이 아니라 그 이름을 넘긴다. 연구 트리의 config 디렉터리를 먼저 찾기 때문에, 트리도 쓰는 이름으로 저장된 파일은 오류 없이 무시된다.
 
 withheld 처리는 항상 켜져 있다. `withheld_source`가 없어도 `AGENTS.md` hard rule 3에 나열된 fallback 패턴이 적용된다. 텍스트 문서는 일치한 줄이 비워지고, 일치하는 pdf, tex, 이미지는 거부되며, 알 수 없는 확장자도 거부된다.
 
@@ -96,7 +103,9 @@ restrict,from="<HUB_SUBNET>",command="<NODE_HOME>/.local/bin/rb-node harness-rec
 
 ## 8. 예산 강제
 
-승인된 작업의 큐 파일은 template 명령을 `rb-node run-job --gpus ... --gpu-hours ...`로 감싼다. wrapper는 `CUDA_VISIBLE_DEVICES`를 정확히 그 GPU들로 설정하고, wall time `gpu_hours / len(gpus)`에서 작업을 중단한다(상태 `budget_exceeded`). 취소 요청은 10 s마다 폴링한다. 노드 자체의 큐 러너는 여전히 worker를 GPU에 배정하며, wrapper는 작업이 볼 수 있는 GPU만 좁힌다.
+승인된 작업의 큐 파일은 template 명령을 `rb-node run-job --gpus ... --gpu-hours ...`로 감싼다. wrapper는 wall time `gpu_hours / len(gpus)`에서 작업을 중단한다(상태 `budget_exceeded`). 취소 요청은 10 s마다 폴링한다.
+
+작업이 받는 GPU: 노드의 큐 러너는 GPU마다 worker를 하나씩 두고 그 GPU를 `CUDA_VISIBLE_DEVICES`로 내보낸다. 브리지로 큐에 넣는 작업은 `allowed_gpus` 중 GPU 하나를 요청하며, wrapper는 그 작업을 집은 worker의 GPU에서 실행한다. 이 GPU는 요청한 인덱스와 다를 수 있고, 그때 작업 기록과 `job_finished` 이벤트에 `gpus_used`가 들어간다. wrapper는 `allowed_gpus` 밖의 GPU에서는 아무것도 시작하지 않는다. 그 작업은 사유 `gpu_not_allowed`, 종료 코드 126의 `failed`로 끝난다. worker 없이 콘솔에서 실행하면 wrapper는 `CUDA_VISIBLE_DEVICES`를 `--gpus` 값으로 설정한다.
 
 ## 9. 업그레이드와 제거
 

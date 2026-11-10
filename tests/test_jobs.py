@@ -28,7 +28,7 @@ RECORD, KEY = approval.make_record("test passphrase", iterations=1000, salt_hex=
 
 def _submit_args(job_id, sha, **kw):
     a = {"job_id": job_id, "idempotency_key": "k-" + job_id, "config_name": "train.yaml",
-         "config_sha256": sha, "gpus": [0, 2], "gpu_hours": 1.5, "note": "n",
+         "config_sha256": sha, "gpus": [2], "gpu_hours": 1.5, "note": "n",
          "approval_key": KEY}
     a.update(kw)
     return a
@@ -60,6 +60,7 @@ def no_nvidia_smi(monkeypatch):
 @pytest.fixture
 def tcfg(cfg):
     cfg.job_template = ["uv", "run", "pretrain.py", "config={config}"]
+    cfg.allowed_gpus = [0, 1, 2]
     approval.write_record(Path(cfg.approval_path), RECORD)
     return cfg
 
@@ -72,8 +73,8 @@ def test_submit_writes_queue_job(tcfg):
     assert len(files) == 1 and r["result"]["queued"] == str(files[0])
     assert files[0].name == "0001_j1.job"
     body = files[0].read_text(encoding="utf-8")
-    assert "rb-node run-job --gpus 0,2 --gpu-hours 1.5 --job-id j1 -- uv run pretrain.py" in body
-    stored = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "train.yaml"
+    assert "rb-node run-job --gpus 2 --gpu-hours 1.5 --job-id j1 -- uv run pretrain.py" in body
+    stored = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "rbjob-j1.yaml"
     assert stored.read_bytes() == b"lr: 0.1\n"
     assert "{config}" not in body
     audit = Path(tcfg.audit_path).read_text(encoding="utf-8")
@@ -106,9 +107,9 @@ def test_gpu_index_checked_when_nvidia_smi_reports(tcfg, monkeypatch):
     import rb_node.remote as remote
     monkeypatch.setattr(remote.Node, "gpu_status", lambda self, a: {"gpus": [{"index": 0}, {"index": 1}]})
     sha = _upload_config(tcfg, "j8")
-    bad = call(tcfg, ("job_submit", _submit_args("j8", sha, gpus=[0, 2])))[0]
+    bad = call(tcfg, ("job_submit", _submit_args("j8", sha, gpus=[2])))[0]
     assert not bad["ok"] and bad["error"]["code"] == "invalid"
-    good = call(tcfg, ("job_submit", _submit_args("j8", sha, gpus=[0, 1])))[0]
+    good = call(tcfg, ("job_submit", _submit_args("j8", sha, gpus=[1])))[0]
     assert good["ok"]
 
 
@@ -294,8 +295,10 @@ def test_cli_run_job(tmp_path, monkeypatch):
     from rb_node import cli
     mb = tmp_path / "mb"
     cfgfile = tmp_path / "node.json"
-    cfgfile.write_text(json.dumps({"mailbox_root": str(mb)}), encoding="utf-8")
+    cfgfile.write_text(json.dumps({"mailbox_root": str(mb), "allowed_gpus": [0]}),
+                       encoding="utf-8")
     monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     rc = cli.main(["run-job", "--gpus", "0", "--gpu-hours", "1", "--job-id", "cli1", "--",
                    sys.executable, "-c", "pass"])
     assert rc == 0
@@ -347,4 +350,114 @@ def test_template_dir_and_stem_placeholders(tcfg):
     assert call(tcfg, ("job_submit", _submit_args("j9", sha)))[0]["ok"]
     body = _jobs(tcfg)[0].read_text(encoding="utf-8")
     d = Path(tcfg.mailbox_root) / "state" / "configs" / "j9"
-    assert "--config-dir %s --config-name train" % d in body and "{config" not in body
+    # stored under the job id, never under the submitted name (a name the tree also uses
+    # would make Hydra load the tree's file instead)
+    assert "--config-dir %s --config-name rbjob-j9" % d in body and "{config" not in body
+    assert [p.name for p in d.iterdir()] == ["rbjob-j9.yaml"]
+
+
+# --- allowed_gpus: the node owner's GPUs; the queue worker's GPU wins -------------
+def test_submit_refused_without_allowed_gpus(tcfg):
+    tcfg.allowed_gpus = []
+    sha = _upload_config(tcfg, "g1")
+    r = call(tcfg, ("job_submit", _submit_args("g1", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "no_allowed_gpus", r
+    assert _jobs(tcfg) == []
+    assert not (Path(tcfg.mailbox_root) / "state" / "idempotency.json").exists()
+
+
+def test_submit_refuses_gpu_outside_allowed(tcfg):
+    """GPU 3 exists (fake_gpus reports 0-3) but is not the node owner's."""
+    sha = _upload_config(tcfg, "g2")
+    r = call(tcfg, ("job_submit", _submit_args("g2", sha, gpus=[3])))[0]
+    assert not r["ok"] and r["error"]["code"] == "invalid", r
+    assert _jobs(tcfg) == []
+
+
+def test_submit_refuses_multi_gpu(tcfg):
+    sha = _upload_config(tcfg, "g3")
+    r = call(tcfg, ("job_submit", _submit_args("g3", sha, gpus=[0, 2])))[0]
+    assert not r["ok"] and r["error"]["code"] == "invalid", r
+    assert "multi-GPU" in r["error"]["message"]
+    assert _jobs(tcfg) == []
+
+
+@pytest.mark.parametrize("bad", [[0, "1"], [True], [-1], "0", None])
+def test_malformed_allowed_gpus_fails_closed(tcfg, bad):
+    tcfg.allowed_gpus = bad
+    sha = _upload_config(tcfg, "g4")
+    r = call(tcfg, ("job_submit", _submit_args("g4", sha)))[0]
+    assert not r["ok"] and r["error"]["code"] == "no_allowed_gpus", r
+
+
+_ENV_CODE = "import os,sys; open(sys.argv[1],'w').write(os.environ['CUDA_VISIBLE_DEVICES'])"
+
+
+def test_run_job_uses_the_workers_gpu(tmp_path):
+    """Requested GPU 5, claimed by the gpu4 worker: the job runs on 4, not on 5."""
+    state = _state(tmp_path)
+    out = tmp_path / "env.txt"
+    rc = run_job([5], 1, "w1", [sys.executable, "-c", _ENV_CODE, str(out)], state,
+                 allowed_gpus={4, 5}, assigned_gpu=4)
+    assert rc == 0 and out.read_text() == "4"
+    rec = _record(state, "w1")
+    assert rec["gpus"] == [5] and rec["gpus_used"] == [4] and rec["status"] == "done"
+    body = json.loads(Mailbox(tmp_path / "mb").undelivered()[0]["body"])
+    assert body["gpus_used"] == [4]
+
+
+@pytest.mark.parametrize("gpus,assigned,allowed", [
+    ([0], None, {4, 5}),      # console run on a GPU that is not the owner's
+    ([5], 2, {4, 5}),         # worker started on a foreign GPU (FORCE_GPUS)
+    ([4], None, set()),       # allowed_gpus cleared after the job was queued
+])
+def test_run_job_launches_nothing_outside_allowed(tmp_path, gpus, assigned, allowed):
+    state = _state(tmp_path)
+    out = tmp_path / "ran.txt"
+    rc = run_job(gpus, 1, "w2", [sys.executable, "-c", _ENV_CODE, str(out)], state,
+                 allowed_gpus=allowed, assigned_gpu=assigned)
+    assert rc == 126 and not out.exists()
+    rec = _record(state, "w2")
+    assert rec["status"] == "failed" and rec["reason"] == "gpu_not_allowed"
+    body = json.loads(Mailbox(tmp_path / "mb").undelivered()[0]["body"])
+    assert body["status"] == "failed" and body["reason"] == "gpu_not_allowed"
+
+
+def test_cli_run_job_reads_the_workers_gpu(tmp_path, monkeypatch):
+    from rb_node import cli
+    mb = tmp_path / "mb"
+    cfgfile = tmp_path / "node.json"
+    cfgfile.write_text(json.dumps({"mailbox_root": str(mb), "allowed_gpus": [4, 5]}),
+                       encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(cfgfile))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "4")
+    out = tmp_path / "env.txt"
+    rc = cli.main(["run-job", "--gpus", "5", "--gpu-hours", "1", "--job-id", "cli2", "--",
+                   sys.executable, "-c", _ENV_CODE, str(out)])
+    assert rc == 0 and out.read_text() == "4"
+
+
+@pytest.mark.parametrize("name", ["train.yml", "train.json", "train.YAML"])
+def test_by_name_template_takes_yaml_only(tcfg, name):
+    """Checked on the node with Hydra: --config-name finds train.yaml, not train.yml or train.json."""
+    tcfg.job_template = ["uv", "run", "pretrain.py", "--config-dir", "{config_dir}",
+                         "--config-name", "{config_stem}"]
+    sha = _upload_config(tcfg, "y1", name=name)
+    r = call(tcfg, ("job_submit", _submit_args("y1", sha, config_name=name)))[0]
+    assert not r["ok"] and r["error"]["code"] == "invalid", r
+    assert _jobs(tcfg) == []
+    tcfg.job_template = ["uv", "run", "pretrain.py", "config={config}"]  # by path: still accepted
+    assert call(tcfg, ("job_submit", _submit_args("y1", sha, config_name=name)))[0]["ok"]
+
+
+def test_stored_config_name_ignores_the_submitted_name(tcfg):
+    """A config submitted as cfg_pretrain.yaml (a name the research tree owns) is stored by job id."""
+    tcfg.job_template = ["uv", "run", "pretrain.py", "--config-dir", "{config_dir}",
+                         "--config-name", "{config_stem}"]
+    sha = _upload_config(tcfg, "n1", name="cfg_pretrain.yaml")
+    r = call(tcfg, ("job_submit", _submit_args("n1", sha, config_name="cfg_pretrain.yaml")))[0]
+    assert r["ok"], r
+    body = _jobs(tcfg)[0].read_text(encoding="utf-8")
+    assert "--config-name rbjob-n1" in body and "cfg_pretrain" not in body
+    d = Path(tcfg.mailbox_root) / "state" / "configs" / "n1"
+    assert (d / "rbjob-n1.yaml").read_bytes() == b"lr: 0.1\n"

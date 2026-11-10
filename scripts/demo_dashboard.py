@@ -94,7 +94,8 @@ def build(root: Path) -> dict:
         "withheld_source": None, "claude_bin": str(root / "no-claude"), "mailbox_root": str(mb),
         "audit_path": str(root / "node" / "audit.jsonl"),
         "approval_path": str(root / "node" / "approve.json"),
-        "job_template": ["python", "train.py", "--config", "{config}"]}
+        "job_template": ["python", "train.py", "--config", "{config}"],
+        "allowed_gpus": [0, 1]}
     (root / "node.json").write_text(json.dumps(node_conf), encoding="utf-8")
     approval.write_record(Path(node_conf["approval_path"]),
                           approval.make_record(PASSPHRASE, iterations=approval.MIN_ITERATIONS)[0])
@@ -119,7 +120,7 @@ def seed(root: Path) -> None:
     cfg = jobs.load_cfg()
     led = jobs.ledger_for(cfg)
     for name, gpus, hours, note in (("sweep-lr.yaml", [0], 4, "lr sweep, 3 values"),
-                                    ("ablation-depth.yaml", [0, 1], 12, "depth ablation")):
+                                    ("ablation-depth.yaml", [1], 12, "depth ablation")):
         p = root / "configs" / name
         p.parent.mkdir(exist_ok=True)
         p.write_text("lr: 0.001\n", encoding="utf-8")
