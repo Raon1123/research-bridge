@@ -208,7 +208,7 @@ Which GPU the job gets: the node's queue runner has one worker per GPU and expor
 
 **Update:** in the checkout on the node, `scripts/node-install.sh --update` (pulls with `--ff-only`, copies a new release, swaps the symlink, rewrites the install record, runs the doctor). `node.json`, the mailbox and the approval verifier are kept. Needs the user's go-ahead for the session case. The hub shows the difference as `node_version` in `rb doctor`.
 
-**State on 2026-11-10:** the registered node still runs `rb_node` 0.1.0, the code before this branch. That code has no `doctor`, no `link`, and answers `hello` without a protocol field; the hub treats it as protocol 1 and reports its checks as `unknown`. The first run of `scripts/node-install.sh` from a checkout of this branch updates it (§2, step 3 describes the one-time move of the old directory).
+**State on 2026-11-10:** the registered node runs `rb_node` 0.1.0 from pre-merge code of branch `claude/node-allowed-gpus` (before PR 48 on `main`). That code has no `doctor`, no `link`, and answers `hello` without a protocol field; the hub treats it as protocol 1 and reports its checks as `unknown`. The first run of `scripts/node-install.sh` from a checkout of `main` updates it (§2, step 3 describes the one-time move of the old directory).
 
 **Remove:** delete the two `authorized_keys` lines, then `~/.local/bin/rb-node`, `~/.local/share/research-bridge/` and, once its contents are no longer needed, `~/.research-bridge/`.
 

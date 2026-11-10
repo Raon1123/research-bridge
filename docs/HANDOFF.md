@@ -6,7 +6,7 @@ Commands: `rb` below means `uv run --extra host rb`, run in the repository's mai
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
-Written by a session on node1 against `main` after PR 46 (merged into this branch on 2026-11-10 together with PR 47). It is newer than "The real link" below on what is installed on node1: the node already runs `scripts/node-install.sh` code of the `claude/node-allowed-gpus` branch (`rb_node` before this branch's `doctor`, `link` and protocol 2). Where the two disagree about the node, this section wins.
+Written by a session on node1 against `main` after PR 46 (merged into `claude/review-optimize-2026-11-10` on 2026-11-10 together with PR 47; that branch is on `main` as PR 48). It is newer than "The real link" below on what is installed on node1: the node already runs `scripts/node-install.sh` code of the `claude/node-allowed-gpus` branch (`rb_node` before the `doctor`, `link` and protocol 2 of PR 48). Where the two disagree about the node, this section wins.
 
 Observed on node1:
 
@@ -36,7 +36,7 @@ Open after these tests:
 
 ## Resume snippet
 
-> The hub is the Linux server (user decision, 2026-11-05); the laptop keeps only the vault and its 8765 dashboard. One node, `node1`, is registered and answers with rb_node 0.1.0 (code before this branch). Branch `claude/review-optimize-2026-11-10` (local, not pushed, not merged) adds one-command setup and diagnosis, unattended sync and a read-only hub page, and node 0.2.0. Next: the user decides whether to push and merge it (decision 1 in `docs/issues/2026-11-10-triage.md` §5), then runs the terminal steps below; a session then runs the live checks of `docs/provisioning.md` after a go-ahead.
+> The hub is the Linux server (user decision, 2026-11-05); the laptop keeps only the vault and its 8765 dashboard. One node, `node1`, is registered and runs pre-merge code of `claude/node-allowed-gpus`. One-command setup and diagnosis, unattended sync, the read-only hub page and node 0.2.0 are on `main` (PRs 48, 49, merged with merge commits, #20); PR 50 fixed the test suite overwriting the real `~/.claude.json` (§Test suite and `~/.claude.json`). The hub's main checkout is on `main`. Next: the user runs the terminal steps below; a session then runs the live checks of `docs/provisioning.md` after a go-ahead.
 
 ## The real link
 
@@ -45,25 +45,25 @@ Works (checked 2026-11-06): hub keys exist and the node accepts them; the node a
 Not done or not verified:
 - The node has no withheld pattern file loaded: `hello` reported `withheld_extra = 0`, so only the five fallback patterns are active. For that reason `read_doc`, `send_message` and `poll` were deliberately not exercised.
 - The 2026-11-06 hub checks did not confirm the approval verifier or `job_template`. The node1 section above (2026-11-10) found the verifier, `job_template` and `allowed_gpus` set; without `job_template` or `allowed_gpus` every job is refused.
-- The node has not been updated to the code of this branch.
+- The node has not been updated to `main`.
 - The security checks (B2) and the first live run (B3) have not started.
 
-## This branch (local only)
+## On `main` since 2026-11-10 (PRs 48, 49, 50)
 
-`claude/review-optimize-2026-11-10`: not pushed, not merged. Nothing in it runs on the real hub or node yet.
+Nothing below has run on the real node yet; on the hub only `rb doctor --offline` has.
 
 - Hub commands: `rb setup` (host.json, keys, ssh config blocks, host key comparison, agent, the node command, the MCP registration command, doctor), `rb agent` (load keys once per boot), `rb doctor [--offline]`, `rb service install|status` (systemd user units `rb-sync.timer`, `rb-sync.service`, `rb-web.service`), `rb web serve` (read-only page on `127.0.0.1:8767`; from the laptop: `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>`).
 - SSH errors carry a code and the next command (`no_agent`, `agent_empty`, `key_not_loaded`, `node_refused_key`, `host_key_unknown`, `host_key_changed`, `unknown_alias`, `unreachable`, `timeout`, `closed`). The MCP server finds the agent itself: no `SSH_AUTH_SOCK` in its entry, no session restart when the agent changes.
 - `rb sync` writes `<data_root>/sync/<node>.json`; items it stores are marked undelivered, so MCP `poll` still returns them. `send_message` keeps a masked copy of each sent body under `<data_root>/outbox/`.
 - Node: `scripts/node-install.sh` is the single node entry point; `rb-node doctor`; `rb-node link [DIR] [--apply]`; `hello` protocol 2 with a `state` object; defect fixes. Removed: `scripts/hub-connect.sh`, `scripts/hub-agent.sh`, `scripts/trm-link.sh`.
-- Designs (`docs/design/`, 2026-11-10): setup and diagnosis, sync and hub page (both implemented here; both design documents keep the status draft until the user accepts them); project profiles, experiment records (design only). Project facts: `docs/projects/trm.md`.
-- Tests: 854 passed on 2026-11-10 after merging `origin/main` (PRs 46, 47: `job_template` placeholders `{config_dir}` and `{config_stem}`, `allowed_gpus`) into this branch (Linux hub, Python 3.12). `rb-node config check` and `rb-node doctor` on the node report an empty `allowed_gpus` (check `allowed_gpus`).
+- Designs (`docs/design/`, 2026-11-10): setup and diagnosis, sync and hub page (both implemented; both design documents keep the status draft until the user accepts them); project profiles, experiment records (design only). Project facts: `docs/projects/trm.md`.
+- Tests: 919 passed on 2026-11-10 at PR 50 (Linux hub, Python 3.12); PRs 46, 47 added the `job_template` placeholders `{config_dir}` and `{config_stem}` and `allowed_gpus`. `rb-node config check` and `rb-node doctor` on the node report an empty `allowed_gpus` (check `allowed_gpus`).
 
 ## Next actions
 
 ### Only the user, at a terminal
 
-1. Decide push and merge (decision 1). The node gets code with `git pull`, and `rb setup` and `rb service install` should run from the main checkout (setup warns in a worktree; the units call the `rb` of the installing environment). Then, on the hub, in the main checkout: `git pull` and `uv sync --extra host`. Then restart every Claude session on the hub before the first `rb sync`: an MCP server started on the old code never returns the items the new `rb sync` stores as not yet delivered.
+1. Restart every Claude session on the hub before the first `rb sync`: the hub's main checkout was moved to `main` and `uv sync --extra host --python '>=3.10'` was run on 2026-11-10, and an MCP server started on the old code never returns the items the new `rb sync` stores as not yet delivered. `rb setup` and `rb service install` run from the main checkout (setup warns in a worktree; the units call the `rb` of the installing environment); later updates are `git pull --ff-only` and the same `uv sync` there.
 2. Hub terminal: `rb doctor --offline`. If `withheld_hub` is not ok, copy the session-calendar withheld pattern file from the laptop to `<data_root>/withheld_patterns.json` (the path `withheld_patterns_file` in `host.json` names).
 3. Node, with your own login (not the `rb-node1` alias, whose key runs only the forced command): copy the same file to `~/withheld-patterns.json`.
 4. Node console, in the node's research-bridge checkout:
@@ -78,8 +78,8 @@ Not done or not verified:
    The installed script predates `--withheld-file`, so pull first (`git pull --ff-only`, or the installed script's `--update`), then run the new script; later updates are `scripts/node-install.sh --update`. Replace `[..., "{config}"]` with the project's job command as a JSON list containing `{config}`, `{config_dir}` or `{config_stem}` (`docs/manual/node-setup.md` §4.1.1); the value is a project fact (`docs/projects/trm.md`, decision 12). `allowed_gpus` is the list of GPU indices that belong to you (`[4, 5, 6, 7]` is the example from node1); empty, every job is refused with `no_allowed_gpus`. node1 already has both set (see the node1 section above).
 5. Hub terminal: `rb setup --node node1`. It skips what exists, compares the host key when `known_hosts` has no entry, and prints `claude mcp add-json --scope user research-bridge '...'` when the registered entry differs; if so, run `claude mcp remove research-bridge`, then the printed command, and restart the Claude session once.
 6. Hub terminal: `rb doctor --node node1`. Expected: `withheld_hub` ok, `node_version` 0.2.0 with protocol 2, `node_withheld`, `node_approval`, `node_job_template` and `node_allowed_gpus` ok.
-7. Hub terminal: `rb service install`, then paste the `systemctl --user ...` line it prints; `rb service status`.
-8. The security checks (B2) and the first live run (B3) in `docs/provisioning.md`.
+7. The security checks (B2) and the first live run (B3) in `docs/provisioning.md`.
+8. Hub terminal, after the first manual `rb sync --node node1` of B3 succeeds (B3 row 8): `rb service install`, then paste the `systemctl --user ...` line it prints; `rb service status`.
 
 ### A session, after the user's go-ahead
 
@@ -90,18 +90,26 @@ Not done or not verified:
 
 ## Pending decisions
 
-All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. The first two: push and merge this branch; transport authentication (#25) before or after the first live run. Open work by workstream: the same file, §4.
+All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. Decision 1 (push and merge) is done: PRs 48 and 49. The first open one: transport authentication (#25) before or after the first live run. Open work by workstream: the same file, §4.
 
 Decided by the user on 2026-11-10 (no longer waiting; items 3, 7, 8, 11, 13 and 20 of the triage list §5 are closed except where noted):
 
 - The user confirmed the six defaults: (1) outgoing bodies are stored under `outbox/` after the withheld check, masked; (2) the ten MCP tools stay with their names and arguments; (3) the hub page has no approval form, approval stays `rb approve` in a hub terminal (the self-approval residual of PM-04 in `2026-11-03-whole-branch-review.md` stays accepted, as before); (4) unattended sync runs only through `rb service install`, run by the user; (5) the Windows instructions shrink to an appendix; (6) the `trm` names in config keys and on the wire are not renamed now.
 - The user chose a one-time access key for the hub page: `rb web key` in a hub terminal prints an address; the browser exchanges the key once for a session cookie (defaults 10 minutes for the key, 12 hours for the session). No password and no login form. Design: `docs/design/2026-11-10-sync-and-hub-page.md` §6.6a. The page also refuses connections from other accounts (owner of the client socket, `/proc/net/tcp`). Residual risk: the cookie goes to every port on 127.0.0.1 and can be overwritten from there, which can sign the user out but gives another account nothing it can use against the page; anything running as the hub user is out of scope. A Unix-socket forward is only an alternative transport. Open the address by pasting it into the browser, not as a command-line argument; use `http://127.0.0.1:8767/`, not `localhost`.
 
+## Test suite and `~/.claude.json` (2026-11-10)
+
+From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the real `~/.claude.json` of the account that ran it with a one-entry fixture. Do not run the suite on a checkout between those two commits. Postmortem: `docs/postmortems/2026-11-10-test-suite-overwrote-claude-json.md`.
+
+- On the hub the file is whole again (87 top-level keys, `research-bridge` entry naming the main checkout, checked 2026-11-10); how it was restored is not recorded.
+- The user said other accounts or machines may have run the suite in that window (node1 included). Each such account checks its `~/.claude.json` (top-level key count, the `research-bridge` entry) and restores from `~/.claude/backups/` or an older copy if it holds one `mcpServers` entry pointing into a pytest temporary directory.
+- `rb doctor --offline` now names the directory the registered MCP entry runs (`registered: ...`) and what differs.
+
 ## Verification commands
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 854 passed on 2026-11-10
+    rtk proxy uv run --extra host pytest -q        # 919 passed on 2026-11-10 (PR 50)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.

@@ -9,7 +9,7 @@ tags: [postmortem, research-bridge]
 
 # The test suite overwrote the real ~/.claude.json — postmortem (2026-11-10 16:26 – 21:00 +0900)
 
-This document covers one defect in the tests added by the review and simplification work of 2026-11-10 (merged as pull requests 48 and 49). It records what went wrong, how it surfaced, what was fixed and whether the fix was confirmed. It does not assign blame. The user's file is not restored by this change; see Open items.
+This document covers one defect in the tests added by the review and simplification work of 2026-11-10 (merged as pull requests 48 and 49). It records what went wrong, how it surfaced, what was fixed and whether the fix was confirmed. It does not assign blame. The user's file is not restored by this change; see Open items. The fix was merged as pull request 50.
 
 ## How this was made
 
@@ -70,5 +70,5 @@ Abbreviations used: MCP (Model Context Protocol).
 
 ## 5. Open items
 
-- Restoring `~/.claude.json` is the user's step, with every Claude session on the hub closed (a running session writes its own state back): keep the damaged file, copy `~/.claude.json.bak.20261106205323` over it, start Claude, and register the MCP server again with the command `rb setup --node node1` prints. Project entries and settings added after 2026-11-06 are not in that copy.
-- Other accounts or machines that ran the suite between `c503667` and this fix have the same damage in their own `~/.claude.json`.
+- 2026-11-10, later: on the hub the file is whole again (87 top-level keys, the `research-bridge` entry names the main checkout); how and from which copy it was restored is not recorded (the user does not know). The steps for a damaged file stay: restoring `~/.claude.json` is the user's step, with every Claude session on the hub closed (a running session writes its own state back): keep the damaged file, copy `~/.claude.json.bak.20261106205323` over it, start Claude, and register the MCP server again with the command `rb setup --node node1` prints. Project entries and settings added after 2026-11-06 are not in that copy.
+- Other accounts or machines that ran the suite between `c503667` and this fix have the same damage in their own `~/.claude.json`. The user said this may have happened (node1 included); the check is in `docs/HANDOFF.md` §Test suite and `~/.claude.json`.
