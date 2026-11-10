@@ -317,3 +317,41 @@ def test_sweep_removes_old_stage_dirs_only(tmp_path):
     assert fresh.exists()
     assert sweep_stage_dirs(cfg, "n1", now_s=time.time() + 7200) == 1
     assert sweep_stage_dirs(cfg, "n1") == 0
+
+
+def test_store_outgoing_files_are_mode_600(tmp_path):
+    import os
+    from rb_host.store import store_outgoing
+    cfg = _hcfg(tmp_path)
+    r = store_outgoing(cfg, "node1", "m1", "hello", [])
+    for n in ("body.txt", "provenance.json"):
+        assert (os.stat(os.path.join(r["dir"], n)).st_mode & 0o777) == 0o600
+
+
+def test_store_outgoing_retry_survives_pattern_change(tmp_path):
+    from rb_host.store import store_outgoing
+    cfg = _hcfg(tmp_path)
+    store_outgoing(cfg, "node1", "m1", "alpha\nSECRETWORD here\nomega", [])
+    pf = tmp_path / "pat.json"
+    pf.write_text(json.dumps({"patterns": ["SECRETWORD"]}), encoding="utf-8")
+    cfg.withheld_patterns_file = str(pf)
+    store_outgoing(cfg, "node1", "m1", "alpha\nSECRETWORD here\nomega", [])  # same body: ok
+    with pytest.raises(ValueError):
+        store_outgoing(cfg, "node1", "m1", "another body", [])
+
+
+def test_store_incoming_replaces_body_atomically(tmp_path):
+    cfg = _hcfg(tmp_path)
+    item = {"id": "i1", "kind": "reply", "body": "first", "attachments": []}
+    store_incoming(cfg, "node1", item, FakeClient({}))
+    d = tmp_path / "data" / "inbox" / "node1" / "i1"
+    held = open(str(d / "body.txt"), encoding="utf-8")  # a concurrent reader
+    try:
+        item["body"] = "second"
+        store_incoming(cfg, "node1", item, FakeClient({}))
+        # replaced by rename: the reader's file is neither truncated nor rewritten
+        assert held.read() == "first"
+    finally:
+        held.close()
+    assert (d / "body.txt").read_text(encoding="utf-8") == "second"
+    assert not [p for p in d.iterdir() if p.name.endswith(".tmp")]

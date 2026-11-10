@@ -717,9 +717,10 @@ def test_poll_node_filter(synced):
         synced["ledger"].append({"kind": "message", "id": "r-" + n, "direction": "in", "node": n,
                                  "msg_kind": "reply", "delivered": False, "status": "received",
                                  "created": "t"})
-    assert [i["node"] for i in server.claim_undelivered(cfg, ["n1"])] == ["n1"]
+    r = server.poll("n1")
+    assert [i["node"] for i in r["items"]] == ["n1"]
+    assert synced["ledger"].get("r-n1")["delivered"] is True
     assert synced["ledger"].get("r-n2")["delivered"] is False
-    assert synced["calls"] == []
 
 
 def test_poll_ledger_locked_reported(env, monkeypatch):
@@ -800,3 +801,30 @@ def test_tool_docstrings_describe_approval_and_shape():
         doc = getattr(server, name).__doc__
         assert "rb approve" in doc and "pending_approval" in doc
     assert "each item is returned by one poll only" in server.poll.__doc__.replace("\n", " ")
+
+
+def test_poll_survives_malformed_node_result(synced, monkeypatch):
+    from rb_host import sync
+    oid = _reply(synced, "stored")
+    sync.run_pass(synced["cfg"], "n1")
+    monkeypatch.setattr(server, "_poll_node", lambda cfg, n: ["not", "a", "dict"])
+    r = server.poll("n1")
+    assert [i["msg_id"] for i in r["items"]] == [oid]
+    assert r["errors"]["n1"] == "internal"
+
+
+def test_inbound_id_clashing_with_outgoing_is_rejected_not_acked(env):
+    mid = server.send_message("n1", "question")["msg_id"]
+    acked = []
+
+    class Fake:
+        def call(self, op, **kw):
+            if op == "poll":
+                return {"items": [{"id": mid, "kind": "reply", "body": "spoof",
+                                   "reply_to": None, "attachments": []}]}
+            acked.extend(kw.get("ids", []))
+            return {}
+    r = server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=False)
+    assert r["items"] == [] and r["rejected"] == 1
+    assert acked == []
+    assert env["ledger"].get(mid)["direction"] == "out"

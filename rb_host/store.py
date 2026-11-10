@@ -103,7 +103,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     body, body_hits = wh.mask_text(str(item.get("body", "")))
     inbox.mkdir(parents=True, exist_ok=True)
     # the masked body is stored before the caller acks the item (PM-09)
-    (inbox / "body.txt").write_text(body, encoding="utf-8")
+    _atomic_write(inbox / "body.txt", body)
     files = []  # type: list
     used = set()  # type: set
     for idx, att in enumerate(item.get("attachments", [])):
@@ -162,8 +162,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     prov = {"node": node, "msg_id": msg_id,
             "received_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "body_withheld_lines": body_hits, "files": prov_files}
-    (inbox / "provenance.json").write_text(json.dumps(prov, ensure_ascii=False, indent=2),
-                                           encoding="utf-8")
+    _atomic_write(inbox / "provenance.json", json.dumps(prov, ensure_ascii=False, indent=2))
     return {"msg_id": msg_id, "node": node, "kind": item.get("kind"),
             "reply_to": item.get("reply_to"), "body": body,
             "files": [f["name"] for f in files if f["status"] == "ok"],
@@ -206,8 +205,17 @@ def sweep_stage_dirs(cfg: HostConfig, node: str, older_than_s: float = 3600,
 
 def _atomic_write(path: Path, text: str) -> None:
     tmp = path.with_name(".%s.%s.tmp" % (path.name, uuid.uuid4().hex[:8]))
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(str(tmp), str(path))
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(str(tmp), str(path))
+    except BaseException:
+        try:
+            os.unlink(str(tmp))
+        except OSError:
+            pass
+        raise
 
 
 def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
@@ -230,16 +238,27 @@ def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
         atts.append({"index": idx, "name": "(withheld)" if wh.name_hit(f.name) else f.name,
                      "bytes": f.stat().st_size, "sha256": _sha(f)})
     body_file = d / "body.txt"
+    body_sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    prov_file = d / "provenance.json"
     if body_file.is_file():
-        if body_file.read_text(encoding="utf-8") != masked:
+        # compare the hash of the unmasked body, so a changed pattern file does not matter;
+        # a record from before the hash existed falls back to the masked text
+        try:
+            old_sha = json.loads(prov_file.read_text(encoding="utf-8")).get("body_sha256")
+        except (OSError, ValueError, AttributeError):
+            old_sha = None
+        if isinstance(old_sha, str):
+            same = old_sha == body_sha
+        else:
+            same = body_file.read_text(encoding="utf-8") == masked
+        if not same:
             raise ValueError("msg_id already used with a different body")
     d.mkdir(parents=True, exist_ok=True)
-    prov_file = d / "provenance.json"
     if not body_file.is_file():
         _atomic_write(body_file, masked)
     if not prov_file.is_file():
         prov = {"node": node, "msg_id": msg_id,
                 "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "body_chars": len(body), "body_withheld_lines": hits, "attachments": atts}
+                "body_chars": len(body), "body_sha256": body_sha, "body_withheld_lines": hits, "attachments": atts}
         _atomic_write(prov_file, json.dumps(prov, ensure_ascii=False, indent=2))
     return {"dir": str(d), "body_withheld_lines": hits, "attachments": atts}

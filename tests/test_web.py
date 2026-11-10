@@ -429,3 +429,24 @@ def test_cli_web_serve_starts_server_with_defaults(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr(web, "serve", lambda c, bind, port: seen.update(bind=bind, port=port))
     assert cli.main(["web", "serve"]) == 0
     assert seen == {"bind": "127.0.0.1", "port": web.DEFAULT_PORT}
+
+
+def test_nodes_table_cleans_and_masks_node_values(cfg, srv):
+    sp = Path(cfg.data_root) / "sync" / "n1.json"
+    st = json.loads(sp.read_text(encoding="utf-8"))
+    st["node_version"] = "9\u202e.9"
+    st["tree_head"] = "abc"
+    sp.write_text(json.dumps(st), encoding="utf-8")
+    body = req(srv, "/")[2]
+    assert "\u202e" not in body and "9.9" in body
+
+
+def test_removed_path_shows_no_path_even_with_cache(cfg, srv):
+    bd = Path(cfg.data_root) / "board"
+    (bd / "n1_state.json").write_text(json.dumps({
+        "source": "n1:state", "fetched_at": _stamp(5), "attempted_at": _stamp(5), "ok": True,
+        "error": None, "cadence_s": 600, "items": [{"phase": "OLD-CACHED-PHASE"}]}),
+        encoding="utf-8")
+    page = req(srv, "/nodes")[2]
+    assert page.count("no path configured") == 3
+    assert "OLD-CACHED-PHASE" not in page

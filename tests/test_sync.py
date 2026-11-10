@@ -219,8 +219,9 @@ def test_transport_error_without_code_attribute(env, monkeypatch):
     class NoCode(Exception):
         pass
 
-    class Stub(TransportError):  # local stand-in; works whether or not TransportError has .code
-        pass
+    class Stub(TransportError):  # no `code` under either TransportError definition
+        def __init__(self, msg):
+            Exception.__init__(self, msg)
     monkeypatch.delattr(TransportError, "code", raising=False)
 
     def bad(cfg, node):
@@ -434,3 +435,33 @@ def test_stage_sweep_runs_before_connect(env, monkeypatch):
     monkeypatch.setattr(store, "sweep_stage_dirs", lambda cfg, node: called.append(node) or 0)
     sync.run_pass(env["cfg"], "n1")
     assert called == ["n1"]
+
+
+def test_run_host_json_nodes_not_a_mapping(env, capsys):
+    env["host"].write_text(json.dumps({"nodes": ["n1"], "data_root": str(env["root"])}),
+                           encoding="utf-8")
+    assert sync.run(None, 0) == 1  # a failed pass is reported, not a traceback
+    assert '"ok": false' in capsys.readouterr().out
+
+
+def test_run_host_json_unreadable(env, capsys):
+    env["host"].unlink()
+    env["host"].mkdir()  # exists but cannot be read as a file
+    assert sync.run(None, 0) == 1
+    assert capsys.readouterr().out.startswith("error:")
+
+
+def test_run_no_nodes_configured_fails(env, capsys):
+    env["host"].write_text(json.dumps({"nodes": {}, "data_root": str(env["root"])}),
+                           encoding="utf-8")
+    assert sync.run(None, 0) == 1
+    out = capsys.readouterr().out
+    assert out.startswith("error:") and "no nodes" in out
+
+
+def test_run_pass_survives_bad_status_read(env, monkeypatch):
+    def boom(cfg, node):
+        raise AttributeError("x")
+    monkeypatch.setattr(sync, "read_status", boom)
+    st = sync.run_pass(env["cfg"], "n1")  # must not raise
+    assert isinstance(st, dict)

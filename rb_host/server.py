@@ -151,6 +151,9 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool) -> dict:
             if seen is not None and seen.get("direction") == "in":
                 ack.append(iid)
                 continue
+            if seen is not None:  # the id belongs to an outgoing or job record: do not ack
+                rejected += 1
+                continue
             try:
                 stored = store_incoming(cfg, node, it, c)
             except (ValueError, OSError):
@@ -164,6 +167,11 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool) -> dict:
                 rec["delivered_at"] = jobs.now()
             if led.append(rec):
                 new.append(stored)
+            else:
+                cur = led.get(iid)
+                if cur is None or cur.get("direction") != "in":
+                    rejected += 1  # lost the race to a non-inbound record: leave it on the node
+                    continue
             ack.append(iid)
         if ack:
             c.call("ack", ids=ack)
@@ -243,6 +251,12 @@ def poll(node: Optional[str] = None) -> dict:
             r = _poll_node(cfg, n)
         except TimeoutError:
             errors["ledger"] = "ledger_locked"
+            continue
+        except Exception as exc:  # a malformed node result must not skip the claim below
+            errors[n] = "internal"
+            continue
+        if not isinstance(r, dict):
+            errors[n] = "internal"
             continue
         items.extend(r.get("items", []))
         if "error" in r:

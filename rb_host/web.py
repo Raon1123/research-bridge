@@ -147,8 +147,9 @@ def _nodes_table(cfg: Any, wh: Withheld) -> str:
         head = st.get("tree_head")
         tree = (str(head)[:12] + ("" if st.get("tree_dirty") is None
                                   else " dirty %s" % st.get("tree_dirty"))) if head else ""
-        rows.append([_t(wh, n, 60), state, last_ok, s["last_attempt_at"] or "", s["node_version"],
-                     s["protocol"], s["withheld_extra"], tree, s["undelivered"]])
+        rows.append([_t(wh, n, 60), state, last_ok, s["last_attempt_at"] or "",
+                     _t(wh, s["node_version"], 40), _t(wh, s["protocol"], 20),
+                     _t(wh, s["withheld_extra"], 20), _t(wh, tree, 40), s["undelivered"]])
     return _table(["node", "sync", "last success", "last attempt", "node version", "protocol",
                    "withheld_extra", "tree", "undelivered"], rows, "(no nodes configured)")
 
@@ -300,7 +301,7 @@ def _nodes_page(cfg: Any, wh: Withheld) -> bytes:
             if src is None:
                 continue
             title = "%s:%s" % (_t(wh, n, 60), name)
-            if bmap.get(name) == "no_path" and not src.get("fetched_at"):
+            if bmap.get(name) == "no_path":
                 parts.append("<h3>%s</h3>\n<p>no path configured</p>\n" % _e(title))
                 continue
             state = ("ok" if src.get("ok") else "error: %s" % _t(wh, src.get("error"), 60))

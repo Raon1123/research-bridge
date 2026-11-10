@@ -116,7 +116,11 @@ def _log(stage: str, exc: BaseException) -> None:
 def run_pass(cfg: Any, node: str) -> dict:
     """One pass for one node. Never raises; returns the final status dict."""
     t0 = time.time()
-    prev = read_status(cfg, node) or {}
+    try:
+        prev = read_status(cfg, node) or {}
+    except Exception as exc:
+        _log("status", exc)
+        prev = {}
     st = {"schema": SCHEMA, "node": node, "last_attempt_at": jobs.now(),
           "last_ok_at": prev.get("last_ok_at"), "ok": False, "error": "incomplete",
           "stage": "running", "new_items": 0, "rejected": 0,
@@ -225,12 +229,16 @@ def run(node: Optional[str], watch: int, out: Optional[TextIO] = None,
             passes += 1
             try:
                 cfg = jobs.load_cfg()
-            except (FileNotFoundError, ValueError):
+            except (OSError, ValueError):
                 print("error: no usable host.json at %s; run: rb setup --node NAME --host HOST "
                       "--user USER" % _hostjson_path(), file=out, flush=True)
                 failed = True
             else:
                 names = [node] if node else sorted(cfg.nodes)
+                if not names:
+                    print("error: no nodes configured in %s; run: rb setup --node NAME --host "
+                          "HOST --user USER" % _hostjson_path(), file=out, flush=True)
+                    failed = True
                 for n in names:
                     if n not in cfg.nodes:
                         print("error: unknown node: %s" % n, file=out, flush=True)
