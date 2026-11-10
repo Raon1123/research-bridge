@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 CACHE_S = 30.0
 _cache = {}  # type: Dict[Optional[str], Tuple[float, Optional[Path]]]
@@ -177,32 +177,43 @@ def alias_defined(alias: str) -> bool:
     return hostname[0].lower() != alias.lower()
 
 
-def pick_identity(files: List[str], alias: str) -> Optional[Path]:
-    """The bridge key among the identityfile values `ssh -G` printed for `alias`.
+def key_names(node: str) -> List[str]:
+    """File names `rb setup` generates for a node: bridge key, harness key."""
+    return ["%s_ed25519" % node, "%s_harness_ed25519" % node]
 
-    ssh lists IdentityFile values in the order it read them, so a `Host *` block above the rb
-    block puts the user's personal key first. Take the file named like the bridge keys
-    (`<node>_ed25519`, `<node>_harness_ed25519`); with several values and no such name, the
-    last one (rb blocks are appended at the end of the file).
-    """
-    paths = [p for p in (expand_path(f) for f in files) if p is not None]
-    if not paths:
-        return None
-    if len(paths) == 1:
-        return paths[0]
-    node = alias[3:] if alias.startswith("rb-") else alias
-    harness = node.endswith("-harness")
-    if harness:
+
+def default_names(alias: str) -> List[str]:
+    """Key names for the default alias convention `rb-<node>[-harness]`; other aliases give []."""
+    if not alias.startswith("rb-") or len(alias) <= 3:
+        return []
+    node = alias[3:]
+    if node.endswith("-harness"):
         node = node[:-len("-harness")]
-    want = "%s%s_ed25519" % (node, "_harness" if harness else "")
-    for p in paths:
-        if p.name == want:
+    return key_names(node) if node else []
+
+
+def pick_identity(files: List[str], names: Sequence[str],
+                  keydir: Optional[Path] = None) -> Optional[Path]:
+    """The bridge key among the identityfile values `ssh -G` printed for an alias.
+
+    Only a file whose name is one of `names` (the key names `rb setup` generates for the node) or
+    that lies in `keydir` counts. Anything else (OpenSSH's default list, a `Host *` value, the
+    user's personal key) gives None: the caller reports "no bridge IdentityFile configured"
+    and never falls back to another key.
+    """
+    for f in files:
+        p = expand_path(f)
+        if p is None:
+            continue
+        if p.name in names or (keydir is not None and p.parent == keydir):
             return p
-    return paths[-1]
+    return None
 
 
-def identity_file(alias: str) -> Optional[Path]:
-    return pick_identity(ssh_config(alias).get("identityfile") or [], alias)
+def identity_file(alias: str, names: Optional[Sequence[str]] = None,
+                  keydir: Optional[Path] = None) -> Optional[Path]:
+    wanted = default_names(alias) if names is None else names
+    return pick_identity(ssh_config(alias).get("identityfile") or [], wanted, keydir)
 
 
 def fingerprint(pub: Path) -> Optional[str]:

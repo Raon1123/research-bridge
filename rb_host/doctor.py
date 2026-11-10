@@ -51,18 +51,20 @@ def _load_cfg() -> HostConfig:
 
 # ---------------------------------------------------------------- offline
 
-def _key_for(cfg: Dict[str, List[str]], alias: str) -> Optional[Path]:
-    return sshenv.pick_identity(cfg.get("identityfile") or [], alias)
+def _key_for(cfg: Dict[str, List[str]], alias: str, node: str, harness: bool) -> Optional[Path]:
+    names = sshenv.key_names(node)
+    return sshenv.pick_identity(cfg.get("identityfile") or [], [names[1] if harness else names[0]])
 
 
 def _key_file_result(id_: str, level: str, alias: str, cfg: Dict[str, List[str]], name: str,
                      harness: bool) -> Result:
     tail = " (harness channel only)" if harness else ""
-    files = cfg.get("identityfile") or []
-    raw = files[0] if files else "(none)"
-    key = _key_for(cfg, alias)
-    if key is None or not key.is_file():
-        return _bad(id_, level, "key file missing: %s%s" % (key or raw, tail),
+    key = _key_for(cfg, alias, name, harness)
+    if key is None:
+        return _bad(id_, level, "no bridge IdentityFile configured for %s%s" % (alias, tail),
+                    "rb setup --node %s" % name, name)
+    if not key.is_file():
+        return _bad(id_, level, "key file missing: %s%s" % (key, tail),
                     "rb setup --node %s" % name, name)
     mode = stat.S_IMODE(key.stat().st_mode)
     if mode & 0o077:
@@ -287,7 +289,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
     for n in names:
         for a in (state[n]["alias"], state[n]["harness"]):
             if defined.get(a):
-                k = _key_for(sshcfg[a], a)
+                k = _key_for(sshcfg[a], a, n, a == state[n]["harness"] and a != state[n]["alias"])
                 keys[a] = k if k is not None and k.is_file() else None
                 unenc[a] = keys[a] is not None and sshenv.key_unencrypted(keys[a])
     if sock is not None:

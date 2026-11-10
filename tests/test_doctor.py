@@ -247,6 +247,18 @@ def test_offline_sync_status_unfinished_pass(hub, monkeypatch, tmp_path):
     assert r.level == "warn" and "never finished" in r.message
 
 
+def test_offline_key_file_no_bridge_identity(hub, monkeypatch, tmp_path):
+    _complete(hub, monkeypatch, tmp_path)
+    d = hub.ssh_dir / "research-bridge"
+    personal = hub.ssh_dir / "id_ed25519"
+    hub.make_key(personal, "personal")
+    txt = hub.config_path.read_text(encoding="utf-8").replace(str(d / "node1_ed25519"), str(personal))
+    hub.write_config(txt)
+    r = by_id(doctor.offline())["key_file"][0]
+    assert r.level == "fail" and "no bridge IdentityFile configured for rb-node1" in r.message
+    assert r.next == "rb setup --node node1"
+
+
 def test_offline_no_user_bus_is_manager_not_available(hub, monkeypatch, tmp_path):
     _complete(hub, monkeypatch, tmp_path)
     bus = (1, "", "Failed to connect to bus: No medium found")

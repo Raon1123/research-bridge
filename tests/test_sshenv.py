@@ -127,7 +127,7 @@ def test_agent_socket_prefers_socket_holding_alias_key(tmp_path, socks, monkeypa
 
     def table(argv, env):
         if argv[:2] == ["ssh", "-G"]:
-            return 0, "hostname h\nidentityfile ~/.ssh/k\n", ""
+            return 0, "hostname h\nidentityfile ~/.ssh/research-bridge/node1_ed25519\n", ""
         if argv[0] == "ssh-keygen":
             return 0, "256 SHA256:WANT comment (ED25519)\n", ""
         if argv[0] == "ssh-add":
@@ -303,3 +303,24 @@ def test_stale_xdg_runtime_dir_falls_back_to_run_user(monkeypatch, tmp_path):
     std = "/run/user/%d" % os.getuid()
     ok = os.path.isdir(std) and os.stat(std).st_uid == os.getuid() and (os.stat(std).st_mode & 0o777) == 0o700
     assert sshenv.runtime_dir() == (Path(std) if ok else None)
+
+
+def test_pick_identity_only_bridge_key_names_or_keydir(tmp_path, monkeypatch):
+    monkeypatch.setattr(sshenv, "user_home", lambda: Path("/home/u"))
+    names = sshenv.key_names("node1")
+    assert names == ["node1_ed25519", "node1_harness_ed25519"]
+    files = ["/home/u/.ssh/id_rsa", "/home/u/.ssh/id_ed25519", "/home/u/.ssh/rb/node1_ed25519"]
+    assert sshenv.pick_identity(files, names) == Path("/home/u/.ssh/rb/node1_ed25519")
+    # OpenSSH default list or a personal Host * value: no key, never the last or only value
+    assert sshenv.pick_identity(files[:2], names) is None
+    assert sshenv.pick_identity(["/home/u/.ssh/id_ed25519"], names) is None
+    assert sshenv.pick_identity([], names) is None
+    kd = Path("/home/u/keys")
+    assert sshenv.pick_identity(["/home/u/keys/anything"], names, kd) == kd / "anything"
+    assert sshenv.pick_identity(["/home/u/other/anything"], names, kd) is None
+
+
+def test_default_names_follow_the_alias_convention_only():
+    assert sshenv.default_names("rb-node1") == ["node1_ed25519", "node1_harness_ed25519"]
+    assert sshenv.default_names("rb-node1-harness") == ["node1_ed25519", "node1_harness_ed25519"]
+    assert sshenv.default_names("my-alias") == []

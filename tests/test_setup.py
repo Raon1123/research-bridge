@@ -539,3 +539,37 @@ def test_same_key_for_both_aliases_is_refused(hub, capsys):
     hub.write_config(txt)
     assert cli.main(ARGS) == 2
     assert "same file" in capsys.readouterr().out
+
+
+def test_rb_agent_never_loads_a_personal_key(hub, capsys):
+    hubfake.linked(hub, port=2222)
+    d = hub.ssh_dir / KEYS
+    personal = hub.ssh_dir / "id_ed25519"
+    hub.make_key(personal, "personal")
+    txt = hub.config_path.read_text(encoding="utf-8")
+    txt = txt.replace(str(d / "node1_ed25519"), str(personal)).replace(
+        str(d / "node1_harness_ed25519"), str(personal))
+    hub.write_config(txt)
+    hub.add_agent("rb-ssh-agent", [])
+    assert cli.main(["agent"]) == 1
+    out = capsys.readouterr().out
+    assert "no bridge IdentityFile configured for rb-node1" in out
+    assert "rb setup --node node1" in out
+    assert not [c for c in hub.calls if c[0] == "interactive" and c[1][0] == "ssh-add"]
+
+
+def test_differences_show_the_picked_identity(hub):
+    from rb_host import setup
+    key = hub.ssh_dir / KEYS / "node1_ed25519"
+    cfg = {"identityfile": ["~/.ssh/id_ed25519", str(key)], "hostname": ["h"], "port": ["22"],
+           "user": ["u"], "identitiesonly": ["yes"], "stricthostkeychecking": ["true"]}
+    args = type("A", (), {"host": "h", "port": 22, "user": "u"})()
+    assert setup._differences("rb-node1", cfg, args, key) == []
+    other = key.parent / "other_ed25519"
+    cfg["identityfile"] = [str(other)]
+    got = setup._differences("rb-node1", cfg, args, key)
+    assert got == ["rb-node1: identityfile is unset, expected %s" % key]
+    cfg["identityfile"] = ["~/.ssh/id_ed25519", str(key)]
+    cfg["identityfile"][1] = str(key.parent / "x" / "node1_ed25519")
+    got = setup._differences("rb-node1", cfg, args, key)
+    assert str(key.parent / "x" / "node1_ed25519") in got[0] and "id_ed25519," not in got[0]

@@ -126,7 +126,7 @@ def _key_paths(a: Args) -> Tuple[Path, Path]:
     for alias, name in zip((a.alias, a.harness_alias), names):
         cfg = _ssh(a, alias)
         files = cfg.get("identityfile") or []
-        key = sshenv.pick_identity(files, alias) if files and _defined(cfg, alias) else None
+        key = sshenv.pick_identity(files, names) if files and _defined(cfg, alias) else None
         out.append(key or sshenv.user_ssh_dir() / "research-bridge" / name)
     return out[0], out[1]
 
@@ -258,8 +258,8 @@ def _differences(alias: str, cfg: Dict[str, List[str]], a: Args, key: Path) -> L
              ("port", first("port"), str(a.port), first("port") == str(a.port)),
              ("user", first("user"), a.user, first("user") == a.user)]
     files = cfg.get("identityfile") or []
-    got = sshenv.pick_identity(files, alias)
-    pairs.append(("identityfile", files[0] if files else "unset", str(key), got == key))
+    got = sshenv.pick_identity(files, [key.name])
+    pairs.append(("identityfile", str(got) if got is not None else "unset", str(key), got == key))
     pairs.append(("identitiesonly", first("identitiesonly"), "yes", first("identitiesonly").lower() == "yes"))
     pairs.append(("stricthostkeychecking", first("stricthostkeychecking"), "true",
                   first("stricthostkeychecking").lower() in ("true", "yes")))
@@ -649,17 +649,24 @@ def agent_main(node: Optional[str]) -> int:
     code = 0
     for n in names:
         entry = cfg.nodes.get(n) if isinstance(cfg.nodes.get(n), dict) else {}
-        for alias, required in ((entry.get("alias") or "rb-" + n, True),
-                                (entry.get("harness_alias") or "rb-%s-harness" % n, False)):
+        for alias, required, kname in ((entry.get("alias") or "rb-" + n, True,
+                                        sshenv.key_names(n)[0]),
+                                       (entry.get("harness_alias") or "rb-%s-harness" % n, False,
+                                        sshenv.key_names(n)[1])):
             c = sshenv.ssh_config(alias)
             if not _defined(c, alias):
                 print("%s: ssh has no Host block for %s%s" % (
                     "error" if required else "note", alias, "" if required else " (harness channel only)"))
                 code = code or (1 if required else 0)
                 continue
-            key = sshenv.pick_identity(c.get("identityfile") or [], alias)
-            if key is None or not key.is_file():
-                print("%s: key file missing: %s" % ("error" if required else "note", key or "(none)"))
+            key = sshenv.pick_identity(c.get("identityfile") or [], [kname])
+            if key is None:
+                print("%s: no bridge IdentityFile configured for %s; run: rb setup --node %s"
+                      % ("error" if required else "note", alias, n))
+                code = code or (1 if required else 0)
+                continue
+            if not key.is_file():
+                print("%s: key file missing: %s" % ("error" if required else "note", key))
                 code = 1
                 continue
             keys.append(key)
