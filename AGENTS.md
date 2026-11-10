@@ -41,7 +41,7 @@ The runtime environment is managed by **uv**. Do not use `python -m venv` or `pi
 
 Prefix shell commands with `rtk` (installed on the laptop and the Linux hub). `rtk pytest` hides output; use `rtk proxy uv run --extra host pytest -q`.
 
-Last recorded results (2026-11-10, node1, Python 3.12, branch `claude/node-allowed-gpus` on `main` after PR 46): 344 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
+Last recorded results (2026-11-10, node1, Python 3.12, branch `claude/node-allowed-gpus` on `main` after PR 46): 345 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
 
 ## Hard rules
 

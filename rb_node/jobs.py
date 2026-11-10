@@ -111,6 +111,10 @@ def _finalize_config(cfg: NodeConfig, mb: Mailbox, job_id: str, config_name: str
     """Verify the uploaded config (msg_id job-<id>) and move it to its stored path.
 
     The upload is deliberately not committed through msg_commit (no responder trigger).
+    It is stored as rbjob-<job_id><ext>, not under the submitted name: a loader that finds the
+    config by name (Hydra --config-name) searches the research tree's own config directory
+    first, so a submitted file named like one of the tree's configs would be ignored without
+    an error and the job would run the tree's file.
     """
     msg_id = "job-" + job_id
     msg_dir = mb.root / "in" / _check_id(msg_id)
@@ -136,7 +140,7 @@ def _finalize_config(cfg: NodeConfig, mb: Mailbox, job_id: str, config_name: str
         mb.commit_part(msg_id, "in", entry["name"], entry["sha256"])
     dest_dir = mb.root / "state" / "configs" / job_id
     _mkdir(dest_dir)
-    dest = dest_dir / entry["name"]
+    dest = dest_dir / ("rbjob-%s%s" % (job_id, os.path.splitext(config_name)[1]))
     os.replace(str(att / entry["name"]), str(dest))
     return dest
 

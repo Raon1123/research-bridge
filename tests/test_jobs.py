@@ -74,7 +74,7 @@ def test_submit_writes_queue_job(tcfg):
     assert files[0].name == "0001_j1.job"
     body = files[0].read_text(encoding="utf-8")
     assert "rb-node run-job --gpus 2 --gpu-hours 1.5 --job-id j1 -- uv run pretrain.py" in body
-    stored = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "train.yaml"
+    stored = Path(tcfg.mailbox_root) / "state" / "configs" / "j1" / "rbjob-j1.yaml"
     assert stored.read_bytes() == b"lr: 0.1\n"
     assert "{config}" not in body
     audit = Path(tcfg.audit_path).read_text(encoding="utf-8")
@@ -350,7 +350,10 @@ def test_template_dir_and_stem_placeholders(tcfg):
     assert call(tcfg, ("job_submit", _submit_args("j9", sha)))[0]["ok"]
     body = _jobs(tcfg)[0].read_text(encoding="utf-8")
     d = Path(tcfg.mailbox_root) / "state" / "configs" / "j9"
-    assert "--config-dir %s --config-name train" % d in body and "{config" not in body
+    # stored under the job id, never under the submitted name (a name the tree also uses
+    # would make Hydra load the tree's file instead)
+    assert "--config-dir %s --config-name rbjob-j9" % d in body and "{config" not in body
+    assert [p.name for p in d.iterdir()] == ["rbjob-j9.yaml"]
 
 
 # --- allowed_gpus: the node owner's GPUs; the queue worker's GPU wins -------------
@@ -445,3 +448,16 @@ def test_by_name_template_takes_yaml_only(tcfg, name):
     assert _jobs(tcfg) == []
     tcfg.job_template = ["uv", "run", "pretrain.py", "config={config}"]  # by path: still accepted
     assert call(tcfg, ("job_submit", _submit_args("y1", sha, config_name=name)))[0]["ok"]
+
+
+def test_stored_config_name_ignores_the_submitted_name(tcfg):
+    """A config submitted as cfg_pretrain.yaml (a name the research tree owns) is stored by job id."""
+    tcfg.job_template = ["uv", "run", "pretrain.py", "--config-dir", "{config_dir}",
+                         "--config-name", "{config_stem}"]
+    sha = _upload_config(tcfg, "n1", name="cfg_pretrain.yaml")
+    r = call(tcfg, ("job_submit", _submit_args("n1", sha, config_name="cfg_pretrain.yaml")))[0]
+    assert r["ok"], r
+    body = _jobs(tcfg)[0].read_text(encoding="utf-8")
+    assert "--config-name rbjob-n1" in body and "cfg_pretrain" not in body
+    d = Path(tcfg.mailbox_root) / "state" / "configs" / "n1"
+    assert (d / "rbjob-n1.yaml").read_bytes() == b"lr: 0.1\n"

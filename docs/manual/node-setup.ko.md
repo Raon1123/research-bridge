@@ -54,11 +54,11 @@ PYTHONPATH="$HOME/.local/share/research-bridge" exec python3 -m rb_node.cli "$@"
 
 `RB_NODE_CONFIG`로 경로를 덮어쓸 수 있다(테스트에서 사용).
 
-`job_template` 자리표시자: `{config}`는 저장된 config의 경로, `{config_dir}`는 그 디렉터리, `{config_stem}`은 확장자를 뺀 이름이다. 뒤의 둘은 Hydra처럼 config를 이름으로 찾는 로더를 위한 것이다(`--config-dir {config_dir} --config-name {config_stem}`). 이런 template에서는:
+`job_template` 자리표시자(config는 mailbox state 디렉터리 아래 `rbjob-<job_id><ext>`로 저장된다): `{config}`는 저장된 config의 경로, `{config_dir}`는 그 디렉터리, `{config_stem}`은 확장자를 뺀 이름이다. 뒤의 둘은 Hydra처럼 config를 이름으로 찾는 로더를 위한 것이다(`--config-dir {config_dir} --config-name {config_stem}`). 이런 template에서는:
 
 - `.yaml` config만 받는다(Hydra는 `.yml`이나 `.json`을 이름으로 찾지 못한다).
 - 제출한 파일이 primary config 전체가 되므로, 기본 config를 물려받으려면 `defaults`에 넣어야 한다(예: `defaults: [cfg_pretrain, _self_]`).
-- 연구 트리의 config 디렉터리에 있는 config와 이름이 같은 파일을 제출하면 오류 없이 무시된다. 그 디렉터리를 먼저 찾기 때문이다. 제출하는 config에는 트리가 쓰지 않는 이름을 붙인다.
+- 노드는 제출한 파일을 `rbjob-<job_id>.yaml`로 저장하고, 제출한 이름이 아니라 그 이름을 넘긴다. 연구 트리의 config 디렉터리를 먼저 찾기 때문에, 트리도 쓰는 이름으로 저장된 파일은 오류 없이 무시된다.
 
 withheld 처리는 항상 켜져 있다. `withheld_source`가 없어도 `AGENTS.md` hard rule 3에 나열된 fallback 패턴이 적용된다. 텍스트 문서는 일치한 줄이 비워지고, 일치하는 pdf, tex, 이미지는 거부되며, 알 수 없는 확장자도 거부된다.
 
