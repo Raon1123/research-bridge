@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TextIO
 
 from . import board, jobs, server, store, threads
-from .client import RemoteError, TransportError
+from .client import RemoteError, TransportError, normalize_hello
 from .config import default_root
 from .threads import read_status, status_path, summary  # noqa: F401  (re-exported readers)
 
@@ -143,11 +143,10 @@ def run_pass(cfg: Any, node: str) -> dict:
     try:
         with jobs.connect(cfg, node) as c:
             stage = "hello"
-            h = c.call("hello")
-            st["node_version"] = h.get("version")
-            proto = h.get("protocol")
-            st["protocol"] = proto if isinstance(proto, int) and not isinstance(proto, bool) else 1
-            st["withheld_extra"] = h.get("withheld_extra")
+            h = normalize_hello(c.call("hello"))
+            st["node_version"] = h["version"]
+            st["protocol"] = h["protocol"]
+            st["withheld_extra"] = h["withheld_extra"]
             st["node_seen_at"] = jobs.now()
             stage = "poll"
             got = server.fetch_node(cfg, node, c, delivered=False)

@@ -222,6 +222,8 @@ def test_transport_error_without_code_attribute(env, monkeypatch):
     class Stub(TransportError):  # no `code` under either TransportError definition
         def __init__(self, msg):
             Exception.__init__(self, msg)
+            self.message, self.hint = msg, ""  # str() works; only `code` is missing
+    assert str(Stub("m")) == "m" and not hasattr(Stub("m"), "code")
     monkeypatch.delattr(TransportError, "code", raising=False)
 
     def bad(cfg, node):
@@ -419,7 +421,9 @@ def test_invalid_node_code_replaced(env):
 
 def test_unexpected_exception_is_internal(env, capsys):
     env["write_host"](extra_nodes=("n2",))
-    env["hooks"]["hello"] = lambda real: ["not", "a", "dict"]
+    def boom(real):
+        raise AttributeError("boom")
+    env["hooks"]["hello"] = boom
     assert sync.run(None, 0) == 1
     cap = capsys.readouterr()
     assert [json.loads(x)["node"] for x in cap.out.strip().splitlines()] == ["n1", "n2"]

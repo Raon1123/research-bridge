@@ -232,6 +232,21 @@ def test_offline_sync_status_stale_warns(hub, monkeypatch, tmp_path):
     assert by_id(doctor.offline())["sync_status"][0].level == "warn"
 
 
+def test_offline_sync_status_unfinished_pass(hub, monkeypatch, tmp_path):
+    import time
+    _complete(hub, monkeypatch, tmp_path)
+    sdir = tmp_path / "data" / "sync"
+    sdir.mkdir()
+    fresh = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 60))
+    old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 7200))
+    body = {"ok": False, "stage": "running", "error": "incomplete", "last_ok_at": fresh}
+    (sdir / "node1.json").write_text(json.dumps(dict(body, last_attempt_at=fresh)), encoding="utf-8")
+    assert by_id(doctor.offline())["sync_status"][0].level == "ok"  # a pass in progress
+    (sdir / "node1.json").write_text(json.dumps(dict(body, last_attempt_at=old)), encoding="utf-8")
+    r = by_id(doctor.offline())["sync_status"][0]
+    assert r.level == "warn" and "never finished" in r.message
+
+
 def test_offline_no_user_bus_is_manager_not_available(hub, monkeypatch, tmp_path):
     _complete(hub, monkeypatch, tmp_path)
     bus = (1, "", "Failed to connect to bus: No medium found")

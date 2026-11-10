@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import stat
 import time
 from collections import namedtuple
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,7 +17,7 @@ import rb_node
 from rb_node.configure import ConfigError, git_exposure, read_json
 from rb_node.withheld import FALLBACK_PATTERNS, Withheld
 
-from . import configure, service, sshenv
+from . import configure, service, sshenv, threads
 from .client import NodeClient, RemoteError, TransportError, normalize_hello
 from .config import HostConfig, load_host_config
 
@@ -88,15 +86,9 @@ def _withheld_hub(path: Path) -> Result:
     extra = w.patterns[len(FALLBACK_PATTERNS):]
     if not extra:
         return _bad("withheld_hub", "fail", "hub withheld pattern file %s has no pattern" % path, nxt)
-    bad = []
-    for i, p in enumerate(extra):
-        try:
-            re.compile(p)
-        except re.error:
-            bad.append(i)
-    if bad:
+    if w.rejected_count:
         return _bad("withheld_hub", "fail", "%d pattern(s) do not compile (indexes %s)"
-                    % (len(bad), ", ".join(str(i) for i in bad)), nxt)
+                    % (w.rejected_count, ", ".join(str(i) for i in w.rejected_indexes)), nxt)
     return _ok("withheld_hub", "%d hub pattern(s) compile" % len(extra))
 
 
@@ -141,20 +133,6 @@ def _service_results() -> List[Result]:
     return res
 
 
-def _parse_time(value: Any) -> Optional[float]:
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.timestamp()
-    return None
-
-
 def _age(seconds: float) -> str:
     s = int(max(0, seconds))
     if s < 120:
@@ -166,26 +144,29 @@ def _age(seconds: float) -> str:
     return "%d days" % (s // 86400)
 
 
-STALE_SECONDS = 900  # sync design 6.8: one staleness rule for the page, `nodes` and the doctor
+STALE_SECONDS = threads.STALE_AFTER_S  # sync design 6.8: one rule for the page, `nodes` and the doctor
 
 
 def _sync_status(cfg: HostConfig, name: str) -> Optional[Result]:
-    path = Path(cfg.data_root) / "sync" / ("%s.json" % name)
-    if not path.is_file():
+    """One staleness rule with `nodes` and the page: threads.read_status / threads.summary."""
+    if not (Path(cfg.data_root) / "sync" / ("%s.json" % name)).is_file():
         return None
     nxt = "rb sync --node %s" % name
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("not an object")
-    except (OSError, ValueError):
+    data = threads.read_status(cfg, name)
+    if data is None:
         return _bad("sync_status", "warn", "sync status file unreadable", nxt, name)
-    last = _parse_time(data.get("last_ok_at"))
-    err = data.get("error") if isinstance(data.get("error"), str) and data.get("error") else None
-    if last is not None and time.time() - last < STALE_SECONDS:
-        return _ok("sync_status", "last successful sync %s ago" % _age(time.time() - last), name)
-    when = "no successful sync yet" if last is None else \
-        "last successful sync %s ago" % _age(time.time() - last)
+    s = threads.summary(cfg, name)
+    err = s["error"] if isinstance(s.get("error"), str) and s["error"] else None
+    if s.get("stage") == "running":
+        att = threads._age_s(s.get("last_attempt_at"))
+        if att is None or att > STALE_SECONDS:
+            return _bad("sync_status", "warn",
+                        "a sync pass started %s ago and never finished"
+                        % ("at an unknown time" if att is None else _age(att)), nxt, name)
+    if not s["stale"]:
+        return _ok("sync_status", "last successful sync %s ago" % _age(s["age_s"]), name)
+    when = "no successful sync yet" if s["age_s"] is None else \
+        "last successful sync %s ago" % _age(s["age_s"])
     return _bad("sync_status", "warn", "%s (error: %s)" % (when, err or "none"), nxt, name)
 
 
