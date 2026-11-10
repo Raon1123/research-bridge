@@ -39,9 +39,9 @@ The runtime environment is managed by **uv**. Do not use `python -m venv` or `pi
     uv sync --extra host
     uv run --extra host pytest -q
 
-Prefix shell commands with `rtk`. `rtk pytest` hides output on this machine; use `rtk proxy uv run --extra host pytest -q`.
+Prefix shell commands with `rtk` (installed on the laptop and the Linux hub). `rtk pytest` hides output; use `rtk proxy uv run --extra host pytest -q`.
 
-Last recorded results (2026-11-05, Linux hub, Python 3.12): 300 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
+Last recorded results (2026-11-06, Linux hub, Python 3.12, `main` after PRs 38, 40, 42): 325 passed, all files together. The dashboard and bridge-edge tests use the repository's `vault-export/` copies, so the suite does not need the vault.
 
 ## Hard rules
 

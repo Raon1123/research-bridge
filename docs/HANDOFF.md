@@ -94,7 +94,7 @@ Tracking issue: Raon1123/research-bridge#21. MVP = a laptop session sends a mess
 
 ## Verification commands
 
-    uv run --extra host pytest -q   # 321 passed on 2026-11-06 (development server, after merging main at PR 38)
+    uv run --extra host pytest -q   # 325 passed on 2026-11-06 (Linux hub, main after PRs 38, 40, 42)
     curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending      # 200 on the laptop, after PR 35 is deployed
     curl -s -o NUL -w "%{http_code}" -H "Host: evil.example:8765" http://127.0.0.1:8765/rb/pending  # 403 after deployment
 
