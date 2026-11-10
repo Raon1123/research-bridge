@@ -852,3 +852,35 @@ def test_inbound_id_clashing_with_outgoing_is_rejected_not_acked(env):
     prog = {}
     server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=False, progress=prog)
     assert prog == {"new": 0, "rejected": 1, "rejected_ids": [mid]}
+
+
+def test_node_answering_with_another_jobs_queue_file_returns_job_to_pending(env, monkeypatch):
+    real = jobs.connect
+
+    class Replaying:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self.inner.__exit__(*a)
+
+        def put_file(self, *a, **k):
+            return self.inner.put_file(*a, **k)
+
+        def call(self, op, **k):
+            if op == "job_submit":
+                return {"queued": "/queue/jobs/0001_other.job"}
+            return self.inner.call(op, **k)
+
+    monkeypatch.setattr(jobs, "connect", lambda *a: Replaying(real(*a)))
+    jid = _submit(env)
+    with pytest.raises(ValueError, match="another job's queue file"):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    rec = env["ledger"].get(jid)
+    assert rec["status"] == "pending_approval" and not rec.get("approving")
+    assert not rec.get("approved_at") and not rec.get("result")
+    assert [r["id"] for r in env["ledger"].pending_jobs()] == [jid]
