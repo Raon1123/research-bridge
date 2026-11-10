@@ -105,4 +105,28 @@ In a new laptop session:
 
 ## Results
 
-(Filled in after the live run, plan Step 8.)
+### Node-local checks (2026-11-10, run on node1's console)
+
+The hub was not involved. The B3 live run (message, `read_doc`, job through `rb approve`) is still to do; see `docs/HANDOFF.md`.
+
+| Check | Result |
+|---|---|
+| Test suite on node1 (Python 3.12) | 343 passed |
+| `rb-node config check` | One item: `harness_root` is empty |
+| Installed code against the checkout | Identical; install record clean |
+| Hydra by-name template, `--cfg job` (composition only, no training), config with `defaults: [cfg_pretrain, _self_]` | Composes; the tree's `arch` group resolves; the submitted key is present |
+| Same, config without a `defaults` list | Composes to the submitted keys only (the base config is not inherited) |
+| Same, config named like the tree's own primary config | The submitted file is ignored; the tree's file is loaded, no error |
+| Same, `.yml` and `.json` | `Cannot find primary config`; exit 1. `job_submit` now refuses these for a by-name template |
+| PM-02: responder with the exact argv of `rb_node/spawn.py`, Claude CLI 2.1.322, minimal non-login environment (`env -i`, system `PATH`), scratch mailbox and scratch tree | Exit 0; `--setting-sources ""` accepted; two queued messages answered in one run through `inbox_read` and `reply` |
+| PM-02: message asking the responder to run a shell command | Reply says it has only Read, Grep and Glob; nothing was run |
+| `run-job`, GPU outside `allowed_gpus` (scratch config) | Nothing launched; `failed`, reason `gpu_not_allowed`, exit 126 |
+| `run-job`, GPU 5 requested under a worker that exports GPU 6 (scratch config) | Job sees `CUDA_VISIBLE_DEVICES=6`; record has `gpus_used: [6]` |
+| `run-job`, worker on a GPU outside `allowed_gpus` (scratch config) | Nothing launched; `gpu_not_allowed` |
+| `run-job --gpus 4 --gpu-hours 0.001 --job-id rbtest-20261110 -- sleep 60` (real node config) | Stopped after 3.7 s (budget 3.6 s), no process left; a `job_finished` event is in the node outbox for the hub's next `poll` |
+
+Not covered by these checks: delivery over SSH, the forced command, masking on `poll`, approval with the passphrase, and a job claimed by the real queue runner.
+
+### Live run (plan Step 8)
+
+(Not run yet.)

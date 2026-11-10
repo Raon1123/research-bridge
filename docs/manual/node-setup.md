@@ -52,6 +52,12 @@ Start from `deploy/node.json.example`. Paths come only from this file; the hub c
 
 `RB_NODE_CONFIG` overrides the path (tests use it).
 
+`job_template` placeholders: `{config}` is the stored config's path, `{config_dir}` its directory and `{config_stem}` its name without the extension. The last two are for a loader that finds the config by name, such as Hydra (`--config-dir {config_dir} --config-name {config_stem}`). With such a template:
+
+- only `.yaml` configs are accepted (Hydra does not find `.yml` or `.json` by name);
+- the submitted file is the whole primary config, so it must list the tree's base config in `defaults` (for example `defaults: [cfg_pretrain, _self_]`) to inherit it;
+- a submitted file named like a config in the tree's own config directory is ignored without an error, because that directory is searched first. Give submitted configs names the tree does not use.
+
 Withheld handling is always on: the fallback patterns listed in `AGENTS.md` hard rule 3 apply even if `withheld_source` is missing. Text documents have hit lines blanked; pdf, tex and images that match are denied; unknown extensions are denied.
 
 ### Approval passphrase (user runs, on the node console)
