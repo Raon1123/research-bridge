@@ -1,7 +1,9 @@
 """Stand-in for the node code before protocol 2 (serve-remote of the 2026-11-05 tree).
 
-`hello` answers only `node`, `version`, `withheld_extra`. The ops the old node had answer as
-they do now (the old and new bodies are the same for them); every other op is `unknown_op`.
+`hello` answers only `node`, `version`, `withheld_extra`. The ops the tests pin (hello, poll, ack,
+git_status and an unknown op) answer as the current code does; the op names in OLD_OPS equal the
+current table, so the filter removes none. Bodies of job_submit, job_cancel and the withheld
+count differ from origin/main and are not pinned here.
 Run as a script with `RB_NODE_CONFIG` and `PYTHONPATH` set, like `rb-node serve-remote`.
 """
 from __future__ import annotations

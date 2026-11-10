@@ -22,6 +22,18 @@ from .config import default_root, default_withheld
 
 REPO = Path(__file__).resolve().parent.parent
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+NODE_NAME_RULE = "letters, digits, '_' or '-', at most 32 characters, starting with a letter or digit"
+
+
+def node_name_problem(name: str) -> str:
+    """Why `name` cannot be a node name, or ''. `id` is refused: its key file would be
+    OpenSSH's default personal key `id_ed25519`."""
+    if not isinstance(name, str) or not NODE_NAME.fullmatch(name):
+        return "invalid node name %r; use %s" % (name, NODE_NAME_RULE)
+    if name == "id":
+        return ("node name 'id' is refused: its key file id_ed25519 is OpenSSH's default "
+                "personal key; choose another name")
+    return ""
 TOP_KEYS = ("data_root", "withheld_patterns_file")
 BOARD_KEYS = ("portfolio", "priorities")
 SHARE_KEYS = ("calendar_sessions", "calendar_status", "runs")
@@ -56,8 +68,9 @@ def init(data_root: str = "", force: bool = False) -> Path:
 
 
 def add_node(name: str, alias: str = "", harness_alias: str = "", force: bool = False) -> Dict:
-    if not NODE_NAME.match(name):
-        raise ConfigError("node name must be letters, digits, '-' or '_' (max 32)")
+    problem = node_name_problem(name)
+    if problem:
+        raise ConfigError(problem)
     path = host_path()
     data = _load(path)
     nodes = data.setdefault("nodes", {})

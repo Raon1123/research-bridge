@@ -292,8 +292,8 @@ def _config(args: argparse.Namespace) -> int:
             print(json.dumps(c.read_json(lp), ensure_ascii=False, indent=2) if lp.is_file()
                   else "(missing)")
         elif args.action == "mcp":
-            print("Add under \"mcpServers\" in ~/.claude.json (rb does not edit that file):")
-            print(json.dumps(c.mcp_entry(), indent=2)[1:-1].strip())
+            print("Run this command to register the MCP server (rb does not edit ~/.claude.json):")
+            print(c.mcp_command())
         else:
             from . import doctor
             return doctor.main(None, offline_only=True, only_problems=True)
@@ -342,10 +342,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     r.set_defaults(fn=_reject)
     h = sub.add_parser("harness", help="manual harness channel (no apply command exists)")
     hs = h.add_subparsers(dest="action", required=True)
-    hp = hs.add_parser("push", help="send the allowlisted laptop harness to node staging")
+    hp = hs.add_parser("push", help="send the allowlisted hub harness to node staging")
     hp.add_argument("--node", required=True)
     hp.add_argument("--dry-run", action="store_true", help="list files, send nothing")
-    hl = hs.add_parser("pull", help="fetch the node's allowlisted harness into laptop staging")
+    hl = hs.add_parser("pull", help="fetch the node's allowlisted harness into hub staging")
     hl.add_argument("--node", required=True)
     hd = hs.add_parser("diff", help="unified diff of a pulled staging dir against the live harness")
     hd.add_argument("stamp")
@@ -406,7 +406,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cl.add_argument("--laptop-home", default="")
     cl.add_argument("--node-home", default="")
     cs.add_parser("show", help="print both files")
-    cs.add_parser("mcp", help="print the ~/.claude.json entry for the MCP server")
+    cs.add_parser("mcp", help="print the claude mcp add-json command that registers the MCP server")
     cs.add_parser("check", help="list what is missing or would leak; exit 1 when a check fails")
     c.set_defaults(fn=_config)
     args = ap.parse_args(argv)

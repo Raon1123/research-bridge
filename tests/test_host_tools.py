@@ -580,7 +580,7 @@ def test_fetch_file_rejects_unsafe_names(env, bad):
 
 def test_poll_docstring_states_masking_and_recheck():
     assert "masked on the node" in server.poll.__doc__
-    assert "checked again on the laptop" in server.poll.__doc__
+    assert "checked again on the hub" in server.poll.__doc__
 
 
 # -- sync-and-page: delivered flag, outbox, status ---------------------------------------

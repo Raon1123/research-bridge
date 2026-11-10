@@ -568,7 +568,7 @@ def test_differences_show_the_picked_identity(hub):
     other = key.parent / "other_ed25519"
     cfg["identityfile"] = [str(other)]
     got = setup._differences("rb-node1", cfg, args, key)
-    assert got == ["rb-node1: identityfile is unset, expected %s" % key]
+    assert got == ["rb-node1: no bridge IdentityFile (ssh uses %s), expected %s" % (other, key)]
     cfg["identityfile"] = ["~/.ssh/id_ed25519", str(key)]
     cfg["identityfile"][1] = str(key.parent / "x" / "node1_ed25519")
     got = setup._differences("rb-node1", cfg, args, key)

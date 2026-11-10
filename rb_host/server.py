@@ -244,7 +244,7 @@ def poll(node: Optional[str] = None) -> dict:
     """Return new node items (replies and events), each one once.
 
     Argument: node (a configured node name; omit for all nodes). Bodies are masked on the node and
-    checked again on the laptop before being returned; stored bodies are masked again with the
+    checked again on the hub before being returned; stored bodies are masked again with the
     current patterns. Items that `rb sync` stored earlier are included (`stored: true`).
     Note that each item is returned by one poll only, however it arrived. Result: {"items": [{"msg_id", "node",
     "kind", "reply_to", "body", "files", "quarantined"}], "errors": {node or "ledger": text}};

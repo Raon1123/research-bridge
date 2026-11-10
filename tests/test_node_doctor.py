@@ -376,3 +376,11 @@ def test_authorized_keys_same_blob_on_harness_line_fail(home):
     assert checks["ak_duplicate"].level == "fail"
     assert "line 2" in checks["ak_duplicate"].message
     assert "hard rule 9" in checks["ak_duplicate"].message
+
+
+@pytest.mark.parametrize("sub", ["doctor", "link", "config", "approve-key", "git-status"])
+def test_subcommand_help_is_its_own(sub, capsys):
+    from rb_node import cli
+    assert cli.main([sub, "--help"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("usage: rb-node %s" % sub)

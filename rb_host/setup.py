@@ -259,7 +259,10 @@ def _differences(alias: str, cfg: Dict[str, List[str]], a: Args, key: Path) -> L
              ("user", first("user"), a.user, first("user") == a.user)]
     files = cfg.get("identityfile") or []
     got = sshenv.pick_identity(files, [key.name])
-    pairs.append(("identityfile", str(got) if got is not None else "unset", str(key), got == key))
+    if got is None and files:
+        out.append("%s: no bridge IdentityFile (ssh uses %s), expected %s" % (alias, files[0], key))
+    else:
+        pairs.append(("identityfile", str(got) if got is not None else "unset", str(key), got == key))
     pairs.append(("identitiesonly", first("identitiesonly"), "yes", first("identitiesonly").lower() == "yes"))
     pairs.append(("stricthostkeychecking", first("stricthostkeychecking"), "true",
                   first("stricthostkeychecking").lower() in ("true", "yes")))
@@ -562,8 +565,9 @@ BAD_VALUE = re.compile(r"[\s#\x00-\x1f\x7f]")
 
 
 def _validate(a: Args) -> Optional[str]:
-    if not configure.NODE_NAME.fullmatch(a.node):
-        return "invalid node name %r; use letters, digits, '.', '_' or '-' (see rb config add-node)" % a.node
+    problem = configure.node_name_problem(a.node)
+    if problem:
+        return problem
     for label, val in (("--host", a.host), ("--user", a.user)):
         if val and BAD_VALUE.search(val):
             return "%s must not contain whitespace, control characters or '#'" % label

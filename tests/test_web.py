@@ -337,6 +337,7 @@ def test_ids_that_do_not_fit_the_route_are_not_linked(cfg, srv):
 
 
 FIXED_ROUTES = {"/", "/threads", "/jobs", "/nodes"}
+THREAD_HREF = r"/thread/[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
 
 
 def test_security_headers(srv):
@@ -350,7 +351,8 @@ def test_security_headers(srv):
         assert "<script" not in body and "src=" not in body
         hrefs = re.findall(r'href="([^"]*)"', body)
         for href in hrefs:
-            assert href in FIXED_ROUTES or href.startswith("/thread/"), (route, href)
+            assert href in FIXED_ROUTES or re.fullmatch(THREAD_HREF, href), (route, href)
+        assert body.lower().count("href=") == len(hrefs), route  # no single-quoted or bare href
         if route != "/healthz":
             assert [h for h in hrefs if h in FIXED_ROUTES][:4] == ["/", "/threads", "/jobs", "/nodes"]
             assert body.count("<nav>") == 1

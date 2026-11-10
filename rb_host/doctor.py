@@ -23,7 +23,7 @@ from .config import HostConfig, load_host_config
 
 Result = namedtuple("Result", "id level message next node")
 
-SETUP = "rb setup --node NAME --host HOST --user USER"
+SETUP = "rb setup --node NAME --host HOST --user USER [--port PORT]"
 OLD_DOCTOR = "on the node: scripts/node-install.sh --update, then rb-node doctor"
 OLD_UNKNOWN = "unknown (node code predates protocol 2)"
 
@@ -163,8 +163,8 @@ def _sync_status(cfg: HostConfig, name: str) -> Optional[Result]:
         att = threads._age_s(s.get("last_attempt_at"))
         if att is None or att > STALE_SECONDS:
             return _bad("sync_status", "warn",
-                        "a sync pass started %s ago and never finished"
-                        % ("at an unknown time" if att is None else _age(att)), nxt, name)
+                        "a sync pass started at an unknown time and never finished" if att is None
+                        else "a sync pass started %s ago and never finished" % _age(att), nxt, name)
     if not s["stale"]:
         return _ok("sync_status", "last successful sync %s ago" % _age(s["age_s"]), name)
     when = "no successful sync yet" if s["age_s"] is None else \
@@ -188,7 +188,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
             if "not valid JSON" not in msg:
                 msg = "%s is not valid JSON (%s)" % (hp, msg)
             res.append(_bad("host_json", "fail", msg, "fix or move the file, then rb setup --node NAME "
-                                                      "--host HOST --user USER"))
+                                                      "--host HOST --user USER [--port PORT]"))
     leaks = [git_exposure(p) for p in (hp, configure.local_path()) if p.exists()]
     leaks = [x for x in leaks if x]
     if leaks:

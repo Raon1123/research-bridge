@@ -191,3 +191,14 @@ def test_default_config_paths_follow_home(tmp_path, monkeypatch):
         for v in getattr(cfg, k):
             if v.startswith("/"):
                 assert v.startswith(str(home)), (k, v)
+
+
+@pytest.mark.parametrize("name", ["id", "a.b", "", "x" * 33, "-a"])
+def test_add_node_refuses_unusable_names(name, tmp_path, monkeypatch):
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "host.json"))
+    with pytest.raises(hc.ConfigError):
+        hc.add_node(name)
+
+
+def test_node_name_message_states_the_real_rule():
+    assert "'.'" not in hc.node_name_problem("a.b") and "32" in hc.node_name_problem("a.b")

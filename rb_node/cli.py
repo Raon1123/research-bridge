@@ -218,10 +218,29 @@ def _install_record(rest: List[str]) -> int:
     return 0
 
 
+SUBHELP = {
+    "doctor": "usage: rb-node doctor\n\nRun every node check (configuration, approval, withheld patterns, authorized_keys,\n"
+              "responder, git exposure) and print one line per check. Exit 1 when a check fails.\n",
+    "link": "usage: rb-node link [DIR] [--apply]\n\nPrint the .mcp.json entry that links a Claude session on the node to the local\n"
+            "rb-node MCP server. DIR defaults to trm_root. With --apply, write DIR/.mcp.json\n"
+            "(refused when it exists).\n",
+    "approve-key": "usage: rb-node approve-key set|clear\n\nset: ask for the approval passphrase twice and store its verifier.\n"
+                   "clear: remove the verifier. Both need an interactive terminal.\n",
+    "git-status": "usage: rb-node git-status\n\nPrint, as JSON, the git state of trm_root and the install record. Read only.\n",
+    "config": "usage: rb-node config path|init [--force]|show|set KEY VALUE|check [-h]\n\n"
+              "path: print the node.json path. init: write the defaults (mode 600). show: print node.json.\n"
+              "set: set one key; lists take JSON. check: list what is missing; exit 1 when a check fails.\n"
+              "Setting approval_path, read_roots, write_roots or withheld_source needs an interactive terminal.\n",
+}
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "run-job":
         return _run_job(args[1:])
+    if len(args) >= 2 and args[0] in SUBHELP and args[1] in ("-h", "--help"):
+        sys.stdout.write(SUBHELP[args[0]])
+        return 0
     parser = argparse.ArgumentParser(prog="rb-node")
     parser.add_argument("command", choices=SUBCOMMANDS)
     ns, _rest = parser.parse_known_args(argv)
