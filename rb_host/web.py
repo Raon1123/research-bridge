@@ -13,11 +13,11 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import sys
 import time
 import urllib.parse
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from rb_node.withheld import Withheld
 
 from . import configure, jobs, threads, webaccess
+from .webaccess import AccessError
 
 DEFAULT_PORT = 8767
 ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|enter|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
@@ -423,18 +424,28 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _session_ok(self) -> bool:
-        try:
-            jar = SimpleCookie()
-            jar.load(self.headers.get("Cookie") or "")
-            morsel = jar.get(cookie_name(self.server.server_address[1]))  # type: ignore[attr-defined]
-            token = morsel.value if morsel is not None else None
-        except Exception:
-            return False
-        return webaccess.session_ok(self.server.cfg, token)  # type: ignore[attr-defined]
+        """Any value under the exact cookie name may be the session token (at most 8 tried);
+        junk in other cookies or duplicates of the name does not matter."""
+        name = cookie_name(self.server.server_address[1])  # type: ignore[attr-defined]
+        tried = 0
+        for line in self.headers.get_all("Cookie") or []:
+            for part in str(line).split(";"):
+                k, sep, v = part.partition("=")
+                if sep and k.strip() == name:
+                    tried += 1
+                    if webaccess.session_ok(self.server.cfg, v.strip()):  # type: ignore[attr-defined]
+                        return True
+                    if tried >= 8:
+                        return False
+        return False
 
     def _enter(self, raw: str, head: bool) -> None:
         """GET /enter?key=...: exchange a one-time key for a session cookie. HEAD never does."""
         keys = []  # type: List[str]
+        purpose = " ".join((self.headers.get_all("Sec-Purpose") or [])
+                           + (self.headers.get_all("Purpose") or [])).lower()
+        if "prefetch" in purpose or "preview" in purpose:
+            head = True  # a prefetch or preview never uses a key
         if not head and "?" in raw:
             keys = [v for k, v in urllib.parse.parse_qsl(raw.split("?", 1)[1].split("#")[0],
                                                           keep_blank_values=True) if k == "key"]
@@ -517,8 +528,62 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+PROC_TCP = "/proc/net/tcp"
+
+
+def _hexaddr(addr: Tuple[Any, ...]) -> str:
+    """'127.0.0.1', 8767 as /proc/net/tcp writes it: little-endian IPv4 hex, ':', port hex."""
+    parts = str(addr[0]).split(".")
+    if len(parts) != 4:
+        raise ValueError("not an IPv4 address")
+    octets = [int(x) for x in parts]
+    if any(not 0 <= o <= 255 for o in octets) or not 0 <= int(addr[1]) <= 65535:
+        raise ValueError("not an IPv4 address")
+    return "%02X%02X%02X%02X:%04X" % (octets[3], octets[2], octets[1], octets[0], int(addr[1]))
+
+
+def socket_owner(tcp_text: str, client: Tuple[Any, ...], server: Tuple[Any, ...]) -> Optional[int]:
+    """The uid column of the row of `/proc/net/tcp` text whose local address is `client` and
+    whose remote address is `server` (the client's end of the connection), or None."""
+    try:
+        want_local, want_remote = _hexaddr(client), _hexaddr(server)
+    except (ValueError, TypeError, IndexError):
+        return None
+    for line in tcp_text.splitlines()[1:]:
+        f = line.split()
+        if len(f) >= 8 and f[1].upper() == want_local and f[2].upper() == want_remote:
+            try:
+                return int(f[7])
+            except ValueError:
+                return None
+    return None
+
+
+def proc_tcp_readable() -> bool:
+    try:
+        with open(PROC_TCP, encoding="ascii") as fh:
+            fh.readline()
+        return True
+    except OSError:
+        return False
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
+
+    def verify_request(self, request: Any, client_address: Any) -> bool:
+        """Accept only connections whose client socket belongs to this account (fail closed)."""
+        if not self.peer_check:  # type: ignore[attr-defined]
+            return True
+        try:
+            with open(PROC_TCP, encoding="ascii") as fh:
+                uid = socket_owner(fh.read(), client_address, request.getsockname())
+            ok = uid is not None and uid == os.getuid()
+        except Exception:
+            ok = False
+        if not ok:
+            sys.stderr.write("refused: connection not owned by this account\n")
+        return ok
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         sys.stderr.write("request error: %s\n" % sys.exc_info()[0].__name__)
@@ -538,15 +603,17 @@ def cookie_name(port: int) -> str:
 
 
 def make_server(cfg: Any, bind: str = "127.0.0.1", port: int = DEFAULT_PORT,
-                require_key: bool = True) -> ThreadingHTTPServer:
+                require_key: bool = True, peer_check: bool = True) -> ThreadingHTTPServer:
     """Build (do not start) the page server. Only a loopback bind is accepted.
 
     `require_key=False` serves every route without a session. It exists only for tests that are
-    about rendering; no command-line flag or config key reaches it."""
+    about rendering; no command-line flag or config key reaches it. Likewise `peer_check=False`
+    (accept connections of any account) is for tests only."""
     check_bind(bind, port)
     srv = _Server((bind, port), _Handler)
     srv.cfg = cfg  # type: ignore[attr-defined]
     srv.require_key = require_key  # type: ignore[attr-defined]
+    srv.peer_check = peer_check  # type: ignore[attr-defined]
     srv.allowed = allowed_hosts(srv.server_address[1])  # type: ignore[attr-defined]
     return srv
 
@@ -570,7 +637,15 @@ def key_main(args: argparse.Namespace) -> int:
         if cfg is None:
             return 1
         if args.revoke:
-            k, n = webaccess.revoke_all(cfg)
+            try:
+                k, n = webaccess.revoke_all(cfg)
+            except FileNotFoundError:
+                print("error: the data directory %s does not exist; run: rb setup" % cfg.data_root)
+                return 1
+            except OSError as exc:
+                print("error: cannot write the access file (%s)"
+                      % (exc.strerror or type(exc).__name__))
+                return 1
             print("revoked %d pending key(s) and %d session(s)" % (k, n))
         else:
             k, n = webaccess.counts(cfg)
@@ -592,6 +667,12 @@ def key_main(args: argparse.Namespace) -> int:
         return 1
     try:
         key = webaccess.issue_key(cfg, args.minutes, args.session_hours)
+    except AccessError as exc:
+        print("error: %s; nothing was changed; to replace the file run: rb web key --revoke" % exc)
+        return 1
+    except FileNotFoundError:
+        print("error: the data directory %s does not exist; run: rb setup" % cfg.data_root)
+        return 1
     except OSError as exc:
         print("error: cannot write the access file (%s)" % (exc.strerror or type(exc).__name__))
         return 1
@@ -609,6 +690,9 @@ def cli_main(args: argparse.Namespace) -> int:
         check_bind(args.bind, args.port)
     except ValueError as exc:
         print("error: %s" % exc)
+        return 1
+    if not proc_tcp_readable():
+        print("error: the hub page needs /proc/net/tcp to check who connects (Linux only)")
         return 1
     cfg = configure.host_cfg()
     if cfg is None:

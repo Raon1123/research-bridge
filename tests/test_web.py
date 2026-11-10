@@ -643,3 +643,189 @@ def test_cli_web_key_without_host_json(tmp_path, monkeypatch, capsys):
 def test_mcp_tools_unchanged_by_web_key():
     src = (REPO / "rb_host" / "server.py").read_text(encoding="utf-8")
     assert "webaccess" not in src
+
+
+# -- audit fixes -----------------------------------------------------------------------------
+def _tree(cfg):
+    root = Path(cfg.data_root)
+    return sorted((str(p.relative_to(root)), p.stat().st_ino, p.stat().st_mtime_ns,
+                   p.read_bytes() if p.is_file() else b"") for p in root.rglob("*"))
+
+
+def test_failed_enter_changes_nothing(cfg, srv):
+    before = _tree(cfg)
+    for target in ("/enter?key=" + "A" * 43, "/enter?key=short", "/enter"):
+        assert req(srv, target, cookie=None)[0] == 401
+    assert _tree(cfg) == before
+
+
+def test_failed_enter_creates_no_web_directory(cfg):
+    s = web.make_server(cfg, "127.0.0.1", 0)
+    t = threading.Thread(target=s.serve_forever, daemon=True)
+    t.start()
+    try:
+        before = _tree(cfg)
+        assert req(s, "/enter?key=" + "A" * 43, cookie=None)[0] == 401
+        assert _tree(cfg) == before and not (Path(cfg.data_root) / "web").exists()
+    finally:
+        s.shutdown()
+        s.server_close()
+        t.join(5)
+
+
+def test_cookie_header_parsing(srv):
+    port = srv.server_address[1]
+    name, good = web.cookie_name(port), srv.token
+    ok = [
+        'a={"j":1}; %s=%s' % (name, good), 'a=x y; %s=%s' % (name, good),
+        'a="unbalanced; %s=%s' % (name, good), '%s=junk; %s=%s' % (name, name, good),
+        '%s=%s; %s=junk' % (name, good, name), '%s = %s' % (name, good),
+    ]
+    for c in ok:
+        assert req(srv, "/", cookie=c)[0] == 200, c
+    # two Cookie header lines
+    assert req(srv, "/", cookie="a=1", extra="Cookie: %s=%s\r\n" % (name, good))[0] == 200
+    assert req(srv, "/", cookie="%s=junk" % name,
+               extra="Cookie: %s=%s\r\n" % (name, good))[0] == 200
+    # at most eight candidates are tried
+    many = "; ".join(["%s=junk" % name] * 8 + ["%s=%s" % (name, good)])
+    assert req(srv, "/", cookie=many)[0] == 401
+    assert req(srv, "/", cookie="%s=junk; x=%s" % (name, good))[0] == 401
+
+
+@pytest.mark.parametrize("hdr", ["Sec-Purpose: prefetch", "Purpose: preview",
+                                 "Sec-Purpose: prefetch;anonymous-client-ip",
+                                 "Sec-Purpose: PREFETCH"])
+def test_prefetch_does_not_redeem(cfg, srv, hdr):
+    key = webaccess.issue_key(cfg, 10, 12)
+    assert req(srv, "/enter?key=" + key, cookie=None, extra=hdr + "\r\n")[0] == 401
+    assert req(srv, "/enter?key=" + key, cookie=None)[0] == 303
+
+
+TCP_TEXT = """  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:1F4F 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 11 1 0 100 0
+   1: 0100007F:C350 0100007F:1F4F 01 00000000:00000000 00:00000000 00000000  1000        0 22 1 0 100 0
+   2: 0100007F:1F4F 0100007F:C350 01 00000000:00000000 00:00000000 00000000  1000        0 23 1 0 100 0
+   3: 0100007F:C351 0100007F:1F4F 01 00000000:00000000 00:00000000 00000000  1001        0 24 1 0 100 0
+   4: garbage
+   5: 0100007F:C352 0100007F:1F4F 01 00000000:00000000 00:00000000 00000000  notanumber        0 25
+"""
+
+
+def test_socket_owner_lookup():
+    srv_addr = ("127.0.0.1", 8015)
+    assert web.socket_owner(TCP_TEXT, ("127.0.0.1", 50000), srv_addr) == 1000
+    assert web.socket_owner(TCP_TEXT, ("127.0.0.1", 50001), srv_addr) == 1001
+    assert web.socket_owner(TCP_TEXT, ("127.0.0.1", 50002), srv_addr) is None  # unparsable uid
+    assert web.socket_owner(TCP_TEXT, ("127.0.0.1", 50003), srv_addr) is None  # no row
+    assert web.socket_owner(TCP_TEXT, ("127.0.0.1", 50000), ("127.0.0.1", 8016)) is None
+    assert web.socket_owner(TCP_TEXT.splitlines()[0] + "\n", ("127.0.0.1", 50000), srv_addr) is None
+    assert web.socket_owner("", ("127.0.0.1", 50000), srv_addr) is None
+    assert web.socket_owner("junk\nmore junk\n", ("127.0.0.1", 50000), srv_addr) is None
+    assert web.socket_owner(TCP_TEXT, ("::1", 50000), srv_addr) is None
+    assert web.socket_owner(TCP_TEXT, None, srv_addr) is None
+
+
+def test_real_lookup_accepts_own_connection(srv):
+    assert srv.peer_check is True
+    assert req(srv, "/healthz", cookie=None)[0] == 200
+
+
+def test_connection_of_another_account_is_dropped(srv, monkeypatch, capfd):
+    calls = []
+    monkeypatch.setattr(web._Handler, "_serve", lambda self, head: calls.append(1))
+    monkeypatch.setattr(web, "socket_owner", lambda *a: os.getuid() + 1)
+    capfd.readouterr()
+    port = srv.server_address[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as c:
+        c.sendall(("GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nConnection: close\r\n\r\n"
+                   % port).encode())
+        data = b""
+        try:
+            while True:
+                chunk = c.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+        except ConnectionResetError:
+            pass
+    assert data == b"" and calls == []
+    err = capfd.readouterr().err
+    assert err.splitlines() == ["refused: connection not owned by this account"]
+
+
+@pytest.mark.parametrize("bad", [lambda *a: None, lambda *a: 1 / 0])
+def test_lookup_failure_refuses(srv, monkeypatch, bad):
+    monkeypatch.setattr(web, "socket_owner", bad)
+    port = srv.server_address[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as c:
+        c.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
+        try:
+            assert c.recv(4096) == b""
+        except ConnectionResetError:
+            pass
+
+
+def test_unreadable_proc_tcp_refuses_everything(srv, monkeypatch):
+    monkeypatch.setattr(web, "PROC_TCP", "/nonexistent/tcp")
+    port = srv.server_address[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as c:
+        c.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
+        try:
+            assert c.recv(4096) == b""
+        except ConnectionResetError:
+            pass
+
+
+def test_serve_needs_proc_net_tcp(cfg, hostjson, monkeypatch, capsys):
+    monkeypatch.setattr(web, "PROC_TCP", "/nonexistent/tcp")
+
+    def boom(*a, **k):
+        raise AssertionError("a server was started")
+    monkeypatch.setattr(web, "serve", boom)
+    assert cli.main(["web", "serve"]) == 1
+    assert capsys.readouterr().out.strip().splitlines() == [
+        "error: the hub page needs /proc/net/tcp to check who connects (Linux only)"]
+
+
+def test_cli_web_key_missing_data_root_and_corrupt_file(cfg, tmp_path, monkeypatch, capsys):
+    host = tmp_path / "gone-host.json"
+    host.write_text(json.dumps({"nodes": {"n1": {"alias": "x"}},
+                                "data_root": str(tmp_path / "nothere")}), encoding="utf-8")
+    monkeypatch.setenv("RB_HOST_CONFIG", str(host))
+    assert cli.main(["web", "key"]) == 1
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 1 and "does not exist" in lines[0]
+    assert cli.main(["web", "key", "--revoke"]) == 1
+    assert not (tmp_path / "nothere").exists()
+    # a corrupt existing file: the key command aborts, --revoke repairs
+    host.write_text(json.dumps({"nodes": {"n1": {"alias": "x"}}, "data_root": cfg.data_root}),
+                    encoding="utf-8")
+    acc = Path(cfg.data_root) / "web" / "access.json"
+    acc.parent.mkdir()
+    acc.write_text("{broken", encoding="utf-8")
+    capsys.readouterr()
+    assert cli.main(["web", "key"]) == 1
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 1 and "rb web key --revoke" in lines[0]
+    assert acc.read_text(encoding="utf-8") == "{broken"
+    assert cli.main(["web", "key", "--revoke"]) == 0
+    assert cli.main(["web", "key"]) == 0
+
+
+def test_without_fcntl_other_commands_still_work(tmp_path):
+    code = (
+        "import sys\nsys.modules['fcntl'] = None\n"
+        "from rb_host import cli, web, webaccess\n"
+        "from rb_host.config import HostConfig\n"
+        "cfg = HostConfig(nodes={}, data_root=sys.argv[1])\n"
+        "assert webaccess.redeem(cfg, 'A' * 43) is None\n"
+        "try:\n    webaccess.issue_key(cfg, 10, 12)\nexcept OSError as e:\n    print('issue-failed')\n"
+        "print(cli.main(['config', 'path']))\n")
+    (tmp_path / "d").mkdir()
+    env = dict(os.environ, RB_HOST_CONFIG=str(tmp_path / "h.json"),
+               RB_HOST_ROOT=str(tmp_path / "root"))
+    out = subprocess.run([sys.executable, "-c", code, str(tmp_path / "d")], cwd=str(REPO),
+                         capture_output=True, text=True, timeout=60, env=env)
+    assert out.returncode == 0, out.stderr
+    assert "issue-failed" in out.stdout and out.stdout.strip().endswith("0")
