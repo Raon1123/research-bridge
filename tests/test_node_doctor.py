@@ -225,6 +225,17 @@ def test_authorized_keys_duplicate_unrestricted_key_fail(home):
     assert checks["ak_duplicate"].level == "fail" and "line 3" in checks["ak_duplicate"].message
 
 
+def test_authorized_keys_two_serve_remote_lines_same_key(home):
+    bindir = home / ".local" / "bin"
+    bindir.mkdir(parents=True)
+    (bindir / "rb-node").write_text("#!/bin/sh\n", encoding="utf-8")
+    (bindir / "rb-node").chmod(0o755)
+    line = 'restrict,from="192.0.2.1",command="%s/rb-node serve-remote" ssh-ed25519 %s a\n' % (bindir, BLOB)
+    c = by_id(doctor.system_checks(ak_cfg(home, line + "# n\n" + line)))["ak_duplicate"]
+    assert c.level == "fail" and "line 3 also holds this key" in c.message
+    assert "remove it by hand" in c.message and "without the forced command" not in c.message
+
+
 def test_authorized_keys_output_has_no_key_material(home):
     text = ('from="192.0.2.1",command="/nope/rb-node serve-remote" ssh-ed25519 %s secretcomment\n'
             'ssh-ed25519 %s secretcomment\n' % (BLOB, BLOB))

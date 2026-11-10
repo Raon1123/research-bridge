@@ -314,6 +314,7 @@ def _ak_checks() -> List[Check]:
                      fix.replace("--hub-key", "--harness-key"))]
     dup = None
     dup_harness = False
+    dup_serve = False
     for e in entries:
         if _forced(e, "serve-remote") is None:
             continue
@@ -321,13 +322,19 @@ def _ak_checks() -> List[Check]:
             if other is not e and other["blob"] == e["blob"]:
                 dup = other["lineno"]
                 dup_harness = _forced(other, "harness-receive") is not None
+                dup_serve = _forced(other, "serve-remote") is not None
                 break
         if dup:
             break
     if dup:
-        msg = ("the serve-remote key is also the harness key on line %d (AGENTS.md hard rule 9)"
-               % dup if dup_harness else
-               "the serve-remote key also appears on line %d without the forced command" % dup)
+        if dup_harness:
+            msg = ("the serve-remote key is also the harness key on line %d (AGENTS.md hard rule 9)"
+                   % dup)
+        elif dup_serve:
+            msg = ("line %d also holds this key (a second serve-remote line): remove it by hand"
+                   % dup)
+        else:
+            msg = "the serve-remote key also appears on line %d without the forced command" % dup
         out.append(Check("ak_duplicate", "fail", msg,
                          "remove line %d from ~/.ssh/authorized_keys" % dup))
     else:
