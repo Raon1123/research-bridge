@@ -194,8 +194,24 @@ def _sort_key(rec: dict) -> Tuple[str, str]:
 
 def _ordered(recs: List[dict], order: Dict[str, int]) -> List[dict]:
     """Records by time (design 6.7 rule 4), ties broken by ledger order, not by id: a reply that
-    arrives in the same second as its message must not sort before it."""
-    return sorted(recs, key=lambda r: (node_time(r), order.get(r["id"], 0)))
+    arrives in the same second as its message must not sort before it. A record whose reply_to
+    names a record of this thread never sorts before that record, even when the node clock is
+    behind the hub clock: its sort time is raised to the time of the record it answers."""
+    by_id = {r["id"]: r for r in recs}
+    memo = {}  # type: Dict[str, Tuple[str, int]]
+
+    def eff(r: dict, seen: frozenset = frozenset()) -> Tuple[str, int]:
+        """(sort time, depth below the root of the reply chain)."""
+        if r["id"] in memo:
+            return memo[r["id"]]
+        t, depth = node_time(r), 0
+        rt = r.get("reply_to")
+        if isinstance(rt, str) and rt in by_id and rt != r["id"] and rt not in seen:
+            pt, pd = eff(by_id[rt], seen | {r["id"]})
+            t, depth = max(t, pt), pd + 1
+        memo[r["id"]] = (t, depth)
+        return t, depth
+    return sorted(recs, key=lambda r: eff(r) + (order.get(r["id"], 0),))
 
 
 def _root(recs: List[dict]) -> dict:
@@ -264,7 +280,7 @@ def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
             state = "answered"
         thread_list.append({
             "id": tid, "node": root.get("node"), "records": recs, "state": state,
-            "last_at": node_time(recs[-1]),
+            "last_at": max(node_time(r) for r in recs),
             "undelivered": sum(1 for r in recs if r.get("direction") == "in"
                                and r.get("delivered") is False),
             "reply_to_unknown": [r["id"] for r in recs

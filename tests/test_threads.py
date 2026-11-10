@@ -119,11 +119,11 @@ def test_node_time_from_id_prefix(cfg):
     assert threads.node_time(dict(rec, direction="out")) == "2026-11-10T00:00:00Z"
     assert threads.node_time({"id": "plain", "direction": "in", "created": "c"}) == "c"
     assert threads.node_time({"id": "plain"}) == ""
-    # ordering inside a thread uses the node time, not the later `created`
+    # ordering uses the node time, but a reply never sorts before the message it answers
     add(cfg, "m1", "out", "2026-11-10T00:00:00Z")
     add(cfg, rid, "in", "2026-11-10T09:00:00Z", reply_to="m1", msg_kind="reply", delivered=True)
     ids = [r["id"] for r in threads.load(cfg)["threads"][0]["records"]]
-    assert ids == [rid, "m1"]
+    assert ids == ["m1", rid]
     assert threads.load(cfg)["threads"][0]["id"] == "m1"  # named after the root, not the first
 
 
@@ -274,6 +274,16 @@ def test_thread_id_is_the_root_under_clock_skew(cfg):
         msg_kind="reply", delivered=True)
     t = threads.load(cfg)["threads"][0]
     assert t["id"] == "m1"
+
+
+def test_node_clock_behind_hub_reply_still_sorts_after_its_message(cfg):
+    add(cfg, "m1", "out", "2026-11-10T08:10:00Z")
+    add(cfg, "01794297600000000000-abcd1234", "in", "2026-11-10T08:10:05Z", reply_to="m1",
+        msg_kind="reply", delivered=True)  # id time 2026-11-10 08:00:00 UTC
+    t = threads.load(cfg)["threads"][0]
+    assert [r["id"] for r in t["records"]] == ["m1", "01794297600000000000-abcd1234"]
+    assert t["state"] == "open" and t["id"] == "m1"
+    assert t["last_at"] == "2026-11-10T08:10:00Z"
 
 
 def test_split_name_is_masked_before_invisible_characters_are_removed(cfg):
