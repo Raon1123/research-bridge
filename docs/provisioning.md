@@ -19,6 +19,8 @@ All of these must hold first (steps 1 to 6 of `docs/HANDOFF.md` §Next actions):
 
 Each row must hold. If one does not, stop and write a postmortem (`docs/postmortems/README.md`).
 
+Scripts that run rows 1 to 8 and print PASS or FAIL per row: `scripts/b2-hub.sh [NODE] [--shared-alias SSH_ALIAS]` in a hub terminal (rows 1, 2, 3, 6; row 4 only with `--shared-alias`, recorded, not judged) and `sh scripts/b2-node.sh` on the node console (rows 5, 7, 8; rows 7 and 8 are two short paid model calls). Neither prints what the node sent for rows 1 to 3. Row 9 stays the session's.
+
 | # | Who and where | Command | Expected |
 |---|---|---|---|
 | 1 | user, hub terminal | `ssh rb-node1` (type nothing, then Ctrl-D) | No shell prompt. Protocol output only. |
