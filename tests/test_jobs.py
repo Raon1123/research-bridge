@@ -432,3 +432,16 @@ def test_cli_run_job_reads_the_workers_gpu(tmp_path, monkeypatch):
     rc = cli.main(["run-job", "--gpus", "5", "--gpu-hours", "1", "--job-id", "cli2", "--",
                    sys.executable, "-c", _ENV_CODE, str(out)])
     assert rc == 0 and out.read_text() == "4"
+
+
+@pytest.mark.parametrize("name", ["train.yml", "train.json"])
+def test_by_name_template_takes_yaml_only(tcfg, name):
+    """Checked on the node with Hydra: --config-name finds train.yaml, not train.yml or train.json."""
+    tcfg.job_template = ["uv", "run", "pretrain.py", "--config-dir", "{config_dir}",
+                         "--config-name", "{config_stem}"]
+    sha = _upload_config(tcfg, "y1", name=name)
+    r = call(tcfg, ("job_submit", _submit_args("y1", sha, config_name=name)))[0]
+    assert not r["ok"] and r["error"]["code"] == "invalid", r
+    assert _jobs(tcfg) == []
+    tcfg.job_template = ["uv", "run", "pretrain.py", "config={config}"]  # by path: still accepted
+    assert call(tcfg, ("job_submit", _submit_args("y1", sha, config_name=name)))[0]["ok"]
