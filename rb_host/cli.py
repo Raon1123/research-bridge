@@ -348,7 +348,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "node command, MCP command")
     su.add_argument("--node", required=True, metavar="NAME")
     su.add_argument("--host", default="")
-    su.add_argument("--port", type=int, default=22)
+    su.add_argument("--port", type=int, default=None)
     su.add_argument("--user", default="")
     su.add_argument("--keydir", default="", help="key directory (default ~/.ssh/research-bridge)")
     su.add_argument("--hub-from", default="", help="address the node sees this hub as")

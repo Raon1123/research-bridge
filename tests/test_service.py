@@ -175,3 +175,15 @@ def test_requires_terminal_unless_print(hub, monkeypatch, capsys):
     assert not (hub.home / ".config").exists()
     assert cli.main(["service", "install", "--print"]) == 0
     assert not (hub.home / ".config").exists()
+
+
+def test_install_refuses_rb_host_root_with_space_and_absolutizes(hub, monkeypatch, capsys, tmp_path):
+    _host_json(hub)
+    monkeypatch.setenv("RB_HOST_CONFIG", str(hub.tmp / "data" / "host.json"))
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "rb data"))
+    assert cli.main(["service", "install", "--print"]) == 1
+    assert "space or a percent" in capsys.readouterr().out
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RB_HOST_ROOT", "rel")
+    assert cli.main(["service", "install", "--print"]) == 0
+    assert "Environment=RB_HOST_ROOT=%s" % (tmp_path / "rel") in capsys.readouterr().out

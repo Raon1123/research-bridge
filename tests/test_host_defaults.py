@@ -59,6 +59,8 @@ def test_check_warns_on_missing_withheld_file(monkeypatch, tmp_path):
 def test_mcp_entry_carries_root_env(monkeypatch, tmp_path):
     monkeypatch.delenv("RB_HOST_CONFIG", raising=False)
     monkeypatch.delenv("RB_HOST_ROOT", raising=False)
-    assert "env" not in hc.mcp_entry()["research-bridge"]
+    env = hc.mcp_entry()["research-bridge"]["env"]
+    assert list(env) == ["RB_HOST_CONFIG"] and env["RB_HOST_CONFIG"].endswith("host.json")
     monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path))
-    assert hc.mcp_entry()["research-bridge"]["env"] == {"RB_HOST_ROOT": str(tmp_path)}
+    env = hc.mcp_entry()["research-bridge"]["env"]
+    assert env["RB_HOST_ROOT"] == str(tmp_path) and "RB_HOST_CONFIG" in env

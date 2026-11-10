@@ -28,8 +28,7 @@ def _complete(hub, monkeypatch, tmp_path):
     uv = tmp_path / "uv"
     uv.write_text("", encoding="utf-8")
     cj = configure.claude_json_path()
-    cj.write_text(json.dumps({"mcpServers": {"research-bridge": {
-        "command": str(uv), "args": ["run", "--directory", str(configure.REPO)]}}}), encoding="utf-8")
+    cj.write_text(json.dumps({"mcpServers": {"research-bridge": _entry(uv)}}), encoding="utf-8")
     d = hub.home / ".config" / "systemd" / "user"
     d.mkdir(parents=True)
     for n in service.UNIT_NAMES:
@@ -168,12 +167,17 @@ def test_offline_local_json_missing_is_warn(hub, monkeypatch, tmp_path):
     assert by_id(doctor.offline())["local_json"][0].level == "warn"
 
 
+def _entry(uv):
+    e = dict(configure.mcp_entry()["research-bridge"])
+    e["command"] = str(uv)
+    return e
+
+
 def test_offline_mcp_entry_project_scope_found(hub, monkeypatch, tmp_path):
     _complete(hub, monkeypatch, tmp_path)
     uv = tmp_path / "uv"
     configure.claude_json_path().write_text(json.dumps({"projects": {str(configure.REPO): {
-        "mcpServers": {"research-bridge": {"command": str(uv), "args": [
-            "run", "--directory", str(configure.REPO)]}}}}}), encoding="utf-8")
+        "mcpServers": {"research-bridge": _entry(uv)}}}}), encoding="utf-8")
     assert by_id(doctor.offline())["mcp_entry"][0].level == "ok"
 
 
@@ -184,15 +188,19 @@ def test_offline_mcp_entry_problems(hub, monkeypatch, tmp_path):
     r = by_id(doctor.offline())["mcp_entry"][0]
     assert r.level == "warn" and r.message == "MCP server not registered"
     assert r.next.startswith("claude mcp add-json --scope user research-bridge")
-    cj.write_text(json.dumps({"mcpServers": {"research-bridge": {
-        "command": "/nonexistent/uv", "args": ["run", "--directory", str(configure.REPO)]}}}),
-        encoding="utf-8")
+    cj.write_text(json.dumps({"mcpServers": {"research-bridge": dict(
+        _entry(tmp_path / "uv"), command="/nonexistent/uv")}}), encoding="utf-8")
     assert by_id(doctor.offline())["mcp_entry"][0].message == "MCP entry points at a missing path"
     wt = tmp_path / "a" / ".claude" / "worktrees" / "w"
     wt.mkdir(parents=True)
     cj.write_text(json.dumps({"mcpServers": {"research-bridge": {
         "command": str(tmp_path / "uv"), "args": ["run", "--directory", str(wt)]}}}), encoding="utf-8")
     assert by_id(doctor.offline())["mcp_entry"][0].message == "MCP entry points at a worktree"
+    old = _entry(tmp_path / "uv")
+    del old["env"]["RB_HOST_CONFIG"]
+    cj.write_text(json.dumps({"mcpServers": {"research-bridge": old}}), encoding="utf-8")
+    r = by_id(doctor.offline())["mcp_entry"][0]
+    assert r.level == "warn" and "differs" in r.message and r.next.startswith("claude mcp add-json")
 
 
 def test_offline_services_not_installed_warn(hub, monkeypatch, tmp_path):
@@ -222,6 +230,59 @@ def test_offline_sync_status_stale_warns(hub, monkeypatch, tmp_path):
     assert r.level == "warn" and "agent_empty" in r.message and r.next == "rb sync --node node1"
     (sdir / "node1.json").write_text("{", encoding="utf-8")
     assert by_id(doctor.offline())["sync_status"][0].level == "warn"
+
+
+def test_offline_no_user_bus_is_manager_not_available(hub, monkeypatch, tmp_path):
+    _complete(hub, monkeypatch, tmp_path)
+    bus = (1, "", "Failed to connect to bus: No medium found")
+    hub.systemctl.update({("is-active", "rb-sync.timer"): bus, ("is-active", "rb-web.service"): bus})
+    res = by_id(doctor.offline())
+    assert "user manager not available" in res["service_sync"][0].message
+
+
+def test_offline_sync_staleness_is_900_seconds(hub, monkeypatch, tmp_path):
+    import time
+    _complete(hub, monkeypatch, tmp_path)
+    for n in service.UNIT_NAMES:
+        (hub.home / ".config" / "systemd" / "user" / n).write_text("OnUnitInactiveSec=60\n", encoding="utf-8")
+    sdir = tmp_path / "data" / "sync"
+    sdir.mkdir()
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 400))
+    (sdir / "node1.json").write_text(json.dumps({"ok": True, "last_ok_at": stamp}), encoding="utf-8")
+    assert by_id(doctor.offline())["sync_status"][0].level == "ok"
+
+
+@pytest.mark.parametrize("body", [{"nodes": None}, {"nodes": ["node1"]}, {"data_root": 5},
+                                  {"nodes": {"node1": "x"}}, {"withheld_patterns_file": []}])
+def test_offline_wrong_types_report_not_raise(hub, tmp_path, body):
+    hp = tmp_path / "data" / "host.json"
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    hp.write_text(json.dumps(body), encoding="utf-8")
+    res = doctor.offline()
+    assert any(r.level == "fail" for r in res)
+    assert configure.check()  # rb config check does not raise either
+    assert doctor.main(None, offline_only=False) == 1
+
+
+def test_online_missing_alias_in_entry_is_a_fail_not_a_traceback(hub, tmp_path, monkeypatch):
+    hp = tmp_path / "data" / "host.json"
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    hp.write_text(json.dumps({"nodes": {"node1": {"harness_alias": "rb-node1-harness"}}}), encoding="utf-8")
+    assert doctor.main("node1", offline_only=False) == 1
+
+
+from test_host_client import SERVE, node  # noqa: E402,F401  (local subprocess node fixture)
+
+
+def test_online_against_real_old_node_code(monkeypatch, tmp_path, node):
+    """The rb_node in this tree is the old node (no protocol key): the doctor must read it as protocol 1."""
+    monkeypatch.setattr(doctor, "_connect",
+                        lambda cfg, n: client.NodeClient("x", ssh_argv=SERVE, env=node["env"]))
+    res = doctor.online(_cfg(tmp_path), "node1")
+    by = {r.id: r for r in res}
+    assert by["reachable"].level == "ok" and "protocol 1" in by["reachable"].message
+    for k in ("node_approval", "node_job_template", "node_responder", "node_queue"):
+        assert by[k].level == "warn" and "unknown" in by[k].message
 
 
 # ---------------------------------------------------------------- online
@@ -339,7 +400,7 @@ def test_online_transport_error_shows_code_and_hint(monkeypatch, tmp_path):
     exc = TransportError("rb-node1 refused the key", "node_refused_key", "on the node: check it")
     res = _online(monkeypatch, tmp_path, exc=exc)
     assert [r.id for r in res] == ["reachable"]
-    assert res[0].level == "fail" and res[0].message == "rb-node1 refused the key"
+    assert res[0].level == "fail" and res[0].message == "node_refused_key: rb-node1 refused the key"
     assert res[0].next == "on the node: check it"
 
 

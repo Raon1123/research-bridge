@@ -295,3 +295,11 @@ def test_claude_json_path_isolated(tmp_path):
 def test_sshenv_does_not_import_mcp():
     code = "import sys, rb_host.sshenv; sys.exit(1 if 'mcp' in sys.modules else 0)"
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+def test_stale_xdg_runtime_dir_falls_back_to_run_user(monkeypatch, tmp_path):
+    import os
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "gone"))
+    std = "/run/user/%d" % os.getuid()
+    ok = os.path.isdir(std) and os.stat(std).st_uid == os.getuid() and (os.stat(std).st_mode & 0o777) == 0o700
+    assert sshenv.runtime_dir() == (Path(std) if ok else None)

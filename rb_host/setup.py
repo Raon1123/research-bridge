@@ -7,6 +7,7 @@ writes ~/.claude.json or ~/.bashrc. Every external command goes through rb_host.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -35,7 +36,7 @@ def ask(prompt: str) -> bool:
 class Args:
     node: str
     host: str = ""
-    port: int = 22
+    port: Optional[int] = None
     user: str = ""
     keydir: str = ""
     hub_from: str = ""
@@ -78,6 +79,8 @@ def _unsafe_target(path: Path) -> Optional[str]:
     if os.path.islink(str(path)):
         return ("%s is a symbolic link (a rename would replace the link, and writing through it "
                 "would put the text into the link's target)" % path)
+    if path.exists() and not path.is_file():
+        return "%s is not a regular file" % path
     reason = git_exposure(path.resolve())
     if reason:
         return "%s (git would track it)" % reason
@@ -123,7 +126,7 @@ def _key_paths(a: Args) -> Tuple[Path, Path]:
     for alias, name in zip((a.alias, a.harness_alias), names):
         cfg = _ssh(a, alias)
         files = cfg.get("identityfile") or []
-        key = sshenv.expand_path(files[0]) if files and _defined(cfg, alias) else None
+        key = sshenv.pick_identity(files, alias) if files and _defined(cfg, alias) else None
         out.append(key or sshenv.user_ssh_dir() / "research-bridge" / name)
     return out[0], out[1]
 
@@ -255,7 +258,7 @@ def _differences(alias: str, cfg: Dict[str, List[str]], a: Args, key: Path) -> L
              ("port", first("port"), str(a.port), first("port") == str(a.port)),
              ("user", first("user"), a.user, first("user") == a.user)]
     files = cfg.get("identityfile") or []
-    got = sshenv.expand_path(files[0]) if files else None
+    got = sshenv.pick_identity(files, alias)
     pairs.append(("identityfile", files[0] if files else "unset", str(key), got == key))
     pairs.append(("identitiesonly", first("identitiesonly"), "yes", first("identitiesonly").lower() == "yes"))
     pairs.append(("stricthostkeychecking", first("stricthostkeychecking"), "true",
@@ -302,11 +305,15 @@ def step_ssh_config(a: Args) -> str:
     if not ask("Append to %s? [y/N] " % target):
         _say("not written")
         return "skipped"
-    old = target.read_bytes() if target.is_file() else b""
-    _backup(target)
-    sep = b"" if not old or old.endswith(b"\n") else b"\n"
-    _atomic_write(target, old + sep + (b"\n" if old else b"") + text.encode("utf-8"))
-    os.chmod(str(target.parent), 0o700)
+    try:
+        old = target.read_bytes() if target.is_file() else b""
+        _backup(target)
+        sep = b"" if not old or old.endswith(b"\n") else b"\n"
+        _atomic_write(target, old + sep + (b"\n" if old else b"") + text.encode("utf-8"))
+        os.chmod(str(target.parent), 0o700)
+    except OSError as exc:
+        print("error: could not write %s: %s; add the text above yourself" % (target, exc))
+        return "failed: %s" % exc
     for alias, key in add:
         for line in _differences(alias, _ssh(a, alias, fresh=True), a, key):
             _say("overridden by an earlier setting in your ssh config (OpenSSH uses the first value "
@@ -337,9 +344,31 @@ def step_host_key(a: Args, keys_generated: bool) -> str:
     if not data:
         _say("could not read the host key; check that %s is reachable" % a.alias)
         return "printed"
+    fps = sshenv.scan_fingerprints(data)
+    if not fps:
+        _say("the scan of %s could not be fingerprinted, so there is nothing to compare; nothing "
+             "was written. Check that %s is reachable and rerun rb setup --node %s"
+             % (a.alias, a.host, a.node))
+        return "printed"
     _say("scanned host key of %s (%s):" % (a.alias, kind))
-    for fp in sshenv.scan_fingerprints(data):
+    for fp in fps:
         _say("  " + fp)
+    ssh_host = (_ssh(a, a.alias).get("hostname") or [""])[0]
+    ssh_port = (_ssh(a, a.alias).get("port") or [""])[0]
+    if _defined(_ssh(a, a.alias), a.alias) and (ssh_host.lower() != a.host.lower()
+                                                or ssh_port != str(a.port)):
+        _say("note: ssh uses %s port %s for %s, not %s port %d; the scan used the values you gave"
+             % (ssh_host, ssh_port, a.alias, a.host, a.port))
+    key_alias = (_ssh(a, a.alias).get("hostkeyalias") or [""])[0]
+    if key_alias:
+        if hashed:
+            _say("%s sets HostKeyAlias %s and hashes known_hosts; setup cannot name the entry. "
+                 "Add the scanned lines yourself with %s as the host field:" % (a.alias, key_alias, key_alias))
+            sys.stdout.write(data.decode("utf-8", "replace"))
+            return "printed"
+        data = "".join("%s %s\n" % (key_alias, ln.split(None, 1)[1]) if len(ln.split(None, 1)) == 2
+                       else ln + "\n" for ln in data.decode("utf-8", "replace").splitlines()
+                       ).encode("utf-8")
     _say("compare it with the line of the same type that scripts/node-install.sh printed on the node "
          "(or ssh-keygen -lf /etc/ssh/ssh_host_%s_key.pub run on the node console)" % kind)
     if not files:
@@ -359,10 +388,15 @@ def step_host_key(a: Args, keys_generated: bool) -> str:
              "(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) and find the cause before running "
              "rb setup again.")
         return "skipped"
-    old = target.read_bytes() if target.is_file() else b""
-    _backup(target)
-    sep = b"\n" if old and not old.endswith(b"\n") else b""
-    _atomic_write(target, old + sep + data)
+    try:
+        old = target.read_bytes() if target.is_file() else b""
+        _backup(target)
+        sep = b"\n" if old and not old.endswith(b"\n") else b""
+        _atomic_write(target, old + sep + data)
+    except OSError as exc:
+        print("error: could not write %s: %s; add these lines yourself:" % (target, exc))
+        sys.stdout.write(data.decode("utf-8", "replace"))
+        return "failed: %s" % exc
     return "done"
 
 
@@ -421,9 +455,10 @@ def node_command(a: Args, bridge_pub: str, harness_pub: str, hub_from: str, with
              "", "  scripts/node-install.sh \\"]
     if a.research_root:
         lines.append("    --research-root %s \\" % shlex_quote(a.research_root))
-    lines += ["    --hub-key '%s' \\" % bridge_pub, "    --harness-key '%s' \\" % harness_pub,
+    lines += ["    --hub-key %s \\" % shlex_quote(bridge_pub),
+              "    --harness-key %s \\" % shlex_quote(harness_pub),
               "    --hub-from %s%s --apply-authorized-keys" % (
-                  hub_from, " --withheld-file ~/withheld-patterns.json" if withheld else "")]
+                  hub_from if hub_from == "<HUB_ADDR>" else shlex_quote(hub_from), " --withheld-file ~/withheld-patterns.json" if withheld else "")]
     return "\n".join(lines)
 
 
@@ -492,8 +527,10 @@ def mcp_step(a: Args) -> str:
         _say("MCP server research-bridge is registered")
         return "skipped"
     if found:
-        _say("the registered MCP entry has a problem: %s" % (
-            "it points at a missing path" if problem == "missing path" else "it points at a worktree"))
+        _say("the registered MCP entry has a problem: %s" % {
+            "missing path": "it points at a missing path", "worktree": "it points at a worktree",
+            "differs": "it differs from the entry below (command, args or RB_HOST_* env); a leftover "
+                       "SSH_AUTH_SOCK may stay"}[problem])
         _say("remove it (claude mcp remove research-bridge) and register again:")
     else:
         _say("register the MCP server by running this yourself (rb never edits ~/.claude.json):")
@@ -513,7 +550,25 @@ def step_doctor(a: Args) -> str:
 
 # ------------------------------------------------------------------ main
 
+BAD_VALUE = re.compile(r"[\s#\x00-\x1f\x7f]")
+
+
+def _validate(a: Args) -> Optional[str]:
+    if not configure.NODE_NAME.fullmatch(a.node):
+        return "invalid node name %r; use letters, digits, '.', '_' or '-' (see rb config add-node)" % a.node
+    for label, val in (("--host", a.host), ("--user", a.user)):
+        if val and BAD_VALUE.search(val):
+            return "%s must not contain whitespace, control characters or '#'" % label
+    if a.port is not None and not 1 <= a.port <= 65535:
+        return "--port must be 1..65535"
+    return None
+
+
 def _resolve(a: Args) -> int:
+    problem = _validate(a)
+    if problem:
+        print("error: " + problem)
+        return 2
     a.alias, a.harness_alias = "rb-" + a.node, "rb-%s-harness" % a.node
     path = configure.host_path()
     if path.is_file():
@@ -533,9 +588,21 @@ def _resolve(a: Args) -> int:
             return 2
         if not a.host:
             a.host = cfg["hostname"][0]
-            a.port = int((cfg.get("port") or [str(a.port)])[0])
+            if a.port is None:
+                a.port = int((cfg.get("port") or ["22"])[0])
         if not a.user:
             a.user = (cfg.get("user") or [""])[0]
+    if a.port is None:
+        a.port = 22
+    problem = _validate(a)
+    if problem:
+        print("error: " + problem)
+        return 2
+    bridge, harness = _key_paths(a)
+    if bridge == harness:
+        print("error: the bridge key and the harness key resolve to the same file (%s); "
+              "give each alias its own IdentityFile" % bridge)
+        return 2
     return 0
 
 
@@ -553,7 +620,7 @@ def main(a: Args) -> int:
         print("step %d/9 %s" % (i, STEP_TITLES[i - 1]))
         results[i] = fn()
         _say("-> %s" % results[i])
-        if i == 1 and results[i].startswith("failed"):
+        if i in (1, 2) and results[i].startswith("failed"):
             return 1
         if i == 1:
             a.cache.clear()
@@ -590,11 +657,10 @@ def agent_main(node: Optional[str]) -> int:
                     "error" if required else "note", alias, "" if required else " (harness channel only)"))
                 code = code or (1 if required else 0)
                 continue
-            files = c.get("identityfile") or []
-            key = sshenv.expand_path(files[0]) if files else None
+            key = sshenv.pick_identity(c.get("identityfile") or [], alias)
             if key is None or not key.is_file():
                 print("%s: key file missing: %s" % ("error" if required else "note", key or "(none)"))
-                code = code or (1 if required else 0)
+                code = 1
                 continue
             keys.append(key)
     if not keys:

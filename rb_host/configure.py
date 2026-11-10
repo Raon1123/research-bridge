@@ -116,13 +116,14 @@ def set_local(laptop_home: str = "", node_home: str = "") -> Path:
 
 
 def mcp_entry() -> Dict[str, Any]:
-    root = Path(__file__).resolve().parents[1].as_posix()
+    root = REPO.as_posix()
     entry: Dict[str, Any] = {"type": "stdio", "command": shutil.which("uv") or "uv",
                              "args": ["run", "--directory", root, "--extra", "host",
                                       "python", "-m", "rb_host.server"]}
-    env = {k: os.environ[k] for k in ("RB_HOST_ROOT", "RB_HOST_CONFIG") if os.environ.get(k)}
-    if env:
-        entry["env"] = env
+    env = {"RB_HOST_CONFIG": str(host_path().absolute())}
+    if os.environ.get("RB_HOST_ROOT"):
+        env["RB_HOST_ROOT"] = os.environ["RB_HOST_ROOT"]
+    entry["env"] = env
     return {"research-bridge": entry}
 
 
@@ -158,7 +159,7 @@ def registered_entry(checkout: Path) -> Optional[Dict[str, Any]]:
 
 
 def mcp_registered(checkout: Path) -> Tuple[bool, str]:
-    """(found, problem); problem is "", "missing path" or "worktree"."""
+    """(found, problem); problem is "", "missing path", "worktree" or "differs"."""
     entry = registered_entry(checkout)
     if entry is None:
         return False, ""
@@ -173,6 +174,13 @@ def mcp_registered(checkout: Path) -> Tuple[bool, str]:
             return True, "worktree"
         if not Path(directory).is_dir():
             return True, "missing path"
+    want = mcp_entry()["research-bridge"]
+    got_env = entry.get("env") if isinstance(entry.get("env"), dict) else {}
+    if (args != want["args"]
+            or Path(cmd).name != Path(want["command"]).name
+            or any(got_env.get(k) != v for k, v in want["env"].items())
+            or ("RB_HOST_ROOT" in got_env and "RB_HOST_ROOT" not in want["env"])):
+        return True, "differs"
     return True, ""
 
 

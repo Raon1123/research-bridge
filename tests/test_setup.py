@@ -357,9 +357,10 @@ def test_upgrade_from_old_scripts_reports_nothing_to_change(hub, capsys, tmp_pat
     hub.add_agent("rb-ssh-agent", [hub.pub_fp(d / "node1_ed25519"), hub.pub_fp(d / "node1_harness_ed25519")])
     uv = tmp_path / "uv"
     uv.write_text("", encoding="utf-8")
-    configure.claude_json_path().write_text(json.dumps({"mcpServers": {"research-bridge": {
-        "command": str(uv), "args": ["run", "--directory", str(configure.REPO)],
-        "env": {"SSH_AUTH_SOCK": "/run/user/1000/rb-ssh-agent"}}}}), encoding="utf-8")
+    entry = dict(configure.mcp_entry()["research-bridge"], command=str(uv))
+    entry["env"] = dict(entry["env"], SSH_AUTH_SOCK="/run/user/1000/rb-ssh-agent")
+    configure.claude_json_path().write_text(json.dumps({"mcpServers": {"research-bridge": entry}}),
+                                            encoding="utf-8")
     before = _snapshot(tmp_path / "home", tmp_path / "data")
     assert cli.main(ARGS) == 0
     out = capsys.readouterr().out
@@ -367,6 +368,19 @@ def test_upgrade_from_old_scripts_reports_nothing_to_change(hub, capsys, tmp_pat
     assert _snapshot(tmp_path / "home", tmp_path / "data") == before
     assert ", expected " not in out and "SSH_AUTH_SOCK" in out and "no longer needed" in out
     assert "claude mcp add-json" not in out
+
+
+def test_old_mcp_entry_without_rb_host_env_is_printed_again(hub, capsys, tmp_path):
+    hubfake.linked(hub, port=2222)
+    d = hub.ssh_dir / KEYS
+    hub.add_agent("rb-ssh-agent", [hub.pub_fp(d / "node1_ed25519"), hub.pub_fp(d / "node1_harness_ed25519")])
+    uv = tmp_path / "uv"
+    uv.write_text("", encoding="utf-8")
+    configure.claude_json_path().write_text(json.dumps({"mcpServers": {"research-bridge": {
+        "command": str(uv), "args": ["run", "--directory", str(configure.REPO)]}}}), encoding="utf-8")
+    assert cli.main(ARGS) == 0
+    out = capsys.readouterr().out
+    assert "differs" in out and "claude mcp add-json" in out and "RB_HOST_CONFIG" in out
 
 
 def test_rb_agent_prints_export_line(hub, capsys, tmp_path):
@@ -428,3 +442,100 @@ def test_no_claude_json_write(hub, tmp_path):
     assert cj.read_bytes() == b'{"mcpServers": {}}\n' and cj.stat().st_mtime_ns == st.st_mtime_ns
     assert [p.name for p in cj.parent.iterdir() if p.name.startswith(".claude.json.")] == []
     assert not (tmp_path / "home" / ".bashrc").exists()
+
+
+def test_host_star_identityfile_does_not_hide_bridge_keys(hub, capsys):
+    hub.write_config("Host *\n    IdentityFile ~/.ssh/id_ed25519\n")
+    assert cli.main(ARGS) == 0
+    out = capsys.readouterr().out
+    d = hub.ssh_dir / KEYS
+    adds = [c[1] for c in hub.calls if c[0] == "interactive" and c[1][0] == "ssh-add"]
+    assert [Path(c[-1]) for c in adds] == [d / "node1_ed25519", d / "node1_harness_ed25519"]
+    assert "id_ed25519" not in out.replace("node1_ed25519", "").replace("node1_harness_ed25519", "")
+    # second run: key choice is stable, nothing changes
+    assert sshenv.identity_file("rb-node1") == d / "node1_ed25519"
+    assert sshenv.identity_file("rb-node1-harness") == d / "node1_harness_ed25519"
+
+
+def test_doctor_key_file_uses_bridge_key_under_host_star(hub, monkeypatch, tmp_path):
+    hubfake.linked(hub, port=2222)
+    hub.write_config("Host *\n    IdentityFile ~/.ssh/id_ed25519\n\n"
+                     + hub.config_path.read_text(encoding="utf-8"))
+    res = {r.id: r for r in doctor.offline() if r.node in ("", "node1")}
+    assert res["key_file"].level == "ok", res["key_file"]
+
+
+@pytest.mark.parametrize("extra", [["--node", "x *"], ["--user", "u\n    ProxyCommand touch /tmp/pwn"],
+                                   ["--host", "h #x"], ["--host", "h h"], ["--port", "70000"]])
+def test_setup_rejects_bad_values(hub, capsys, extra):
+    argv = list(ARGS)
+    for flag, val in zip(extra[::2], extra[1::2]):
+        i = argv.index(flag)
+        argv[i + 1] = val
+    assert cli.main(argv) == 2
+    assert hub.names("interactive") == [] and hub.asks == [] and not hub.config_path.exists()
+
+
+def test_rerun_explicit_port_wins_over_ssh_G(hub, capsys):
+    hubfake.linked(hub, port=2222)
+    assert cli.main(["setup", "--node", "node1", "--port", "2200"]) == 0
+    assert "port is 2222, expected 2200" in capsys.readouterr().out
+
+
+def test_node_command_quotes_pub_lines_and_hub_from(hub, capsys):
+    _keys(hub, loaded=False)
+    pub = hub.ssh_dir / KEYS / "node1_ed25519.pub"
+    pub.write_text("ssh-ed25519 AAAAx it's me\n", encoding="utf-8")
+    assert cli.main(ARGS + ["--hub-from", "my hub"]) == 0
+    out = capsys.readouterr().out
+    assert "--hub-key 'ssh-ed25519 AAAAx it'\"'\"'s me'" in out and "--hub-from 'my hub'" in out
+
+
+def test_host_key_unfingerprintable_scan_is_not_appended(hub, capsys, monkeypatch):
+    hubfake.linked(hub, port=2222)
+    hub.write_known_hosts(b"")
+    monkeypatch.setattr(sshenv, "scan_fingerprints", lambda data: [])
+    assert cli.main(ARGS) == 0
+    assert "could not be fingerprinted" in capsys.readouterr().out
+    assert hub.asks == [] or not any("fingerprint" in q for q in hub.asks)
+    assert (hub.ssh_dir / "known_hosts").read_bytes() == b""
+
+
+def test_host_key_with_hostkeyalias_names_the_alias(hub, capsys):
+    hubfake.linked(hub, port=2222)
+    hub.write_config(hub.config_path.read_text(encoding="utf-8").replace(
+        "Host rb-node1\n", "Host rb-node1\n    HostKeyAlias nodeone\n"))
+    hub.write_known_hosts(b"")
+    assert cli.main(ARGS) == 0
+    assert (hub.ssh_dir / "known_hosts").read_bytes() == b"nodeone ssh-ed25519 AAAAscanned\n"
+
+
+def test_unwritable_known_hosts_target_is_reported_not_raised(hub, capsys):
+    hubfake.linked(hub, port=2222)
+    hub.write_config("Host rb-node1\n    UserKnownHostsFile /dev/null\n\n"
+                     + hub.config_path.read_text(encoding="utf-8"))
+    hub.write_known_hosts(b"")
+    assert cli.main(ARGS) == 0
+    assert "not a regular file" in capsys.readouterr().out
+
+
+def test_ssh_config_write_failure_is_reported_not_raised(hub, capsys, monkeypatch):
+    _keys(hub)
+    monkeypatch.setattr(setup, "_atomic_write", lambda *a, **k: (_ for _ in ()).throw(PermissionError("denied")))
+    assert cli.main(ARGS) == 1
+    assert "could not write" in capsys.readouterr().out
+
+
+def test_rb_agent_missing_harness_key_exits_1(hub, capsys):
+    hubfake.linked(hub, port=2222)
+    (hub.ssh_dir / KEYS / "node1_harness_ed25519").unlink()
+    hub.add_agent("rb-ssh-agent", [])
+    assert cli.main(["agent"]) == 1
+
+
+def test_same_key_for_both_aliases_is_refused(hub, capsys):
+    hubfake.linked(hub, port=2222)
+    txt = hub.config_path.read_text(encoding="utf-8").replace("node1_harness_ed25519", "node1_ed25519")
+    hub.write_config(txt)
+    assert cli.main(ARGS) == 2
+    assert "same file" in capsys.readouterr().out

@@ -60,12 +60,19 @@ def user_ssh_dir() -> Path:
 
 
 def runtime_dir() -> Optional[Path]:
-    raw = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
+    fallback = "/run/user/%d" % os.getuid()
+    raw = os.environ.get("XDG_RUNTIME_DIR") or fallback
     p = Path(raw)
     try:
         st = os.stat(str(p))
     except OSError:
-        return None
+        if raw == fallback:
+            return None
+        p = Path(fallback)  # stale XDG_RUNTIME_DIR (after su or sudo): try the standard place
+        try:
+            st = os.stat(str(p))
+        except OSError:
+            return None
     if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) != 0o700:
         return None
     return p
@@ -170,9 +177,32 @@ def alias_defined(alias: str) -> bool:
     return hostname[0].lower() != alias.lower()
 
 
+def pick_identity(files: List[str], alias: str) -> Optional[Path]:
+    """The bridge key among the identityfile values `ssh -G` printed for `alias`.
+
+    ssh lists IdentityFile values in the order it read them, so a `Host *` block above the rb
+    block puts the user's personal key first. Take the file named like the bridge keys
+    (`<node>_ed25519`, `<node>_harness_ed25519`); with several values and no such name, the
+    last one (rb blocks are appended at the end of the file).
+    """
+    paths = [p for p in (expand_path(f) for f in files) if p is not None]
+    if not paths:
+        return None
+    if len(paths) == 1:
+        return paths[0]
+    node = alias[3:] if alias.startswith("rb-") else alias
+    harness = node.endswith("-harness")
+    if harness:
+        node = node[:-len("-harness")]
+    want = "%s%s_ed25519" % (node, "_harness" if harness else "")
+    for p in paths:
+        if p.name == want:
+            return p
+    return paths[-1]
+
+
 def identity_file(alias: str) -> Optional[Path]:
-    files = ssh_config(alias).get("identityfile") or []
-    return expand_path(files[0]) if files else None
+    return pick_identity(ssh_config(alias).get("identityfile") or [], alias)
 
 
 def fingerprint(pub: Path) -> Optional[str]:
@@ -320,7 +350,9 @@ def route_source(host: str) -> Optional[str]:
 
 
 def systemctl_user(*args: str) -> Tuple[int, str]:
-    rc, out, _ = run(["systemctl", "--user"] + list(args))
+    rc, out, err = run(["systemctl", "--user"] + list(args))
+    if rc != 0 and ("Failed to connect to bus" in err or "Failed to connect to bus" in out):
+        return 127, ""  # no user manager: same answer as a missing systemctl
     return rc, out.strip()
 
 

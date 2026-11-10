@@ -53,9 +53,8 @@ def _load_cfg() -> HostConfig:
 
 # ---------------------------------------------------------------- offline
 
-def _key_for(cfg: Dict[str, List[str]]) -> Optional[Path]:
-    files = cfg.get("identityfile") or []
-    return sshenv.expand_path(files[0]) if files else None
+def _key_for(cfg: Dict[str, List[str]], alias: str) -> Optional[Path]:
+    return sshenv.pick_identity(cfg.get("identityfile") or [], alias)
 
 
 def _key_file_result(id_: str, level: str, alias: str, cfg: Dict[str, List[str]], name: str,
@@ -63,7 +62,7 @@ def _key_file_result(id_: str, level: str, alias: str, cfg: Dict[str, List[str]]
     tail = " (harness channel only)" if harness else ""
     files = cfg.get("identityfile") or []
     raw = files[0] if files else "(none)"
-    key = _key_for(cfg)
+    key = _key_for(cfg, alias)
     if key is None or not key.is_file():
         return _bad(id_, level, "key file missing: %s%s" % (key or raw, tail),
                     "rb setup --node %s" % name, name)
@@ -167,6 +166,9 @@ def _age(seconds: float) -> str:
     return "%d days" % (s // 86400)
 
 
+STALE_SECONDS = 900  # sync design 6.8: one staleness rule for the page, `nodes` and the doctor
+
+
 def _sync_status(cfg: HostConfig, name: str) -> Optional[Result]:
     path = Path(cfg.data_root) / "sync" / ("%s.json" % name)
     if not path.is_file():
@@ -178,10 +180,9 @@ def _sync_status(cfg: HostConfig, name: str) -> Optional[Result]:
             raise ValueError("not an object")
     except (OSError, ValueError):
         return _bad("sync_status", "warn", "sync status file unreadable", nxt, name)
-    interval = service.installed_interval() or 300
     last = _parse_time(data.get("last_ok_at"))
     err = data.get("error") if isinstance(data.get("error"), str) and data.get("error") else None
-    if last is not None and time.time() - last < 3 * interval:
+    if last is not None and time.time() - last < STALE_SECONDS:
         return _ok("sync_status", "last successful sync %s ago" % _age(time.time() - last), name)
     when = "no successful sync yet" if last is None else \
         "last successful sync %s ago" % _age(time.time() - last)
@@ -199,7 +200,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
             read_json(hp)
             cfg = _load_cfg()
             res.append(_ok("host_json", str(hp)))
-        except (ConfigError, ValueError, OSError) as exc:
+        except (ConfigError, ValueError, TypeError, OSError) as exc:
             msg = str(exc)
             if "not valid JSON" not in msg:
                 msg = "%s is not valid JSON (%s)" % (hp, msg)
@@ -213,6 +214,18 @@ def offline(node: Optional[str] = None) -> List[Result]:
     else:
         res.append(_ok("host_json_git", "config files are not tracked by git"))
     if cfg is None:
+        return res
+    if cfg.nodes is None:
+        cfg.nodes = {}
+    bad = []
+    if not isinstance(cfg.nodes, dict) or not all(isinstance(v, dict) for v in cfg.nodes.values()):
+        bad.append("nodes must be an object whose values are objects")
+    for key in ("data_root", "withheld_patterns_file"):
+        if not isinstance(getattr(cfg, key), str):
+            bad.append("%s must be a string" % key)
+    if bad:
+        res.append(_bad("host_json", "fail", "host.json has wrong types: " + "; ".join(bad),
+                        "fix %s, then rb doctor" % hp))
         return res
 
     if Path(cfg.data_root).is_dir():
@@ -293,7 +306,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
     for n in names:
         for a in (state[n]["alias"], state[n]["harness"]):
             if defined.get(a):
-                k = _key_for(sshcfg[a])
+                k = _key_for(sshcfg[a], a)
                 keys[a] = k if k is not None and k.is_file() else None
                 unenc[a] = keys[a] is not None and sshenv.key_unencrypted(keys[a])
     if sock is not None:
@@ -358,7 +371,9 @@ def offline(node: Optional[str] = None) -> List[Result]:
         res.append(_ok("mcp_entry", "MCP server registered"))
     else:
         msg = {"missing path": "MCP entry points at a missing path",
-               "worktree": "MCP entry points at a worktree"}.get(problem, "MCP server not registered")
+               "worktree": "MCP entry points at a worktree",
+               "differs": "MCP entry differs from the one rb setup prints (args or RB_HOST_* env); "
+                          "re-register it (a leftover SSH_AUTH_SOCK may stay)"}.get(problem, "MCP server not registered")
         res.append(_bad("mcp_entry", "warn", msg, configure.mcp_command()))
     if configure.local_path().is_file():
         res.append(_ok("local_json", str(configure.local_path())))
@@ -396,8 +411,10 @@ def online(cfg: HostConfig, node: str) -> List[Result]:
     try:
         with _connect(cfg, node) as c:
             hello = normalize_hello(c.hello())
+    except ValueError as exc:
+        return [_bad("reachable", "fail", str(exc), SETUP, node)]
     except TransportError as exc:
-        return [_bad("reachable", "fail", exc.message, exc.hint, node)]
+        return [_bad("reachable", "fail", "%s: %s" % (exc.code, exc.message), exc.hint, node)]
     except RemoteError as exc:
         if exc.code == "not_configured":
             return [_bad("reachable", "fail", "node reachable but not configured",
@@ -498,9 +515,9 @@ def main(node: Optional[str], offline_only: bool, only_problems: bool = False) -
     if not offline_only and not any(r.id == "host_json" and r.level == "fail" for r in results):
         try:
             cfg = _load_cfg()
-        except (OSError, ValueError):
+        except (OSError, ValueError, TypeError):
             cfg = None
-        if cfg is not None:
+        if cfg is not None and isinstance(cfg.nodes, dict):
             names = [node] if node else sorted(cfg.nodes)
             for n in names:
                 if n in cfg.nodes:

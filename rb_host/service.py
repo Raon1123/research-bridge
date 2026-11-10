@@ -113,14 +113,17 @@ def install(interval: int = 300, port: int = 8767, print_only: bool = False) -> 
         return 1
     rb = rb_path()
     hj = hj.absolute()
-    for p in (rb, hj):
+    root = os.environ.get("RB_HOST_ROOT") or None
+    if root:
+        root = os.path.abspath(os.path.expanduser(root))
+    for p in (rb, hj) + ((root,) if root else ()):
         if re.search(r"[\s%]", str(p)):
             print("error: %s contains a space or a percent sign; systemd unit lines cannot hold it" % p)
             return 1
     if "/.claude/worktrees/" in rb.as_posix():
         print("warning: %s lies in a git worktree, which is deleted later; run rb service install "
               "from the main checkout's environment" % rb)
-    texts = units(rb, hj, interval, port, os.environ.get("RB_HOST_ROOT") or None)
+    texts = units(rb, hj, interval, port, root)
     d = unit_dir()
     for name in UNIT_NAMES:
         path = d / name
