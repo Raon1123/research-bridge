@@ -211,6 +211,32 @@ def mcp_registered(checkout: Path) -> Tuple[bool, str]:
     return True, ""
 
 
+def registered_where(entry: Dict[str, Any]) -> str:
+    """What a registered entry runs: its --directory value, else its command (for messages)."""
+    args = entry.get("args") if isinstance(entry.get("args"), list) else []
+    if "--directory" in args and args.index("--directory") + 1 < len(args):
+        return str(args[args.index("--directory") + 1])
+    return str(entry.get("command", ""))
+
+
+def entry_differences(entry: Dict[str, Any]) -> List[str]:
+    """The parts of a registered entry that differ from the one rb setup prints:
+    "command", "args", "env <KEY>" (a missing or wrong RB_HOST_* value, or a stray RB_HOST_ROOT)."""
+    want = mcp_entry()["research-bridge"]
+    cmd = entry.get("command")
+    args = entry.get("args") if isinstance(entry.get("args"), list) else []
+    env = entry.get("env") if isinstance(entry.get("env"), dict) else {}
+    out = []
+    if not isinstance(cmd, str) or Path(cmd).name != Path(want["command"]).name:
+        out.append("command")
+    if args != want["args"]:
+        out.append("args")
+    out += ["env " + k for k, v in want["env"].items() if env.get(k) != v]
+    if "RB_HOST_ROOT" in env and "RB_HOST_ROOT" not in want["env"]:
+        out.append("env RB_HOST_ROOT")
+    return out
+
+
 wrong_types = config.wrong_types
 
 

@@ -365,8 +365,14 @@ def offline(node: Optional[str] = None) -> List[Result]:
                "worktree": "MCP entry points at a worktree",
                "from_worktree": "this rb runs from a git worktree; the registered MCP entry "
                                 "points at another checkout",
-               "differs": "MCP entry differs from the one rb setup prints (args or RB_HOST_* env); "
+               "differs": "MCP entry differs from the one rb setup prints; "
                           "re-register it (a leftover SSH_AUTH_SOCK may stay)"}.get(problem, "MCP server not registered")
+        entry = configure.registered_entry(configure.REPO) if found else None
+        if entry is not None:
+            # Show what the entry runs: a test once left a temporary path here and the warning hid it.
+            if problem == "differs":
+                msg += "; differs in: " + (", ".join(configure.entry_differences(entry)) or "?")
+            msg += "; registered: " + configure.registered_where(entry)
         res.append(_bad("mcp_entry", "warn", msg,
                         "run rb from the main checkout" if problem == "from_worktree"
                         else configure.mcp_command()))
