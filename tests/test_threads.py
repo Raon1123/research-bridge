@@ -124,7 +124,7 @@ def test_node_time_from_id_prefix(cfg):
     add(cfg, rid, "in", "2026-11-10T09:00:00Z", reply_to="m1", msg_kind="reply", delivered=True)
     ids = [r["id"] for r in threads.load(cfg)["threads"][0]["records"]]
     assert ids == [rid, "m1"]
-    assert threads.load(cfg)["threads"][0]["id"] == rid
+    assert threads.load(cfg)["threads"][0]["id"] == "m1"  # named after the root, not the first
 
 
 def test_states(cfg):
@@ -256,3 +256,30 @@ def test_clean_block_keeps_newlines_removes_bidi():
     assert threads.clean_block("a‮b\nc\x07", 100) == "ab\nc"
     assert threads.clean_block("a\tb\r\nc", 100) == "a\tb\nc"
     assert threads.clean_block("abcdef", 3) == "abc\n[truncated]"
+
+
+def test_ordering_reply_in_same_second_keeps_outgoing_as_root(cfg):
+    add(cfg, "ffff-out", "out", "2026-11-10T00:00:00Z")
+    add(cfg, "01794297600700000000-abcd1234", "in", "2026-11-10T00:00:00Z", reply_to="ffff-out",
+        msg_kind="reply", delivered=True)
+    t = threads.load(cfg)["threads"][0]
+    assert t["id"] == "ffff-out"
+    assert [r["id"] for r in t["records"]][0] == "ffff-out"
+    assert t["state"] == "open"
+
+
+def test_thread_id_is_the_root_under_clock_skew(cfg):
+    add(cfg, "m1", "out", "2026-11-10T00:10:00Z")
+    add(cfg, "01794297600700000000-abcd1234", "in", "2026-11-10T00:00:00Z", reply_to="m1",
+        msg_kind="reply", delivered=True)
+    t = threads.load(cfg)["threads"][0]
+    assert t["id"] == "m1"
+
+
+def test_split_name_is_masked_before_invisible_characters_are_removed(cfg):
+    rec = add(cfg, "r1", "in", msg_kind="reply", delivered=True)
+    put_body(cfg, rec, "see secretfam_­x results\nkeep", prov={"files": [
+        {"index": 0, "name": "secretfam_​q.txt", "status": "ok", "bytes": 3, "sha256": "cd" * 32}]})
+    wh = Withheld(["secretfam_"])
+    assert "secretfam" not in threads.read_body(cfg, rec, wh)["text"]
+    assert threads.attachments(cfg, rec, wh)["files"][0]["name"] == "(withheld)"

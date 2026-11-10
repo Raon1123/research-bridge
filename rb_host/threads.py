@@ -139,7 +139,7 @@ def read_body(cfg: Any, rec: dict, wh: Withheld, limit: int = MAX_BODY) -> dict:
             text = None
     if text is None:
         return {"text": "", "missing": True, "truncated": False}
-    cleaned = _clean_chars(wh.mask_text(text)[0])
+    cleaned = wh.mask_text(_clean_chars(text))[0]
     return {"text": clean_block(cleaned, limit), "missing": False, "truncated": len(cleaned) > limit}
 
 
@@ -165,7 +165,7 @@ def attachments(cfg: Any, rec: dict, wh: Withheld) -> dict:
             continue
         name = str(e.get("name", ""))
         out["files"].append({
-            "name": "(withheld)" if wh.name_hit(name) else clean(name, 200),
+            "name": "(withheld)" if wh.name_hit(_clean_chars(name)) else clean(name, 200),
             "bytes": e.get("bytes"), "sha256": clean(e.get("sha256"), 64),
             "status": clean(e.get("status", "ok"), 40)})
     return out
@@ -189,6 +189,23 @@ def _event_json(cfg: Any, rec: dict) -> Optional[dict]:
 
 def _sort_key(rec: dict) -> Tuple[str, str]:
     return (node_time(rec), str(rec.get("id")))
+
+
+def _ordered(recs: List[dict], order: Dict[str, int]) -> List[dict]:
+    """Records by time (design 6.7 rule 4), ties broken by ledger order, not by id: a reply that
+    arrives in the same second as its message must not sort before it."""
+    return sorted(recs, key=lambda r: (node_time(r), order.get(r["id"], 0)))
+
+
+def _root(recs: List[dict]) -> dict:
+    """The thread's root: the first record whose reply_to is outside the thread. Clock skew can
+    sort a reply before its message; the thread keeps the message's id."""
+    ids = {r["id"] for r in recs}
+    for r in recs:
+        rt = r.get("reply_to")
+        if not (isinstance(rt, str) and rt in ids and rt != r["id"]):
+            return r
+    return recs[0]
 
 
 def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
@@ -228,11 +245,13 @@ def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
     groups = {}  # type: Dict[str, List[dict]]
     for r in vertices:
         groups.setdefault(find(r["id"]), []).append(r)
+    order = {r["id"]: i for i, r in enumerate(latest) if isinstance(r.get("id"), str)}
     thread_list = []
     by_msg = {}  # type: Dict[str, str]
     for recs in groups.values():
-        recs.sort(key=_sort_key)
-        tid = recs[0]["id"]
+        recs = _ordered(recs, order)
+        root = _root(recs)
+        tid = root["id"]
         for r in recs:
             by_msg[r["id"]] = tid
         non_event = [r for r in recs if r.get("msg_kind") != "event"]
@@ -243,7 +262,7 @@ def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
         else:
             state = "answered"
         thread_list.append({
-            "id": tid, "node": recs[0].get("node"), "records": recs, "state": state,
+            "id": tid, "node": root.get("node"), "records": recs, "state": state,
             "last_at": node_time(recs[-1]),
             "undelivered": sum(1 for r in recs if r.get("direction") == "in"
                                and r.get("delivered") is False),

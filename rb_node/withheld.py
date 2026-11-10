@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -93,7 +94,14 @@ class Withheld:
         return w
 
     def _hit(self, text: str) -> bool:
-        return any(r.search(text) for r in self._re)
+        if any(r.search(text) for r in self._re):
+            return True
+        if text.isascii():
+            return False
+        # a name split by a soft hyphen or a zero-width space still reads as the name once a
+        # viewer drops those characters: test a copy without Unicode format characters too
+        plain = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+        return plain != text and any(r.search(plain) for r in self._re)
 
     def name_hit(self, path: str) -> bool:
         return self._hit(str(path).replace("\\", "/"))
