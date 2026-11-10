@@ -35,6 +35,9 @@ class NodeConfig:
     # job approval verifier, set only from the node console (rb-node approve-key set); keep it
     # outside read_roots and write_roots. Missing -> job_submit / job_cancel refused.
     approval_path: str = _home(DEFAULT_RB + "/approve.json")
+    # Where read_doc looks up EXP-nnn and H-nnn by id (relative to trm_root; must lie in read_roots).
+    experiments_dir: str = "lab/experiments"
+    hypotheses_path: str = "lab/registry/HYPOTHESES.md"
     harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
 
 

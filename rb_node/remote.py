@@ -273,14 +273,24 @@ class Node:
                 break
         return "\n".join(lines[start:end])
 
+    def _exp_ref(self, did: str) -> str:
+        """EXP-015.md, or EXP-015_<slug>.md as in the 2026-10 layout (exactly one match)."""
+        base = self.cfg.experiments_dir.rstrip("/")
+        d = Path(self.cfg.trm_root) / base
+        hits = sorted(p.name for p in d.glob(did + ".md")) or sorted(
+            p.name for p in d.glob(did + "_*.md")) if d.is_dir() else []
+        if len(hits) != 1:
+            raise ProtocolError("not_found", "no unique document for %s" % did)
+        return "%s/%s" % (base, hits[0])
+
     def read_doc(self, args: dict) -> dict:
         if isinstance(args.get("id"), str):
             did = args["id"]
             if _EXP_RE.match(did):
-                p = self._doc_path("lab/experiments/%s.md" % did)
+                p = self._doc_path(self._exp_ref(did))
                 text = p.read_bytes().decode("utf-8", "replace")
             elif _H_RE.match(did):
-                p = self._doc_path("lab/registry/HYPOTHESES.md")
+                p = self._doc_path(self.cfg.hypotheses_path)
                 text = self._h_section(p.read_bytes().decode("utf-8", "replace"), did)
             else:
                 raise ProtocolError("bad_id", "id must look like H-123 or EXP-015")
