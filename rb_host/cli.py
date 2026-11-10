@@ -384,6 +384,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     wv = ws.add_parser("serve", help="serve the page (GET and HEAD only)")
     wv.add_argument("--port", type=int, default=_web.DEFAULT_PORT)
     wv.add_argument("--bind", default="127.0.0.1")
+    wk = ws.add_parser("key", help="issue a one-time access key for the page (reading only)",
+                       description="Issue a one-time key that a browser exchanges for a session "
+                       "cookie; no terminal check is made because a process of the same user can "
+                       "read the data directory anyway, and the key protects against other "
+                       "accounts on this machine. The key grants reading only and approves "
+                       "nothing.")
+    wk.add_argument("--port", type=int, default=_web.DEFAULT_PORT)
+    wk.add_argument("--minutes", type=int, default=10, help="key lifetime, 1 to 60 (default 10)")
+    wk.add_argument("--session-hours", type=int, default=12,
+                    help="browser session length, 1 to 168 (default 12)")
+    wk.add_argument("--revoke", action="store_true", help="remove all keys and sessions")
+    wk.add_argument("--status", action="store_true", help="print the counts of keys and sessions")
     wb.set_defaults(fn=_web.cli_main)
     c = sub.add_parser("config", help="write and check host.json and private/local.json")
     cs = c.add_subparsers(dest="action", required=True)

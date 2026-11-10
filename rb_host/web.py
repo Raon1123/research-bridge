@@ -2,7 +2,8 @@
 
 Shows stored conversations, job records, pending approvals and the sync state. A request reads
 files (the ledger through `threads.load`, stored bodies, the sync status file, the board cache)
-and writes nothing, opens no node connection and starts no process. Stdlib HTTP server on
+and writes nothing (except `/enter`, which consumes an access key in `web/access.json`), opens no node connection and starts no process. Every route except /healthz needs a session
+cookie obtained with a one-time key (`rb_host.webaccess`). Stdlib HTTP server on
 loopback; GET and HEAD only; no script, no form, no external resource. This module imports
 neither `mcp` nor `rb_host.server` nor `rb_host.board` at module level (`board` is loaded on the
 first /nodes request).
@@ -15,16 +16,20 @@ import json
 import os
 import re
 import sys
+import threading
+import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from rb_node.withheld import Withheld
 
-from . import configure, jobs, threads
+from . import configure, jobs, threads, webaccess
+from .webaccess import AccessError
 
 DEFAULT_PORT = 8767
-ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
+ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|enter|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
 CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; form-action 'none'; "
        "base-uri 'none'; frame-ancestors 'none'")
 LOOPBACK_BINDS = ("127.0.0.1",)
@@ -38,7 +43,8 @@ STYLE = ("body{font-family:system-ui,sans-serif;margin:16px;max-width:1200px}"
          ".banner{background:#fff3cd;padding:4px 8px;margin:4px 0}"
          ".rec{border-top:1px solid #bbb;margin-top:12px}")
 _NAMES = {"": "index", "threads": "threads", "jobs": "jobs", "nodes": "nodes",
-          "healthz": "healthz"}
+          "healthz": "healthz", "enter": "enter"}
+NEED_KEY = 'access key required: run "rb web key" in a hub terminal and open the address it prints'
 
 
 # -- addressing ---------------------------------------------------------------------------
@@ -373,19 +379,16 @@ def _thread_page(cfg: Any, wh: Withheld, anyid: str) -> Tuple[int, str, bytes]:
     return 200, "text/html; charset=utf-8", _page("Thread", "".join(parts), 60)
 
 
-def _healthz(cfg: Any) -> bytes:
-    try:
-        mt = os.stat(str(jobs.ledger_for(cfg).path)).st_mtime_ns  # type: Optional[int]
-    except OSError:
-        mt = None
-    return json.dumps({"ok": True, "ledger_mtime_ns": mt}).encode("utf-8")
+def _healthz() -> bytes:
+    """Liveness only: this route needs no session, so it carries no data of the hub."""
+    return json.dumps({"ok": True}).encode("utf-8")
 
 
 def render(cfg: Any, route: str, arg: Optional[str]) -> Tuple[int, str, bytes]:
     """(status, content type, body) for one route. Reads files only."""
     html_type = "text/html; charset=utf-8"
     if route == "healthz":
-        return 200, "application/json; charset=utf-8", _healthz(cfg)
+        return 200, "application/json; charset=utf-8", _healthz()
     wh = Withheld.load(Path(cfg.withheld_patterns_file))
     if route == "index":
         return 200, html_type, _index(cfg, wh)
@@ -421,6 +424,47 @@ class _Handler(BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(body)
 
+    def _session_ok(self) -> bool:
+        """Any value under the exact cookie name may be the session token (at most 8 tried);
+        junk in other cookies or duplicates of the name does not matter."""
+        name = cookie_name(self.server.server_address[1])  # type: ignore[attr-defined]
+        tried = 0
+        for line in self.headers.get_all("Cookie") or []:
+            for part in str(line).split(";"):
+                k, sep, v = part.partition("=")
+                if sep and k.strip() == name:
+                    tried += 1
+                    if webaccess.session_ok(self.server.cfg, v.strip()):  # type: ignore[attr-defined]
+                        return True
+                    if tried >= 8:
+                        return False
+        return False
+
+    def _enter(self, raw: str, head: bool) -> None:
+        """GET /enter?key=...: exchange a one-time key for a session cookie. HEAD never does."""
+        keys = []  # type: List[str]
+        skip = False
+        purpose = " ".join((self.headers.get_all("Sec-Purpose") or [])
+                           + (self.headers.get_all("Purpose") or [])).lower()
+        if "prefetch" in purpose or "preview" in purpose:
+            skip = True  # a prefetch or preview never uses a key; the 401 body is complete on GET
+        if not (head or skip) and "?" in raw:
+            keys = [v for k, v in urllib.parse.parse_qsl(raw.split("?", 1)[1].split("#")[0],
+                                                          keep_blank_values=True) if k == "key"]
+        got = webaccess.redeem(self.server.cfg, keys[0]) if len(keys) == 1 else None  # type: ignore[attr-defined]
+        if got is None:
+            return self._plain(401, NEED_KEY, head)
+        token, seconds = got
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Set-Cookie", "%s=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%d"
+                         % (cookie_name(self.server.server_address[1]), token, seconds))  # type: ignore[attr-defined]
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+
     def _serve(self, head: bool) -> None:
         host = (self.headers.get("Host") or "").lower()
         if host not in self.server.allowed:  # type: ignore[attr-defined]
@@ -429,6 +473,10 @@ class _Handler(BaseHTTPRequestHandler):
         route, arg = route_of(raw)
         if route == "other" or self.path.split("?", 1)[0] != raw.split("?", 1)[0]:
             return self._plain(404, "not found", head)
+        if route == "enter":
+            return self._enter(raw, head)
+        if route != "healthz" and self.server.require_key and not self._session_ok():  # type: ignore[attr-defined]
+            return self._plain(401, NEED_KEY, head)
         try:
             status, ctype, data = render(self.server.cfg, route, arg)  # type: ignore[attr-defined]
         except Exception:
@@ -482,8 +530,114 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+PROC_TCP = "/proc/net/tcp"
+
+
+def _hexaddr(addr: Tuple[Any, ...]) -> str:
+    """'127.0.0.1', 8767 as /proc/net/tcp writes it: little-endian IPv4 hex, ':', port hex."""
+    parts = str(addr[0]).split(".")
+    if len(parts) != 4:
+        raise ValueError("not an IPv4 address")
+    octets = [int(x) for x in parts]
+    if any(not 0 <= o <= 255 for o in octets) or not 0 <= int(addr[1]) <= 65535:
+        raise ValueError("not an IPv4 address")
+    return "%02X%02X%02X%02X:%04X" % (octets[3], octets[2], octets[1], octets[0], int(addr[1]))
+
+
+def socket_owner(tcp_text: str, client: Tuple[Any, ...], server: Tuple[Any, ...]) -> Optional[int]:
+    """The uid column of the row of `/proc/net/tcp` text whose local address is `client` and
+    whose remote address is `server` (the client's end of the connection), or None."""
+    try:
+        want_local, want_remote = _hexaddr(client), _hexaddr(server)
+    except (ValueError, TypeError, IndexError):
+        return None
+    for line in tcp_text.splitlines()[1:]:
+        f = line.split()
+        if len(f) >= 8 and f[1].upper() == want_local and f[2].upper() == want_remote:
+            try:
+                return int(f[7])
+            except ValueError:
+                return None
+    return None
+
+
+def proc_tcp_readable() -> bool:
+    try:
+        with open(PROC_TCP, encoding="ascii") as fh:
+            fh.readline()
+        return True
+    except OSError:
+        return False
+
+
+MAX_CONNECTIONS = 32  # connections in the account check or being served at once
+QUEUE_SIZE = 128
+REFUSAL_LOG_INTERVAL_S = 10.0
+
+
+def _clock() -> float:
+    return time.monotonic()
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
+    request_queue_size = QUEUE_SIZE
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+        self._slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        self._refused = 0
+        self._last_log = None  # type: Optional[float]
+        self._log_lock = threading.Lock()
+        super().__init__(*a, **k)
+
+    def _refuse(self) -> None:
+        """Count a refusal; write at most one line per interval (no address, no port)."""
+        with self._log_lock:
+            self._refused += 1
+            now = _clock()
+            if self._last_log is not None and now - self._last_log < REFUSAL_LOG_INTERVAL_S:
+                return
+            n, self._refused, self._last_log = self._refused, 0, now
+        sys.stderr.write("refused: %d connection(s) not owned by this account or over the limit\n"
+                         % n)
+
+    def verify_request(self, request: Any, client_address: Any) -> bool:
+        """Runs in the accept thread, so it only takes a slot: at once, without blocking and
+        without reading anything. The account check runs in the connection's own thread."""
+        if self._slots.acquire(False):
+            return True
+        self._refuse()
+        return False
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()  # the thread never started, so its `finally` will not run
+            raise
+
+    def _owned(self, request: Any, client_address: Any) -> bool:
+        if not self.peer_check:  # type: ignore[attr-defined]
+            return True
+        try:
+            with open(PROC_TCP, encoding="ascii") as fh:
+                uid = socket_owner(fh.read(), client_address, request.getsockname())
+            return uid is not None and uid == os.getuid()
+        except Exception:
+            return False  # fail closed
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        """The account check comes first, before any request byte is read."""
+        try:
+            if not self._owned(request, client_address):
+                self._refuse()
+                return
+            self.finish_request(request, client_address)
+        except Exception:
+            self.handle_error(request, client_address)
+        finally:
+            self.shutdown_request(request)
+            self._slots.release()
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         sys.stderr.write("request error: %s\n" % sys.exc_info()[0].__name__)
@@ -497,11 +651,23 @@ def check_bind(bind: str, port: int) -> None:
         raise ValueError("--port must be between 0 and 65535")
 
 
-def make_server(cfg: Any, bind: str = "127.0.0.1", port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
-    """Build (do not start) the page server. Only a loopback bind is accepted."""
+def cookie_name(port: int) -> str:
+    """Cookies are not separated by port, so the port is part of the name."""
+    return "rb_web_%d" % port
+
+
+def make_server(cfg: Any, bind: str = "127.0.0.1", port: int = DEFAULT_PORT,
+                require_key: bool = True, peer_check: bool = True) -> ThreadingHTTPServer:
+    """Build (do not start) the page server. Only a loopback bind is accepted.
+
+    `require_key=False` serves every route without a session. It exists only for tests that are
+    about rendering; no command-line flag or config key reaches it. Likewise `peer_check=False`
+    (accept connections of any account) is for tests only."""
     check_bind(bind, port)
     srv = _Server((bind, port), _Handler)
     srv.cfg = cfg  # type: ignore[attr-defined]
+    srv.require_key = require_key  # type: ignore[attr-defined]
+    srv.peer_check = peer_check  # type: ignore[attr-defined]
     srv.allowed = allowed_hosts(srv.server_address[1])  # type: ignore[attr-defined]
     return srv
 
@@ -518,11 +684,77 @@ def serve(cfg: Any, bind: str, port: int) -> None:
         srv.server_close()
 
 
+def _access_error(exc: Exception) -> str:
+    return "error: %s; nothing was changed; to replace the file run: rb web key --revoke" % exc
+
+
+def key_main(args: argparse.Namespace) -> int:
+    """rb web key: issue a one-time access key, or revoke everything, or show counts."""
+    if args.revoke or args.status:
+        cfg = configure.host_cfg()
+        if cfg is None:
+            return 1
+        if args.revoke:
+            try:
+                k, n = webaccess.revoke_all(cfg)
+            except FileNotFoundError:
+                print("error: the data directory %s does not exist; run: rb setup" % cfg.data_root)
+                return 1
+            except OSError as exc:
+                print("error: cannot write the access file (%s)"
+                      % (exc.strerror or type(exc).__name__))
+                return 1
+            print("revoked %d pending key(s) and %d session(s)" % (k, n))
+        else:
+            try:
+                k, n = webaccess.counts_strict(cfg)
+            except AccessError as exc:
+                print(_access_error(exc))
+                return 1
+            print("%d pending key(s), %d live session(s)" % (k, n))
+        return 0
+    lo, hi = webaccess.KEY_MINUTES
+    if not lo <= args.minutes <= hi:
+        print("error: --minutes must be between %d and %d" % (lo, hi))
+        return 1
+    lo, hi = webaccess.SESSION_HOURS
+    if not lo <= args.session_hours <= hi:
+        print("error: --session-hours must be between %d and %d" % (lo, hi))
+        return 1
+    if not 1 <= args.port <= 65535:
+        print("error: --port must be between 1 and 65535")
+        return 1
+    cfg = configure.host_cfg()
+    if cfg is None:
+        return 1
+    try:
+        key = webaccess.issue_key(cfg, args.minutes, args.session_hours)
+    except AccessError as exc:
+        print(_access_error(exc))
+        return 1
+    except FileNotFoundError:
+        print("error: the data directory %s does not exist; run: rb setup" % cfg.data_root)
+        return 1
+    except OSError as exc:
+        print("error: cannot write the access file (%s)" % (exc.strerror or type(exc).__name__))
+        return 1
+    expires = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() + args.minutes * 60))
+    print("http://127.0.0.1:%d/enter?key=%s" % (args.port, key))
+    print("the key works once and expires at %s (%d minutes)" % (expires, args.minutes))
+    print("the browser session then lasts %d hours" % args.session_hours)
+    return 0
+
+
 def cli_main(args: argparse.Namespace) -> int:
+    if args.action == "key":
+        return key_main(args)
     try:
         check_bind(args.bind, args.port)
     except ValueError as exc:
         print("error: %s" % exc)
+        return 1
+    if not proc_tcp_readable():
+        print("error: the hub page needs /proc/net/tcp to check who connects (Linux only)")
         return 1
     cfg = configure.host_cfg()
     if cfg is None:

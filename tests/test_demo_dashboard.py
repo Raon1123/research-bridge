@@ -6,6 +6,7 @@ import http.client
 import importlib.util
 import os
 import threading
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -22,12 +23,26 @@ def _load_demo():
     return mod
 
 
-def _get(port, path, host):
+def _get(port, path, host, cookie=None):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
     try:
-        c.request("GET", path, headers={"Host": host})
+        c.request("GET", path, headers=dict({"Host": host}, **({"Cookie": cookie} if cookie else {})))
         r = c.getresponse()
         return r.status, r.read().decode("utf-8")
+    finally:
+        c.close()
+
+
+def _enter(address):
+    """Open the printed address as a browser does: take the cookie from the 303 reply."""
+    u = urllib.parse.urlsplit(address)
+    c = http.client.HTTPConnection(u.hostname, u.port, timeout=20)
+    try:
+        c.request("GET", u.path + "?" + u.query, headers={"Host": "%s:%d" % (u.hostname, u.port)})
+        r = c.getresponse()
+        r.read()
+        assert r.status == 303 and r.getheader("Location") == "/"
+        return r.getheader("Set-Cookie").split(";", 1)[0]
     finally:
         c.close()
 
@@ -69,13 +84,16 @@ def test_demo_pages_200_and_seeded_thread(tmp_path, monkeypatch):
         assert len(full) == 1
         recs = [r for r in full[0]["records"] if r.get("msg_kind") != "event"]
         m1 = next(r["id"] for r in recs if r["direction"] == "out" and not r.get("reply_to"))
-        code, listing = _get(wport, "/threads", whost)
+        assert _get(wport, "/threads", whost)[0] == 401  # the page needs the key
+        address = demo.hub_page_address(web_srv)
+        cookie = _enter(address)
+        code, listing = _get(wport, "/threads", whost, cookie)
         assert code == 200 and ('/thread/%s"' % full[0]["id"]) in listing
-        code, page = _get(wport, "/thread/%s" % m1, whost)
+        code, page = _get(wport, "/thread/%s" % m1, whost, cookie)
         assert code == 200
         for r in recs:
             assert r["id"] in page
-        assert _get(wport, "/", whost)[0] == 200
+        assert _get(wport, "/", whost, cookie)[0] == 200
     finally:
         srv.shutdown()
         web_srv.shutdown()
@@ -95,6 +113,12 @@ def test_script_prints_flushed_lines_and_removes_its_temp_dir_on_sigterm(tmp_pat
     try:
         lines = [p.stdout.readline() for _ in range(3)]  # blocks until flushed
         assert lines[0].startswith("demo data: ") and "hub page" in lines[2]
+        address = lines[2].split("hub page: ", 1)[1].split(" ", 1)[0]
+        assert "/enter?key=" in address
+        cookie = _enter(address)
+        u = urllib.parse.urlsplit(address)
+        code, body = _get(u.port, "/threads", "127.0.0.1:%d" % u.port, cookie)
+        assert code == 200
         demo_dir = Path(lines[0].split(": ", 1)[1].strip())
         assert demo_dir.is_dir()
         p.send_signal(signal.SIGTERM)
@@ -104,3 +128,22 @@ def test_script_prints_flushed_lines_and_removes_its_temp_dir_on_sigterm(tmp_pat
         if p.poll() is None:
             p.kill()
         p.stdout.close()
+
+
+def test_hub_page_not_served_without_proc_net_tcp(tmp_path, monkeypatch):
+    from rb_host import web
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "missing-host.json"))
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
+    monkeypatch.chdir(os.getcwd())
+    demo = _load_demo()
+    srv, web_srv = demo.start(tmp_path / "demo", 0, 0)
+    try:
+        ok, line = demo.hub_page_line(web_srv)
+        assert ok and "/enter?key=" in line
+        monkeypatch.setattr(web, "proc_tcp_readable", lambda: False)
+        ok, line = demo.hub_page_line(web_srv)
+        assert not ok and line.startswith("hub page: not available")
+        assert "the hub page needs /proc/net/tcp to check who connects (Linux only)" in line
+    finally:
+        srv.server_close()
+        web_srv.server_close()
