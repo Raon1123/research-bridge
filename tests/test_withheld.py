@@ -151,3 +151,15 @@ def test_good_source_no_warning(tmp_path):
     w = Withheld.load(src)
     assert w.source_error is None and w.extra_count == 1
     assert Withheld.load(None).source_error is None
+
+
+def test_rejected_patterns_counted(tmp_path):
+    src = tmp_path / "w.json"
+    src.write_text(json.dumps({"patterns": ["good_[a-z]+", "bad([", "other_x"]}), encoding="utf-8")
+    w = Withheld.load(src)
+    assert w.extra_count == 2
+    assert w.rejected_count == 1
+    assert w.rejected_indexes == [1]
+    assert w.source_error is None
+    assert w.source_set is True
+    assert Withheld.load(None).source_set is False

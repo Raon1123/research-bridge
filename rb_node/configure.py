@@ -113,8 +113,25 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
             raise ConfigError("%s needs a positive integer" % key)
     elif not isinstance(value, str):
         value = str(value)
+    from .config import NodeConfig, PATH_KEYS, PATH_LIST_KEYS, default_dependents
+    if key in PATH_KEYS and isinstance(value, str) and value.startswith("~"):
+        value = os.path.expanduser(value)
+    if key in PATH_LIST_KEYS and isinstance(value, list):
+        value = [os.path.expanduser(v) if v.startswith("~") else v for v in value]
     out = dict(data)
     out[key] = value
+    if key == "trm_root" and isinstance(value, str):
+        old = data.get("trm_root")
+        old = old if isinstance(old, str) else NodeConfig().trm_root
+        if old != value:
+            od, nd = default_dependents(old), default_dependents(value)
+            if out.get("queue_dir", od["queue_dir"]) == od["queue_dir"]:
+                out["queue_dir"] = nd["queue_dir"]
+            wr = out.get("write_roots", [NodeConfig().write_roots[0], od["queue_jobs"]])
+            if isinstance(wr, list):
+                out["write_roots"] = [nd["queue_jobs"] if e == od["queue_jobs"] else e for e in wr]
+            if out.get("withheld_source") == od["old_withheld"]:
+                out["withheld_source"] = NodeConfig().withheld_source
     return out
 
 

@@ -183,10 +183,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if ns.command == "serve-remote":
         # SSH_ORIGINAL_COMMAND is deliberately ignored: the protocol is on stdin.
         from .config import load_config
-        from .remote import serve
+        from .remote import serve, serve_unconfigured
         try:
             cfg = load_config()
-        except (OSError, ValueError) as exc:
+        except (FileNotFoundError, ValueError) as exc:
+            # Missing or invalid node.json: stay alive so the hub's `hello` can say so.
+            sys.stderr.write("rb-node: %s\n" % exc)
+            return serve_unconfigured(sys.stdin.buffer, sys.stdout.buffer)
+        except OSError as exc:
             sys.stderr.write("rb-node: %s\n" % exc)
             return 1
         return serve(cfg, sys.stdin.buffer, sys.stdout.buffer)

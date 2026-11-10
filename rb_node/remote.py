@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List
 
-from . import __version__, approval, gitinfo, jobs, spawn
+from . import PROTOCOL, __version__, approval, doctor, gitinfo, jobs, spawn
 from .audit import Audit
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _read_json
@@ -61,7 +61,9 @@ class Node:
     # -- messages ----------------------------------------------------------
     def hello(self, args: dict) -> dict:
         return {"node": socket.gethostname(), "version": __version__,
-                "withheld_extra": self.withheld.extra_count}
+                "withheld_extra": self.withheld.extra_count,
+                "protocol": PROTOCOL, "ops": sorted(self.ops),
+                "state": doctor.state(self.cfg, self.withheld)}
 
     def _msg_dir(self, msg_id: str) -> Path:
         return self.mb.root / "in" / _check_id(msg_id)
@@ -405,8 +407,20 @@ class Node:
         return resp
 
 
-def serve(cfg: NodeConfig, stdin: BinaryIO, stdout: BinaryIO) -> int:
-    node = Node(cfg)
+class Unconfigured:
+    """Answers `hello` when node.json is missing or invalid. Writes nothing, creates nothing."""
+
+    def handle(self, msg: dict) -> dict:
+        rid = msg.get("id")
+        rid = rid if isinstance(rid, str) else str(rid or "")
+        if msg.get("op") == "hello":
+            return ok(rid, {"node": socket.gethostname(), "version": __version__,
+                            "withheld_extra": 0, "protocol": PROTOCOL, "ops": ["hello"],
+                            "state": {"configured": False}})
+        return err(rid, "not_configured", "node.json missing or invalid")
+
+
+def _loop(node: Any, stdin: BinaryIO, stdout: BinaryIO) -> int:
     while True:
         try:
             msg = read_message(stdin)
@@ -420,3 +434,11 @@ def serve(cfg: NodeConfig, stdin: BinaryIO, stdout: BinaryIO) -> int:
             return 0
         stdout.write(encode(node.handle(msg)))
         stdout.flush()
+
+
+def serve(cfg: NodeConfig, stdin: BinaryIO, stdout: BinaryIO) -> int:
+    return _loop(Node(cfg), stdin, stdout)
+
+
+def serve_unconfigured(stdin: BinaryIO, stdout: BinaryIO) -> int:
+    return _loop(Unconfigured(), stdin, stdout)

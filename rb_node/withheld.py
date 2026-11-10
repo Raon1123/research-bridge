@@ -21,14 +21,20 @@ _TEXT_EXT = {".tex", ".md", ".txt", ".csv", ".json", ".svg"}
 _NAME_ONLY_EXT = {".png", ".jpg", ".jpeg"}
 
 
-def _compile(patterns: List[str]) -> list:
+def _compile_report(patterns: List[str]) -> Tuple[list, List[int]]:
+    """Compiled patterns and the indexes (into `patterns`) of those that failed to compile."""
     out = []
-    for p in patterns:
+    failed = []  # type: List[int]
+    for i, p in enumerate(patterns):
         try:
             out.append(re.compile(p))
         except re.error:
-            continue
-    return out
+            failed.append(i)
+    return out, failed
+
+
+def _compile(patterns: List[str]) -> list:
+    return _compile_report(patterns)[0]
 
 
 def _as_list(v: object) -> list:
@@ -40,9 +46,15 @@ class Withheld:
         # The fallback is always included, so an empty or broken source cannot disable it.
         self.patterns = list(FALLBACK_PATTERNS) + [p for p in patterns if p not in FALLBACK_PATTERNS]
         self._re = _compile(self.patterns)
+        # Indexes into `patterns` (the source list) that failed to compile; fallbacks never appear.
+        self.rejected_indexes = [i for i, p in enumerate(patterns)
+                                 if p not in FALLBACK_PATTERNS and not _compile([p])]  # type: List[int]
+        self.rejected_count = len(self.rejected_indexes)
+        self.source_set = False
         # Set by load(): None, "unreadable" or "unparseable" when a source was given but unusable.
         self.source_error = None  # type: Optional[str]
-        self.extra_count = len(self.patterns) - len(FALLBACK_PATTERNS)
+        # Compiled patterns from the source, without duplicates of the fallback patterns.
+        self.extra_count = len(self.patterns) - len(FALLBACK_PATTERNS) - self.rejected_count
 
     @classmethod
     def load(cls, source: Optional[Path]) -> "Withheld":
@@ -77,6 +89,7 @@ class Withheld:
                 error = error or "unparseable"
         w = cls(extra)
         w.source_error = error
+        w.source_set = source is not None
         return w
 
     def _hit(self, text: str) -> bool:
