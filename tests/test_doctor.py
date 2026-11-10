@@ -247,6 +247,35 @@ def test_offline_sync_status_unfinished_pass(hub, monkeypatch, tmp_path):
     assert r.level == "warn" and "never finished" in r.message
 
 
+def test_mcp_entry_from_worktree_is_only_a_warning(hub, monkeypatch, tmp_path):
+    _complete(hub, monkeypatch, tmp_path)
+    main_co = tmp_path / "main"
+    main_co.mkdir()
+    wt = tmp_path / "main" / ".claude" / "worktrees" / "w"
+    wt.mkdir(parents=True)
+    monkeypatch.setattr(configure, "REPO", main_co)
+    entry = _entry(tmp_path / "uv")
+    configure.claude_json_path().write_text(
+        json.dumps({"mcpServers": {"research-bridge": entry}}), encoding="utf-8")
+    assert by_id(doctor.offline())["mcp_entry"][0].level == "ok"
+    monkeypatch.setattr(configure, "REPO", wt)
+    r = by_id(doctor.offline())["mcp_entry"][0]
+    assert r.level == "warn" and "runs from a git worktree" in r.message
+    assert configure.mcp_registered(wt) == (True, "from_worktree")
+    # another difference besides the checkout path is still a difference
+    entry["env"] = dict(entry["env"], RB_HOST_CONFIG="/elsewhere/host.json")
+    configure.claude_json_path().write_text(
+        json.dumps({"mcpServers": {"research-bridge": entry}}), encoding="utf-8")
+    assert configure.mcp_registered(wt) == (True, "differs")
+    # outside a worktree a different checkout path is a difference
+    monkeypatch.setattr(configure, "REPO", tmp_path / "other")
+    (tmp_path / "other").mkdir()
+    entry["env"] = _entry(tmp_path / "uv")["env"]
+    configure.claude_json_path().write_text(
+        json.dumps({"mcpServers": {"research-bridge": entry}}), encoding="utf-8")
+    assert configure.mcp_registered(tmp_path / "other") == (True, "differs")
+
+
 def test_offline_key_file_no_bridge_identity(hub, monkeypatch, tmp_path):
     _complete(hub, monkeypatch, tmp_path)
     d = hub.ssh_dir / "research-bridge"

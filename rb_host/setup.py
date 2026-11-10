@@ -526,6 +526,10 @@ def mcp_step(a: Args) -> str:
     if found and not problem:
         _say("MCP server research-bridge is registered")
         return "skipped"
+    if found and problem == "from_worktree":
+        _say("MCP server research-bridge is registered at another checkout (this rb runs from a "
+             "git worktree, so the paths differ)")
+        return "skipped"
     if found:
         _say("the registered MCP entry has a problem: %s" % {
             "missing path": "it points at a missing path", "worktree": "it points at a worktree",

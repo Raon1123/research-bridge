@@ -355,9 +355,13 @@ def offline(node: Optional[str] = None) -> List[Result]:
     else:
         msg = {"missing path": "MCP entry points at a missing path",
                "worktree": "MCP entry points at a worktree",
+               "from_worktree": "this rb runs from a git worktree; the registered MCP entry "
+                                "points at another checkout",
                "differs": "MCP entry differs from the one rb setup prints (args or RB_HOST_* env); "
                           "re-register it (a leftover SSH_AUTH_SOCK may stay)"}.get(problem, "MCP server not registered")
-        res.append(_bad("mcp_entry", "warn", msg, configure.mcp_command()))
+        res.append(_bad("mcp_entry", "warn", msg,
+                        "run rb from the main checkout" if problem == "from_worktree"
+                        else configure.mcp_command()))
     if configure.local_path().is_file():
         res.append(_ok("local_json", str(configure.local_path())))
     else:

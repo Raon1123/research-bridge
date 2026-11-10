@@ -159,7 +159,11 @@ def registered_entry(checkout: Path) -> Optional[Dict[str, Any]]:
 
 
 def mcp_registered(checkout: Path) -> Tuple[bool, str]:
-    """(found, problem); problem is "", "missing path", "worktree" or "differs"."""
+    """(found, problem); problem is "", "missing path", "worktree", "from_worktree" or "differs".
+
+    "from_worktree": this rb runs from a git worktree and the entry is the one a main checkout
+    would print (only the --directory value differs). A warning, not a difference.
+    """
     entry = registered_entry(checkout)
     if entry is None:
         return False, ""
@@ -176,6 +180,15 @@ def mcp_registered(checkout: Path) -> Tuple[bool, str]:
             return True, "missing path"
     want = mcp_entry()["research-bridge"]
     got_env = entry.get("env") if isinstance(entry.get("env"), dict) else {}
+    in_worktree = "/.claude/worktrees/" in REPO.as_posix() + "/"
+    if in_worktree and "--directory" in args and "--directory" in want["args"]:
+        want_args = list(want["args"])
+        want_args[want_args.index("--directory") + 1] = args[args.index("--directory") + 1]
+        same_but_path = (args == want_args and Path(cmd).name == Path(want["command"]).name
+                         and all(got_env.get(k) == v for k, v in want["env"].items())
+                         and not ("RB_HOST_ROOT" in got_env and "RB_HOST_ROOT" not in want["env"]))
+        if same_but_path:
+            return True, "from_worktree"
     if (args != want["args"]
             or Path(cmd).name != Path(want["command"]).name
             or any(got_env.get(k) != v for k, v in want["env"].items())
