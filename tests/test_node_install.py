@@ -539,6 +539,43 @@ def test_script_update_without_upstream(sh_env, tmp_path):
     assert "no upstream for this branch; installing the current checkout" in r.stdout
 
 
+def test_script_update_runs_the_pulled_script(sh_env, tmp_path):
+    # PM-03 of 2026-11-10-first-live-run.md: the pull replaces the running file; the rest of the
+    # run must be the new script's, with the same options
+    env, home, tree, _ = sh_env
+    genv = dict(env, HOME=str(home), GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+    up, co = tmp_path / "up", tmp_path / "co"
+    git = lambda *a, cwd=None: subprocess.run(["git"] + list(a), cwd=cwd, env=genv, check=True,
+                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    git("init", "-q", "--bare", str(up))
+    git("clone", "-q", str(up), str(co))
+    (co / "scripts").mkdir()
+    text = SCRIPT.read_text(encoding="utf-8")
+    (co / "scripts" / "node-install.sh").write_text(text, encoding="utf-8")
+    os.symlink(str(REPO / "rb_node"), str(co / "rb_node"))
+    git("add", "-A", cwd=co)
+    git("commit", "-q", "-m", "a", cwd=co)
+    git("push", "-q", "origin", "HEAD", cwd=co)
+    other = tmp_path / "other"
+    git("clone", "-q", str(up), str(other))
+    # the new version announces itself before anything else and keeps the rest unchanged
+    newtext = text.replace("set -eu\n", "set -eu\necho \"new-script args: $*\"\n", 1)
+    (other / "scripts" / "node-install.sh").write_text(newtext, encoding="utf-8")
+    git("commit", "-q", "-am", "b", cwd=other)
+    git("push", "-q", "origin", "HEAD", cwd=other)
+    r = subprocess.run(["sh", str(co / "scripts" / "node-install.sh"), "--update",
+                        "--research-root", str(tree)], env=genv, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+                       timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "checkout updated; running the updated scripts/node-install.sh" in r.stdout
+    assert "new-script args: --research-root %s" % tree in r.stdout
+    assert "--update" not in r.stdout.split("new-script args:")[1].splitlines()[0]
+    rec = json.loads((home / ".research-bridge" / "install.json").read_text(encoding="utf-8"))
+    assert rec["source"]["head"] == git("rev-parse", "HEAD", cwd=co).stdout.decode().strip()
+
+
 def test_deploy_examples_and_trm_link_removed():
     assert not (REPO / "scripts" / "trm-link.sh").exists()
     ak = (REPO / "deploy" / "authorized_keys.example").read_text(encoding="utf-8")

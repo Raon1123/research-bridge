@@ -109,9 +109,26 @@ if { [ -n "$HUBKEY" ] || [ -n "$HUBKEYFILE" ]; } && [ -n "$FROM" ]; then
 fi
 
 # -- --update --------------------------------------------------------------------------------
+# A pull can replace this very file while sh is still reading it, so when HEAD moves the rest of
+# the run is the new script's, started afresh with the same options minus --update (postmortem
+# 2026-11-10-first-live-run.md PM-03). The whole if-block is parsed before it runs.
 if [ "$UPDATE" = 1 ]; then
   if git -C "$SRC" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
+    OLDHEAD=$(git -C "$SRC" rev-parse HEAD)
     run git -C "$SRC" pull --ff-only
+    if [ "$DRY" = 0 ] && [ "$(git -C "$SRC" rev-parse HEAD)" != "$OLDHEAD" ]; then
+      set --
+      [ -z "$ROOT" ] || set -- "$@" --research-root "$ROOT"
+      [ -z "$HUBKEY" ] || set -- "$@" --hub-key "$HUBKEY"
+      [ -z "$HUBKEYFILE" ] || set -- "$@" --hub-pubkey "$HUBKEYFILE"
+      [ -z "$HARNESSKEY" ] || set -- "$@" --harness-key "$HARNESSKEY"
+      [ -z "$HARNESSKEYFILE" ] || set -- "$@" --harness-pubkey "$HARNESSKEYFILE"
+      [ -z "$FROM" ] || set -- "$@" --hub-from "$FROM"
+      [ -z "$WFILE" ] || set -- "$@" --withheld-file "$WFILE"
+      [ "$APPLY" = 0 ] || set -- "$@" --apply-authorized-keys
+      echo "checkout updated; running the updated scripts/node-install.sh"
+      exec sh "$SRC/scripts/node-install.sh" "$@"
+    fi
   else
     echo "no upstream for this branch; installing the current checkout"
   fi
