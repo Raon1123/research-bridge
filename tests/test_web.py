@@ -977,3 +977,23 @@ def test_status_reports_corrupt_file_like_issuing(cfg, hostjson, capsys):
     acc.unlink()
     assert cli.main(["web", "key", "--status"]) == 0
     assert capsys.readouterr().out.strip() == "0 pending key(s), 0 live session(s)"
+
+
+def test_slot_is_returned_when_the_connection_thread_cannot_start(cfg, monkeypatch):
+    import socketserver
+    srv = web.make_server(cfg, port=0)
+    try:
+        def boom(self, request, client_address):
+            raise RuntimeError("can't start new thread")
+        monkeypatch.setattr(socketserver.ThreadingMixIn, "process_request", boom)
+        a, b = socket.socketpair()
+        try:
+            for _ in range(web.MAX_CONNECTIONS + 3):  # more often than there are slots
+                assert srv.verify_request(a, ("127.0.0.1", 1)) is True
+                with pytest.raises(RuntimeError):
+                    srv.process_request(a, ("127.0.0.1", 1))
+        finally:
+            a.close()
+            b.close()
+    finally:
+        srv.server_close()

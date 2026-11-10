@@ -609,6 +609,13 @@ class _Server(ThreadingHTTPServer):
         self._refuse()
         return False
 
+    def process_request(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()  # the thread never started, so its `finally` will not run
+            raise
+
     def _owned(self, request: Any, client_address: Any) -> bool:
         if not self.peer_check:  # type: ignore[attr-defined]
             return True
