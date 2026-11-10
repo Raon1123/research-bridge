@@ -393,3 +393,15 @@ def test_blanked_event_body_stays_an_event(tmp_path):
     assert json.loads(out["body"])["event"] == "withheld" and "pp_ltf_x" not in out["body"]
     text = (tmp_path / "data" / "inbox" / "node1" / "e1" / "body.txt").read_text(encoding="utf-8")
     assert text == out["body"]
+
+
+@pytest.mark.parametrize("sep", ["\u2028", "\u0085"])
+def test_store_incoming_quarantines_name_split_by_separator(tmp_path, sep):
+    from rb_node.withheld import FALLBACK_PATTERNS
+    pat = next(p for p in FALLBACK_PATTERNS if p.isidentifier())
+    bad = pat[:3] + sep + pat[3:] + ".png"
+    cfg = _hcfg(tmp_path)
+    item = {"id": "m9", "body": "", "attachments": [{"name": bad}, {"name": "good.txt"}]}
+    cl = FakeClient({bad: b"zz", "good.txt": b"fine"})
+    out = store_incoming(cfg, "node1", item, cl)
+    assert out["quarantined"] == 1 and out["files"] == ["good.txt"]

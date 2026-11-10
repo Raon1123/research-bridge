@@ -19,6 +19,7 @@ FALLBACK_PATTERNS = [
 
 # .svg is XML text (labels live in <text> elements), so it is scanned, not name-checked only.
 _TEXT_EXT = {".tex", ".md", ".txt", ".csv", ".json", ".svg"}
+_ASCII_CTRL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")  # ASCII C0 controls and DEL, not newline
 _NAME_ONLY_EXT = {".png", ".jpg", ".jpeg"}
 
 
@@ -96,12 +97,17 @@ class Withheld:
     def _hit(self, text: str) -> bool:
         if any(r.search(text) for r in self._re):
             return True
-        if text.isascii():
+        if text.isascii() and not _ASCII_CTRL.search(text):
             return False
-        # a name split by a soft hyphen or a zero-width space still reads as the name once a
-        # viewer drops those characters: test a copy without Unicode format characters too
-        plain = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
-        return plain != text and any(r.search(plain) for r in self._re)
+        # a name split by a soft hyphen, a zero-width space, U+2028 or U+0085 still reads as the
+        # name once a viewer drops those characters. Two extra copies are tested: one without
+        # Unicode format characters (Cf), one without any C* character and line/paragraph
+        # separator (Zl, Zp), except the newline, so patterns never match across lines.
+        # The checks only add to the plain test above.
+        no_cf = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+        no_c = "".join(ch for ch in text if ch == "\n" or not (
+            unicodedata.category(ch)[0] == "C" or unicodedata.category(ch) in ("Zl", "Zp")))
+        return any(v != text and any(r.search(v) for r in self._re) for v in (no_cf, no_c))
 
     def name_hit(self, path: str) -> bool:
         return self._hit(str(path).replace("\\", "/"))
