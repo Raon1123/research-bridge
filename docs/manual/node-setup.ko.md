@@ -30,7 +30,7 @@
 수행하는 일은 다음 순서와 같다(스크립트와 `python3 -m rb_node.install`이 전부 처리하며 다른 작업은 필요 없다).
 
 1. **검사:** python 3.8 이상, git, 그리고 이곳이 허브가 아님을 확인한다. `--hub-key`와 `--hub-from`이 주어지면 무엇이든 쓰기 전에 공개 키(형식, base64, bridge 키와 harness 키가 서로 다른지)와 `--hub-from`(쉼표로 구분한 주소 또는 CIDR 범위)을 검증한다. `--research-root`가 없을 때 기존 `node.json`이 있으면 그 값을 유지하고, `node.json`이 없으면 터미널에서 한 번 묻고, 터미널이 아니면 `give --research-root DIR`을 출력하고 멈춘다.
-2. **`--update`일 때만:** 체크아웃에서 `git pull --ff-only`를 실행한다(push는 하지 않는다). 브랜치에 upstream이 없으면 현재 체크아웃을 설치한다.
+2. **`--update`일 때만:** 체크아웃에서 `git pull --ff-only`를 실행한다(push는 하지 않는다). pull로 새 커밋을 받았으면 갱신된 스크립트를 같은 옵션(`--update` 제외)으로 다시 실행하고, 이후 단계는 그 스크립트가 맡는다. 브랜치에 upstream이 없으면 현재 체크아웃을 설치한다.
 3. **코드:** `rb_node/`를 `~/.local/share/research-bridge/releases/<stamp>/`로 복사하고, 심볼릭 링크 `~/.local/share/research-bridge/rb_node`를 그곳으로 원자적으로 바꾼다. 가장 최근 릴리스 두 개와 사용 중인 릴리스를 보관한다. 일반 `rb_node` 디렉터리(이전의 수동 복사로 설치한 코드) 위에서 처음 실행하면 그 디렉터리를 `releases/legacy/`로 옮기며, 그 한 번의 실행 동안 코드가 없는 순간이 생긴다.
 4. **래퍼:** 지금 찾은 `python3`의 절대 경로를 넣어 `~/.local/bin/rb-node`(모드 755)를 쓴다(§3).
 5. **`node.json`:** 없으면 `rb-node config init`을 실행하고, 이어서 `rb-node config set trm_root <root>`를 실행한다(`queue_dir`와 `write_roots`의 큐 항목이 아직 기본값이면 이것들도 함께 옮긴다). 그다음 앞서 설명한 대로 `claude_bin`을 설정한다.

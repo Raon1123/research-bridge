@@ -28,7 +28,7 @@ Copy the hub's withheld pattern file to the node first (from the hub: `scp`; for
 What it does, in order (the script and `python3 -m rb_node.install` do all of it; nothing else is needed):
 
 1. **Checks** python 3.8 or later, git, and that this is not a hub; when `--hub-key` and `--hub-from` are given, validates the public keys (type, base64, and that the bridge and harness keys differ) and `--hub-from` (addresses or CIDR ranges, comma-separated) before writing anything. Without `--research-root`, an existing `node.json` keeps its value; with no `node.json` it asks once on a terminal and otherwise stops with `give --research-root DIR`.
-2. **`--update` only:** `git pull --ff-only` in the checkout (never a push); if the branch has no upstream it installs the current checkout.
+2. **`--update` only:** `git pull --ff-only` in the checkout (never a push). When the pull brought new commits, the updated script is run with the same options minus `--update` and does the remaining steps. If the branch has no upstream it installs the current checkout.
 3. **Code:** copies `rb_node/` into `~/.local/share/research-bridge/releases/<stamp>/` and swaps the symlink `~/.local/share/research-bridge/rb_node` to it atomically. It keeps the two newest releases and the one in use. The first run over a plain `rb_node` directory (code installed by the earlier by-hand copy) moves that directory to `releases/legacy/` and leaves a moment without code on that one run.
 4. **Wrapper:** writes `~/.local/bin/rb-node` (mode 755) with the absolute path of the `python3` found now (§3).
 5. **`node.json`:** `rb-node config init` if missing, then `rb-node config set trm_root <root>` (which also moves `queue_dir` and the queue entry of `write_roots` if they still have their defaults), then `claude_bin` as above.
@@ -206,7 +206,7 @@ Which GPU the job gets: the node's queue runner has one worker per GPU and expor
 
 ## 9. Updating and removing
 
-**Update:** in the checkout on the node, `scripts/node-install.sh --update` (pulls with `--ff-only`, copies a new release, swaps the symlink, rewrites the install record, runs the doctor). `node.json`, the mailbox and the approval verifier are kept. Needs the user's go-ahead for the session case. The hub shows the difference as `node_version` in `rb doctor`.
+**Update:** in the checkout on the node, `scripts/node-install.sh --update` (pulls with `--ff-only` and, when the pull brought new commits, runs the updated script with the same options; copies a new release, swaps the symlink, rewrites the install record, runs the doctor). `node.json`, the mailbox and the approval verifier are kept. Needs the user's go-ahead for the session case. The hub shows the difference as `node_version` in `rb doctor`.
 
 **State on 2026-11-10:** the registered node runs `rb_node` 0.1.0 from pre-merge code of branch `claude/node-allowed-gpus` (before PR 48 on `main`). That code has no `doctor`, no `link`, and answers `hello` without a protocol field; the hub treats it as protocol 1 and reports its checks as `unknown`. The first run of `scripts/node-install.sh` from a checkout of `main` updates it (§2, step 3 describes the one-time move of the old directory).
 
