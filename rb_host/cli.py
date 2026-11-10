@@ -225,44 +225,8 @@ def _sync(args: argparse.Namespace) -> int:
     """One pass (or --watch SECONDS) of everything that is safe to do unattended: fetch new node
     messages and events, refresh the board cache, read the git state. Hub to node only. Never
     approves a job and never touches the harness channel."""
-    import json
-    import time
-    from . import board, server
-    from .client import NodeClient
-
-    def once() -> int:
-        cfg = jobs.load_cfg()
-        names = [args.node] if args.node else sorted(cfg.nodes)
-        bad = 0
-        for n in names:
-            line = {"node": n}
-            try:
-                got = server._poll_node(cfg, n)
-                line["new_items"] = len(got.get("items", [])) if isinstance(got, dict) else 0
-                res = board.refresh(cfg, n)
-                line["board"] = {r["source"].split(":")[1]: ("ok" if r["ok"] else r["error"])
-                                 for r in res}
-                with NodeClient(cfg.alias(n)) as c:
-                    g = c.call("git_status")
-                line["trm_head"] = (g.get("trm") or {}).get("head")
-                line["trm_dirty"] = (g.get("trm") or {}).get("dirty_files")
-            except (ValueError, RemoteError, TransportError, OSError) as exc:
-                line["error"] = str(exc)
-                bad += 1
-            print(json.dumps(line, ensure_ascii=False), flush=True)
-        return 1 if bad else 0
-
-    if not args.watch:
-        return once()
-    if args.watch < 30:
-        print("error: --watch must be at least 30 seconds")
-        return 1
-    try:
-        while True:
-            once()
-            time.sleep(args.watch)
-    except KeyboardInterrupt:
-        return 0
+    from . import sync
+    return sync.run(args.node, args.watch)
 
 
 def _share(args: argparse.Namespace) -> int:
@@ -412,6 +376,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     sv.add_argument("--port", type=int, default=8766)
     sv.add_argument("--bind", default="127.0.0.1")
     sh.set_defaults(fn=_share)
+    from . import web as _web  # rb web: read-only hub page (handler in web.py)
+    wb = sub.add_parser("web", help="read-only hub page on loopback; opens no node connection")
+    ws = wb.add_subparsers(dest="action", required=True)
+    wv = ws.add_parser("serve", help="serve the page (GET and HEAD only)")
+    wv.add_argument("--port", type=int, default=_web.DEFAULT_PORT)
+    wv.add_argument("--bind", default="127.0.0.1")
+    wb.set_defaults(fn=_web.cli_main)
     c = sub.add_parser("config", help="write and check host.json and private/local.json")
     cs = c.add_subparsers(dest="action", required=True)
     cs.add_parser("path", help="print where the config files are")

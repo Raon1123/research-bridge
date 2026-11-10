@@ -235,8 +235,17 @@ def refresh(cfg: HostConfig, node: Optional[str] = None,
             except Exception as exc:  # one source must not stop the others
                 got = {"error": type(exc).__name__, "payload": b""}
             err = got.get("error")
-            rec = {"source": sid, "fetched_at": now(), "ok": err is None, "error": err,
-                   "cadence_s": CADENCE_S[name], "items": got.get("items", [])}
+            stamp = now()
+            if err is None:
+                rec = {"source": sid, "fetched_at": stamp, "attempted_at": stamp, "ok": True,
+                       "error": None, "cadence_s": CADENCE_S[name],
+                       "items": got.get("items", [])}
+            else:  # keep the last good items; they show as stale because fetched_at stays old
+                prev = _node_source(cfg, sid, name)
+                items = prev.get("items", [])
+                rec = {"source": sid, "fetched_at": prev.get("fetched_at"),
+                       "attempted_at": stamp, "ok": False, "error": err,
+                       "cadence_s": CADENCE_S[name], "items": items if isinstance(items, list) else []}
             _write_json(_cache_path(cfg, sid), rec)
             _audit(cfg, sid, got.get("payload", b""), "ok" if err is None else str(err))
             out.append({"source": sid, "ok": err is None, "error": err})
@@ -357,8 +366,12 @@ def load(cfg: HostConfig) -> dict:
     for n in sorted(cfg.nodes):
         for name in NODE_SOURCES:
             sources.append(_node_source(cfg, "%s:%s" % (n, name), name))
-    sources.append(_portfolio_source(cfg.board.get("portfolio", DEFAULT_PORTFOLIO), waiting))
-    sources.append(_priorities_source(cfg.board.get("priorities", DEFAULT_PRIORITIES), waiting))
+    portfolio = cfg.board.get("portfolio") or (DEFAULT_PORTFOLIO if os.name == "nt" else None)
+    priorities = cfg.board.get("priorities") or (DEFAULT_PRIORITIES if os.name == "nt" else None)
+    if portfolio is not None:
+        sources.append(_portfolio_source(portfolio, waiting))
+    if priorities is not None:
+        sources.append(_priorities_source(priorities, waiting))
     waiting.sort(key=lambda w: w["order"])
     for w in waiting:
         del w["order"]

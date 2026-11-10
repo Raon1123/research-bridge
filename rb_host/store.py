@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import time
+import uuid
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from rb_node.withheld import Withheld
 
@@ -97,11 +99,11 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     root = Path(cfg.data_root)
     inbox = root / "inbox" / node / msg_id
     quar = root / "quarantine" / node / msg_id
-    stage_dir = quar / ".stage"
+    stage_dir = quar / (".stage-%d-%s" % (os.getpid(), uuid.uuid4().hex[:8]))
     body, body_hits = wh.mask_text(str(item.get("body", "")))
     inbox.mkdir(parents=True, exist_ok=True)
     # the masked body is stored before the caller acks the item (PM-09)
-    (inbox / "body.txt").write_text(body, encoding="utf-8")
+    _atomic_write(inbox / "body.txt", body)
     files = []  # type: list
     used = set()  # type: set
     for idx, att in enumerate(item.get("attachments", [])):
@@ -147,6 +149,10 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
         entry["bytes"] = dest.stat().st_size
         files.append(entry)
     shutil.rmtree(str(stage_dir), ignore_errors=True)
+    try:
+        quar.rmdir()  # only succeeds when empty (nothing was quarantined)
+    except OSError:
+        pass
     prov_files = []
     for f in files:
         pf = dict(f)
@@ -156,9 +162,103 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     prov = {"node": node, "msg_id": msg_id,
             "received_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "body_withheld_lines": body_hits, "files": prov_files}
-    (inbox / "provenance.json").write_text(json.dumps(prov, ensure_ascii=False, indent=2),
-                                           encoding="utf-8")
+    _atomic_write(inbox / "provenance.json", json.dumps(prov, ensure_ascii=False, indent=2))
     return {"msg_id": msg_id, "node": node, "kind": item.get("kind"),
             "reply_to": item.get("reply_to"), "body": body,
             "files": [f["name"] for f in files if f["status"] == "ok"],
             "quarantined": sum(1 for f in files if f["status"] == "quarantined")}
+
+
+def sweep_stage_dirs(cfg: HostConfig, node: str, older_than_s: float = 3600,
+                     now_s: Optional[float] = None) -> int:
+    """Remove `quarantine/<node>/*/.stage-*` directories left by a killed process and then
+    their empty parents. Returns the number of stage directories removed; never raises."""
+    base = Path(cfg.data_root) / "quarantine" / node
+    now_s = time.time() if now_s is None else now_s
+    removed = 0
+    try:
+        parents = [p for p in base.iterdir() if p.is_dir() and not p.is_symlink()]
+    except OSError:
+        return 0
+    for parent in parents:
+        try:
+            stages = [p for p in parent.iterdir() if p.name.startswith(".stage-")]
+        except OSError:
+            continue
+        for st in stages:
+            try:
+                if st.is_symlink() or not st.is_dir() or not _within(st, base):
+                    continue
+                if now_s - st.stat().st_mtime <= older_than_s:
+                    continue
+                shutil.rmtree(str(st), ignore_errors=True)
+                if not st.exists():
+                    removed += 1
+            except OSError:
+                continue
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
+    return removed
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_name(".%s.%s.tmp" % (path.name, uuid.uuid4().hex[:8]))
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(str(tmp), str(path))
+    except BaseException:
+        try:
+            os.unlink(str(tmp))
+        except OSError:
+            pass
+        raise
+
+
+def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
+                   files: List[Path]) -> dict:
+    """Keep a masked copy of an outgoing body under outbox/<node>/<msg_id>/ (design 6.5).
+
+    The copy is masked with the hub's patterns, so it is not always the text that was sent.
+    Attachment files are not copied; only name, size and hash are recorded."""
+    if not valid_msg_id(msg_id):
+        raise ValueError("unsafe msg_id")
+    cfg.alias(node)
+    root = Path(cfg.data_root) / "outbox" / node
+    d = root / msg_id
+    if not _within(d, root):
+        raise ValueError("unsafe msg_id")
+    wh = Withheld.load(Path(cfg.withheld_patterns_file))
+    masked, hits = wh.mask_text(body)
+    atts = []  # type: List[Dict[str, Any]]
+    for idx, f in enumerate(files):
+        atts.append({"index": idx, "name": "(withheld)" if wh.name_hit(f.name) else f.name,
+                     "bytes": f.stat().st_size, "sha256": _sha(f)})
+    body_file = d / "body.txt"
+    body_sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    prov_file = d / "provenance.json"
+    if body_file.is_file():
+        # compare the hash of the unmasked body, so a changed pattern file does not matter;
+        # a record from before the hash existed falls back to the masked text
+        try:
+            old_sha = json.loads(prov_file.read_text(encoding="utf-8")).get("body_sha256")
+        except (OSError, ValueError, AttributeError):
+            old_sha = None
+        if isinstance(old_sha, str):
+            same = old_sha == body_sha
+        else:
+            same = body_file.read_text(encoding="utf-8") == masked
+        if not same:
+            raise ValueError("msg_id already used with a different body")
+    d.mkdir(parents=True, exist_ok=True)
+    if not body_file.is_file():
+        _atomic_write(body_file, masked)
+    if not prov_file.is_file():
+        prov = {"node": node, "msg_id": msg_id,
+                "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "body_chars": len(body), "body_sha256": body_sha, "body_withheld_lines": hits, "attachments": atts}
+        _atomic_write(prov_file, json.dumps(prov, ensure_ascii=False, indent=2))
+    return {"dir": str(d), "body_withheld_lines": hits, "attachments": atts}

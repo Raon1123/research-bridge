@@ -1,13 +1,15 @@
 """Local demo of the research-bridge dashboard pages, with made-up data only.
 
-    python scripts/demo_dashboard.py [--port 8799] [--dir <empty dir>]
+    python scripts/demo_dashboard.py [--port 8799] [--web-port 8800] [--dir <empty dir>]
 
 Builds a throwaway node (a local `rb_node.cli serve-remote` subprocess, the same mechanism the
 tests use, no SSH), a fake trm tree, a ledger with two pending jobs, a portfolio and a
-priorities file. It then serves the two 8765 pages on 127.0.0.1:
+priorities file, and one stored conversation (a question, a node reply that `rb sync` stored,
+and a follow-up). It then serves on 127.0.0.1 the two 8765 pages and the hub page of `rb web`:
 
     /rb/pending   approval page (rb_pending.py); passphrase: demo passphrase
     /board        unified board (rb_board.py)
+    web port      hub page (rb_host/web.py): /, /threads, /thread/<id>, /jobs, /nodes
 
 Approving a job runs the real path: `jobs.approve` derives the key, the node checks it and
 writes a queue file, and the board cache is refreshed so `/board` shows it. Nothing outside
@@ -22,8 +24,10 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import urllib.parse
 from pathlib import Path
+from typing import Optional, Tuple
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -31,9 +35,10 @@ sys.path.insert(1, str(REPO / "vault-export" / "dashboard"))
 
 # rb_host is imported before the page modules: they put the installed checkout on sys.path,
 # and the modules already imported from this repository win.
-from rb_host import board, jobs  # noqa: E402
+from rb_host import board, jobs, server, sync, web  # noqa: E402
 from rb_host.client import NodeClient  # noqa: E402
 from rb_node import approval  # noqa: E402
+from rb_node.mailbox import Mailbox  # noqa: E402
 
 import rb_board  # noqa: E402
 import rb_pending  # noqa: E402
@@ -110,6 +115,7 @@ def build(root: Path) -> dict:
                       "priorities": str(root / "live.json")}}
     (root / "host.json").write_text(json.dumps(host), encoding="utf-8")
     os.environ["RB_HOST_CONFIG"] = str(root / "host.json")
+    os.environ["RB_HOST_ROOT"] = str(data)
     _fake_nvidia_smi(root / "bin")
     return {"RB_NODE_CONFIG": str(root / "node.json"), "PYTHONPATH": str(REPO),
             "PATH": str(root / "bin") + os.pathsep + os.environ.get("PATH", "")}
@@ -126,10 +132,36 @@ def seed(root: Path) -> None:
         jobs.create_submit(led, cfg, NODE, str(p), gpus, hours, "demo-" + name, note=note)
     led.append({"kind": "message", "id": "demo-reply-1", "direction": "in", "node": NODE,
                 "msg_kind": "reply", "status": "received", "created": "2026-11-03T09:41:00Z"})
+    # one conversation through the real code paths: send, a node reply stored by rb sync
+    # (delivered: false, so the next poll returns it), and a follow-up to that reply
+    m1 = server.send_message(NODE, "Demo question: which learning rates finished?")["msg_id"]
+    oid = Mailbox(root / "node" / "mailbox").post_out(
+        "reply", "Demo answer: all three learning rates finished.", [], m1)
+    sync.run_pass(cfg, NODE)
+    server.send_message(NODE, "Demo follow-up: please queue the depth ablation.", reply_to=oid)
     board.refresh(cfg)
 
 
+def map_host(host: Optional[str], port: int) -> Optional[str]:
+    """The vault page modules accept only 127.0.0.1:8765 / localhost:8765. The demo listens on
+    another port, so its own loopback names are presented to them as the 8765 name; any other
+    or missing Host is passed unchanged (the module then answers 403)."""
+    if isinstance(host, str) and host.lower() in ("127.0.0.1:%d" % port, "localhost:%d" % port):
+        return "127.0.0.1:8765"
+    return host
+
+
+def map_origin(origin: Optional[str], port: int) -> Optional[str]:
+    if isinstance(origin, str) and origin.lower() in ("http://127.0.0.1:%d" % port,
+                                                      "http://localhost:%d" % port):
+        return "http://127.0.0.1:8765"
+    return origin
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
+    def _host(self) -> Optional[str]:
+        return map_host(self.headers.get("Host"), self.server.server_address[1])
+
     def _send(self, status: int, text: str, ctype: str = "text/html") -> None:
         data = text.encode("utf-8")
         self.send_response(status)
@@ -144,9 +176,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "/board")
             self.end_headers()
         elif self.path == "/rb/pending":
-            self._send(*rb_pending.handle_get(self.client_address[0]))
+            self._send(*rb_pending.handle_get(self.client_address[0], self._host()))
         elif self.path == "/board":
-            self._send(*rb_board.handle_get(self.client_address[0]))
+            self._send(*rb_board.handle_get(self.client_address[0], self._host()))
         else:
             self._send(404, "not found", "text/plain")
 
@@ -157,8 +189,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         qs = urllib.parse.parse_qs(self.rfile.read(min(length, 65536)).decode("utf-8", "replace"))
         form = {k: v[0] for k, v in qs.items()}
+        origin = map_origin(self.headers.get("Origin"), self.server.server_address[1])
         status, text = rb_pending.handle_post(self.client_address[0], form, rb_pending.CSRF_TOKEN,
-                                              self.path.rsplit("/", 1)[1])
+                                              self.path.rsplit("/", 1)[1], self._host(), origin)
         if status == 200:
             board.refresh(jobs.load_cfg())
         self._send(status, text + '\n\n<a href="/rb/pending">back to pending</a> · '
@@ -169,21 +202,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sys.stderr.write("%s\n" % (fmt % args))
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8799)
-    ap.add_argument("--dir", help="empty directory for the demo data (default: a new temp dir)")
-    a = ap.parse_args()
-    root = Path(a.dir) if a.dir else Path(tempfile.mkdtemp(prefix="rb-demo-"))
+def start(root: Path, port: int, web_port: int) -> Tuple[http.server.ThreadingHTTPServer,
+                                                          http.server.ThreadingHTTPServer]:
+    """Build and seed the demo under `root`; return the 8765-style server and the hub page server
+    (bound, not yet serving). Installs the local-node connection in `jobs.connect`."""
     root.mkdir(parents=True, exist_ok=True)
     nenv = build(root)
     os.chdir(str(REPO))  # `python -m rb_node.cli` puts the cwd first on sys.path
     serve = [sys.executable, "-m", "rb_node.cli", "serve-remote"]
     jobs.connect = lambda cfg, node: NodeClient("demo", ssh_argv=serve, env=nenv)
     seed(root)
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    try:
+        web_srv = web.make_server(jobs.load_cfg(), "127.0.0.1", web_port)
+    except BaseException:
+        srv.server_close()
+        raise
+    return srv, web_srv
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8799)
+    ap.add_argument("--web-port", type=int, default=None, help="hub page port (default: port + 1)")
+    ap.add_argument("--dir", help="empty directory for the demo data (default: a new temp dir)")
+    a = ap.parse_args()
+    root = Path(a.dir) if a.dir else Path(tempfile.mkdtemp(prefix="rb-demo-"))
+    srv, web_srv = start(root, a.port, a.web_port if a.web_port is not None else a.port + 1)
+    threading.Thread(target=web_srv.serve_forever, daemon=True).start()
     print("demo data: %s" % root)
-    print("open http://127.0.0.1:%d/board and /rb/pending (passphrase: %s)" % (a.port, PASSPHRASE))
+    print("open http://127.0.0.1:%d/board and /rb/pending (passphrase: %s)" % (
+        srv.server_address[1], PASSPHRASE))
+    print("hub page: http://127.0.0.1:%d/ (also /threads, /jobs, /nodes)" % web_srv.server_address[1])
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
