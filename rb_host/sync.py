@@ -123,7 +123,7 @@ def run_pass(cfg: Any, node: str) -> dict:
         prev = {}
     st = {"schema": SCHEMA, "node": node, "last_attempt_at": jobs.now(),
           "last_ok_at": prev.get("last_ok_at"), "ok": False, "error": "incomplete",
-          "stage": "running", "new_items": 0, "rejected": 0,
+          "stage": "running", "new_items": 0, "rejected": 0, "rejected_ids": [],
           "board": prev.get("board") if isinstance(prev.get("board"), dict) else {},
           "node_version": prev.get("node_version"), "protocol": prev.get("protocol"),
           "withheld_extra": prev.get("withheld_extra"), "node_seen_at": prev.get("node_seen_at"),
@@ -139,6 +139,7 @@ def run_pass(cfg: Any, node: str) -> dict:
         _log("sweep", exc)
 
     stage = "connect"
+    prog = {}  # type: Dict[str, Any]
     fail = None  # type: Optional[tuple]
     try:
         with jobs.connect(cfg, node) as c:
@@ -149,9 +150,12 @@ def run_pass(cfg: Any, node: str) -> dict:
             st["withheld_extra"] = h["withheld_extra"]
             st["node_seen_at"] = jobs.now()
             stage = "poll"
-            got = server.fetch_node(cfg, node, c, delivered=False)
-            st["new_items"] = len(got.get("items", []))
-            st["rejected"] = int(got.get("rejected", 0))
+            try:
+                server.fetch_node(cfg, node, c, delivered=False, progress=prog)
+            finally:  # what was stored before a failure is still counted
+                st["new_items"] = int(prog.get("new", 0))
+                st["rejected"] = int(prog.get("rejected", 0))
+                st["rejected_ids"] = list(prog.get("rejected_ids", []))[:10]
             stage = "git"
             try:
                 g = c.call("git_status")
@@ -204,7 +208,7 @@ def run_pass(cfg: Any, node: str) -> dict:
 
 
 def _line(st: dict) -> str:
-    keys = ("node", "ok", "error", "stage", "new_items", "rejected", "board", "tree_head",
+    keys = ("node", "ok", "error", "stage", "new_items", "rejected", "rejected_ids", "board", "tree_head",
             "tree_dirty")
     return json.dumps({k: st.get(k) for k in keys}, ensure_ascii=False)
 

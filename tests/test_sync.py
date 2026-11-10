@@ -20,7 +20,7 @@ SERVE = [sys.executable, "-m", "rb_node.cli", "serve-remote"]
 REPO = Path(__file__).resolve().parents[1]
 STATE_MD = "---\nphase: S5\ntrack: ARG\nupdated: 2026-11-02\n---\n# State\n"
 KEYS = {"schema", "node", "last_attempt_at", "last_ok_at", "ok", "error", "stage", "new_items",
-        "rejected", "board", "node_version", "protocol", "withheld_extra", "node_seen_at",
+        "rejected", "rejected_ids", "board", "node_version", "protocol", "withheld_extra", "node_seen_at",
         "tree_head", "tree_dirty", "git_error", "duration_s"}
 ALIAS = "ssh-alias-marker"
 
@@ -506,3 +506,28 @@ def test_mcp_nodes_after_old_node_pass(env, monkeypatch):
     assert res["nodes"] == ["n1"]
     s = res["status"]["n1"]
     assert s["synced"] is True and s["ok"] is True and s["protocol"] == 1
+
+
+# -- counts survive a failure; rejected ids are named ---------------------------------------
+def test_failure_after_storing_keeps_the_counts(env):
+    _reply(env, "one")
+    _reply(env, "two")
+
+    def bad_ack(real):
+        raise RemoteError("io_error")
+    env["hooks"]["ack"] = bad_ack
+    st = sync.run_pass(env["cfg"], "n1")
+    assert st["ok"] is False and st["stage"] == "poll" and st["error"] == "io_error"
+    assert st["new_items"] == 2 and _status(env)["new_items"] == 2
+
+
+def test_clashing_inbound_id_is_named_in_status_and_line(env, capsys):
+    from rb_host import server as srv
+    mid = srv.send_message("n1", "question")["msg_id"]
+    env["hooks"]["poll"] = lambda real: {"items": [
+        {"id": mid, "kind": "reply", "body": "spoof", "reply_to": None, "attachments": []}]}
+    st = sync.run_pass(env["cfg"], "n1")
+    assert st["ok"] is True and st["rejected"] == 1 and st["rejected_ids"] == [mid]
+    assert _status(env)["rejected_ids"] == [mid]
+    assert sync.run(None, 0) == 0
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["rejected_ids"] == [mid]

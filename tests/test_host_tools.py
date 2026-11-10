@@ -828,3 +828,6 @@ def test_inbound_id_clashing_with_outgoing_is_rejected_not_acked(env):
     assert r["items"] == [] and r["rejected"] == 1
     assert acked == []
     assert env["ledger"].get(mid)["direction"] == "out"
+    prog = {}
+    server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=False, progress=prog)
+    assert prog == {"new": 0, "rejected": 1, "rejected_ids": [mid]}

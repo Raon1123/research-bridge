@@ -128,7 +128,8 @@ def _error_text(exc: BaseException) -> str:
     return "internal"
 
 
-def fetch_node(cfg: Any, node: str, c: Any, delivered: bool) -> dict:
+def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
+               progress: Optional[dict] = None) -> dict:
     """Fetch, store and acknowledge the node's pending items on the open client `c`.
 
     Items not yet in the ledger are stored and appended with `delivered` set to the argument
@@ -136,15 +137,22 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool) -> dict:
     append succeeded are returned. With delivered=False every exception propagates. With
     delivered=True an exception after the first append returns the appended items with an
     "error" entry instead (those records are already marked delivered; the next fetch
-    acknowledges them without returning them again)."""
+    acknowledges them without returning them again). When `progress` is a dict, it receives
+    `new` and `rejected` (counts so far) even when an exception propagates."""
     led = ledger_for(cfg)
     items = c.call("poll").get("items", [])
     new = []  # type: List[dict]
     ack = []  # type: List[str]
     rejected = 0
+    rejected_ids = []  # type: List[str]  # ids only, valid ones, at most 10
+
+    def reject(iid: str) -> None:
+        nonlocal rejected
+        rejected += 1
+        if len(rejected_ids) < 10 and valid_msg_id(iid) and iid not in rejected_ids:
+            rejected_ids.append(iid)
 
     def work() -> None:
-        nonlocal rejected
         for it in items:
             iid = str(it.get("id"))
             seen = led.get(iid)
@@ -152,12 +160,12 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool) -> dict:
                 ack.append(iid)
                 continue
             if seen is not None:  # the id belongs to an outgoing or job record: do not ack
-                rejected += 1
+                reject(iid)
                 continue
             try:
                 stored = store_incoming(cfg, node, it, c)
             except (ValueError, OSError):
-                rejected += 1
+                reject(iid)
                 continue
             rec = {"kind": "message", "id": iid, "direction": "in", "node": node,
                    "msg_kind": stored["kind"], "reply_to": stored["reply_to"],
@@ -170,22 +178,26 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool) -> dict:
             else:
                 cur = led.get(iid)
                 if cur is None or cur.get("direction") != "in":
-                    rejected += 1  # lost the race to a non-inbound record: leave it on the node
+                    reject(iid)  # lost the race to a non-inbound record: leave it on the node
                     continue
             ack.append(iid)
         if ack:
             c.call("ack", ids=ack)
 
-    if not delivered:
-        work()
-    else:
-        try:
+    try:
+        if not delivered:
             work()
-        except Exception as exc:
-            if not new:
-                raise
-            return {"items": new, "rejected": rejected, "error": _error_text(exc)}
-    return {"items": new, "rejected": rejected}
+        else:
+            try:
+                work()
+            except Exception as exc:
+                if not new:
+                    raise
+                return {"items": new, "rejected": rejected, "error": _error_text(exc)}
+        return {"items": new, "rejected": rejected}
+    finally:
+        if progress is not None:
+            progress.update(new=len(new), rejected=rejected, rejected_ids=list(rejected_ids))
 
 
 def _poll_node(cfg: Any, node: str) -> Any:

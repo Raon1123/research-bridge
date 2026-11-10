@@ -319,6 +319,34 @@ def test_sweep_removes_old_stage_dirs_only(tmp_path):
     assert sweep_stage_dirs(cfg, "n1") == 0
 
 
+def test_sweep_removes_old_tmp_files_only(tmp_path):
+    import os
+    import time
+    from rb_host.store import sweep_stage_dirs
+    cfg = _wcfg(tmp_path)
+    data = tmp_path / "data"
+    keep = []
+    gone = []
+    for top in ("inbox", "outbox"):
+        d = data / top / "n1" / "m1"
+        d.mkdir(parents=True)
+        old_b, old_p = d / ".body.txt.0123abcd.tmp", d / ".provenance.json.89abcdef.tmp"
+        fresh = d / ".body.txt.deadbeef.tmp"
+        other = d / ".notes.0123abcd.tmp"
+        real = d / "body.txt"
+        for f in (old_b, old_p, fresh, other, real):
+            f.write_text("x", encoding="utf-8")
+        t = time.time() - 7200
+        for f in (old_b, old_p, other, real):
+            os.utime(str(f), (t, t))
+        gone += [old_b, old_p]
+        keep += [fresh, other, real]
+    sweep_stage_dirs(cfg, "n1")
+    assert not any(f.exists() for f in gone)
+    assert all(f.exists() for f in keep)
+    assert sweep_stage_dirs(cfg, "n2") == 0  # another node: nothing to do, no error
+
+
 def test_store_outgoing_files_are_mode_600(tmp_path):
     import os
     from rb_host.store import store_outgoing

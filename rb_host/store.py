@@ -169,13 +169,45 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             "quarantined": sum(1 for f in files if f["status"] == "quarantined")}
 
 
+_TMP_NAME = re.compile(r"^\.(body\.txt|provenance\.json)\.[0-9a-f]{8}\.tmp$")
+
+
+def _sweep_tmp_files(cfg: HostConfig, node: str, older_than_s: float, now_s: float) -> None:
+    """Remove `.body.txt.<hex>.tmp` and `.provenance.json.<hex>.tmp` left by a killed writer in
+    `inbox/<node>/*` and `outbox/<node>/*` when they are older than `older_than_s`."""
+    for top in ("inbox", "outbox"):
+        base = Path(cfg.data_root) / top / node
+        try:
+            dirs = [p for p in base.iterdir() if p.is_dir() and not p.is_symlink()]
+        except OSError:
+            continue
+        for d in dirs:
+            try:
+                names = [p for p in d.iterdir() if _TMP_NAME.match(p.name)]
+            except OSError:
+                continue
+            for f in names:
+                try:
+                    if (f.is_symlink() or not f.is_file()
+                            or now_s - f.stat().st_mtime <= older_than_s):
+                        continue
+                    f.unlink()
+                except OSError:
+                    continue
+
+
 def sweep_stage_dirs(cfg: HostConfig, node: str, older_than_s: float = 3600,
                      now_s: Optional[float] = None) -> int:
     """Remove `quarantine/<node>/*/.stage-*` directories left by a killed process and then
-    their empty parents. Returns the number of stage directories removed; never raises."""
+    their empty parents, and stale temporary body and provenance files. Returns the number of
+    stage directories removed; never raises."""
     base = Path(cfg.data_root) / "quarantine" / node
     now_s = time.time() if now_s is None else now_s
     removed = 0
+    try:
+        _sweep_tmp_files(cfg, node, older_than_s, now_s)
+    except Exception:
+        pass
     try:
         parents = [p for p in base.iterdir() if p.is_dir() and not p.is_symlink()]
     except OSError:
