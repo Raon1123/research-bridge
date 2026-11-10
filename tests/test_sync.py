@@ -176,6 +176,16 @@ def test_status_file_has_no_body_or_text(env, capsys):
     assert line["node"] == "n1" and line["ok"] is True and "tree_head" in line
 
 
+def test_cli_sync_prints_one_line_without_text(env, capsys):
+    _reply(env, "MARKER-REPLY-5d1e")
+    assert cli.main(["sync", "--node", "n1"]) == 0
+    out = capsys.readouterr()
+    assert len(out.out.strip().splitlines()) == 1
+    assert json.loads(out.out)["new_items"] == 1
+    for blob in (out.out, out.err):
+        assert "MARKER-REPLY-5d1e" not in blob and ALIAS not in blob
+
+
 def test_sync_stores_with_delivered_false(env):
     oid = _reply(env)
     sync.run_pass(env["cfg"], "n1")
