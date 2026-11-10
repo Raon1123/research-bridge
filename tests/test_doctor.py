@@ -462,20 +462,30 @@ def test_main_offline_only_never_connects(hub, monkeypatch, tmp_path, capsys):
 
 @pytest.mark.parametrize("argv", [["pending"], ["approve", "j"], ["reject", "j"],
                                   ["harness", "pull", "--node", "n"], ["git-status"], ["agent"],
-                                  ["service", "install"]])
+                                  ["service", "install"], ["share", "build"], ["share", "serve"],
+                                  ["board", "refresh"], ["sync"], ["web", "serve"]])
 def test_missing_host_json_one_line_error_for_every_command(argv, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_interactive", lambda: True)
     monkeypatch.setenv("RB_HOST_CONFIG", "/nonexistent-dir/host.json")
     assert cli.main(argv) == 1
     out = capsys.readouterr().out
-    assert out.startswith("error: no host.json at /nonexistent-dir/host.json")
+    assert out.startswith("error: no usable host.json at /nonexistent-dir/host.json")
     assert len(out.strip().splitlines()) == 1 and "Traceback" not in out
 
 
-def test_invalid_host_json_one_line_error(monkeypatch, capsys, tmp_path):
+@pytest.mark.parametrize("argv", [["pending"], ["share", "build"], ["share", "serve"], ["board", "refresh"],
+                                  ["board", "show"], ["sync"], ["web", "serve"]])
+def test_invalid_host_json_one_line_error(argv, monkeypatch, capsys, tmp_path):
     p = tmp_path / "host.json"
     p.write_text("{", encoding="utf-8")
     monkeypatch.setenv("RB_HOST_CONFIG", str(p))
-    assert cli.main(["pending"]) == 1
+    assert cli.main(argv) == 1
     out = capsys.readouterr().out
     assert "not valid JSON" in out and len(out.strip().splitlines()) == 1
+
+
+def test_board_show_works_without_host_json(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "none" / "host.json"))
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
+    assert cli.main(["board", "show"]) == 0
+    assert "error" not in capsys.readouterr().out

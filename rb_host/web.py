@@ -21,8 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from rb_node.withheld import Withheld
 
-from . import jobs, threads
-from .config import default_root
+from . import configure, jobs, threads
 
 DEFAULT_PORT = 8767
 ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
@@ -509,21 +508,14 @@ def serve(cfg: Any, bind: str, port: int) -> None:
         srv.server_close()
 
 
-def _hostjson_path() -> str:
-    return os.environ.get("RB_HOST_CONFIG") or str(Path(default_root()) / "host.json")
-
-
 def cli_main(args: argparse.Namespace) -> int:
     try:
         check_bind(args.bind, args.port)
     except ValueError as exc:
         print("error: %s" % exc)
         return 1
-    try:
-        cfg = jobs.load_cfg()
-    except (OSError, ValueError):
-        print("error: no usable host.json at %s; run: rb setup --node NAME --host HOST "
-              "--user USER" % _hostjson_path())
+    cfg = configure.host_cfg()
+    if cfg is None:
         return 1
     try:
         serve(cfg, args.bind, args.port)

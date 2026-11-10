@@ -184,13 +184,31 @@ def mcp_registered(checkout: Path) -> Tuple[bool, str]:
     return True, ""
 
 
+HOST_SETUP_HINT = "run: rb setup --node NAME --host HOST --user USER"
+
+
 def host_json_error(exc: Exception) -> str:
-    """One line for a missing or unreadable host.json (no traceback)."""
+    """The one line for a missing or unusable host.json (no traceback); coordinator ruling R9."""
     path = host_path()
     if isinstance(exc, FileNotFoundError):
-        return ("error: no host.json at %s; run: rb setup --node NAME --host HOST --user USER" % path)
-    return ("error: %s is not valid JSON (%s); fix it or move it away, then run rb setup"
-            % (path, str(exc).replace("\n", " ")))
+        return "error: no usable host.json at %s; %s" % (path, HOST_SETUP_HINT)
+    if isinstance(exc, OSError):
+        return "error: no usable host.json at %s (cannot be read: %s); %s" % (
+            path, (exc.strerror or type(exc).__name__).replace("\n", " "), HOST_SETUP_HINT)
+    return ("error: no usable host.json at %s (not valid JSON: %s); fix or move it, then %s"
+            % (path, str(exc).replace("\n", " "), HOST_SETUP_HINT))
+
+
+def host_cfg(quiet: bool = False):
+    """host.json as a HostConfig, or None after one error line on stdout (the shared helper of
+    every `rb` command). Imports `jobs` here, not at module level, to keep imports acyclic."""
+    from . import jobs
+    try:
+        return jobs.load_cfg()
+    except (OSError, ValueError) as exc:
+        if not quiet:
+            print(host_json_error(exc))
+        return None
 
 
 def check() -> List[str]:

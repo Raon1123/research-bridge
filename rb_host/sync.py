@@ -17,7 +17,7 @@ import calendar
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TextIO
 
-from . import board, jobs, server, store, threads
+from . import board, configure, jobs, server, store, threads
 from .client import RemoteError, TransportError, normalize_hello
 from .config import default_root
 from .threads import read_status, status_path, summary  # noqa: F401  (re-exported readers)
@@ -228,9 +228,8 @@ def run(node: Optional[str], watch: int, out: Optional[TextIO] = None,
             passes += 1
             try:
                 cfg = jobs.load_cfg()
-            except (OSError, ValueError):
-                print("error: no usable host.json at %s; run: rb setup --node NAME --host HOST "
-                      "--user USER" % _hostjson_path(), file=out, flush=True)
+            except (OSError, ValueError) as exc:
+                print(configure.host_json_error(exc), file=out, flush=True)
                 failed = True
             else:
                 names = [node] if node else sorted(cfg.nodes)

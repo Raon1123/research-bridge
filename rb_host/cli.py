@@ -43,11 +43,7 @@ def _need_terminal(what: str) -> bool:
 
 def _host_cfg() -> Optional[HostConfig]:
     """host.json, or None after one error line (no traceback)."""
-    try:
-        return jobs.load_cfg()
-    except (FileNotFoundError, ValueError) as exc:
-        print(configure.host_json_error(exc))
-        return None
+    return configure.host_cfg()
 
 
 def _approve(args: argparse.Namespace) -> int:
@@ -146,11 +142,14 @@ def _board(args: argparse.Namespace) -> int:
     from .config import HostConfig
     try:
         cfg = jobs.load_cfg()
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         if args.action == "refresh":
-            print("error: no host.json; see docs/manual/hub-setup.md")
+            print(configure.host_json_error(exc))
             return 1
         cfg = HostConfig()  # show: laptop sources only, as the 8765 page does
+    except (OSError, ValueError) as exc:
+        print(configure.host_json_error(exc))
+        return 1
     if args.action == "refresh":
         try:
             results = board.refresh(cfg, args.node, args.source or None)
@@ -233,17 +232,17 @@ def _share(args: argparse.Namespace) -> int:
     from . import share
     if args.action == "serve":
         from . import share_serve
+        cfg = _host_cfg()
+        if cfg is None:
+            return 1
         try:
-            cfg = jobs.load_cfg()
             share_serve.serve(share.share_dir(cfg), args.bind, args.port)
-        except (FileNotFoundError, ValueError, OSError) as exc:
+        except (ValueError, OSError) as exc:
             print("error: %s" % exc)
             return 1
         return 0
-    try:
-        cfg = jobs.load_cfg()
-    except FileNotFoundError:
-        print("error: no host.json; see docs/manual/hub-setup.md")
+    cfg = _host_cfg()
+    if cfg is None:
         return 1
     if args.days < 0:
         print("error: --days must be >= 0")

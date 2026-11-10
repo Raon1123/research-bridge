@@ -151,7 +151,7 @@ def test_install_rb_host_root_copied_from_shell(hub, monkeypatch, capsys):
 
 def test_install_refuses_without_host_json(hub, capsys):
     assert service.install(print_only=True) == 1
-    assert capsys.readouterr().out.startswith("error: no host.json at")
+    assert capsys.readouterr().out.startswith("error: no usable host.json at")
 
 
 def test_status_reads_systemctl(hub, capsys):
