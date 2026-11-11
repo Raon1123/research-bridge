@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__, approval, gitinfo, spawn
+from . import sessions as node_sessions
 from .config import NodeConfig, coerce, config_path, expand_paths
 from .jobs import allowed_set
-from .protocol import MAX_FILE
+from .protocol import MAX_FILE, ProtocolError
 from .withheld import Withheld
 
 Check = namedtuple("Check", "id level message fix")  # level in ("ok", "warn", "fail")
@@ -432,6 +433,33 @@ def _wrapper_check() -> Check:
     return _ok("wrapper", "wrapper runs python %d.%d" % (major, minor))
 
 
+def _sessions_check(cfg: NodeConfig) -> Check:
+    """The `sessions` operation as the hub would get it, without writing its cache
+    (docs/design/2026-11-11-node-sessions.md). Unset is a note, not a warning."""
+    fix = "rb-node config set sessions_dir DIR (the Claude projects directory of this account)"
+    if not cfg.sessions_dir:
+        return _ok("sessions", "sessions_dir is not set: the sessions operation is off "
+                               "(it answers not_configured and reads nothing)")
+    if not os.path.isdir(os.path.expanduser(cfg.sessions_dir)):
+        return Check("sessions", "warn", "sessions directory does not exist: %s"
+                     % cfg.sessions_dir, fix)
+    src = Path(cfg.withheld_source) if cfg.withheld_source else None
+    try:
+        r = node_sessions.run(cfg, Withheld.load(src), write_cache=False)
+    except (ProtocolError, OSError):
+        return Check("sessions", "warn", "sessions directory cannot be read", fix)
+    if r["files"] and r["unparsed"] == r["files"]:
+        return Check("sessions", "warn",
+                     "%d record file(s) in the last %d days, none could be read as a session: "
+                     "the assumed record format may be wrong" % (r["files"], r["days"]),
+                     "rb-node sessions; compare a record file with "
+                     "docs/design/2026-11-11-node-sessions.md section 8")
+    return _ok("sessions", "%d session(s) in the last %d days from %d record file(s); "
+                           "%d unparsed, %d outside the research tree%s"
+               % (len(r["sessions"]), r["days"], r["files"], r["unparsed"], r["outside"],
+                  "; truncated by the per-call bounds" if r["truncated"] else ""))
+
+
 def system_checks(cfg: NodeConfig) -> List[Check]:
     out = []
     if _which("pdftotext"):
@@ -466,6 +494,7 @@ def system_checks(cfg: NodeConfig) -> List[Check]:
     else:
         out.append(_ok("install", "install record matches version %s" % __version__))
     out.append(_wrapper_check())
+    out.append(_sessions_check(cfg))
     return out
 
 

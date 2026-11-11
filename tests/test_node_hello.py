@@ -62,7 +62,7 @@ def test_hello_approval_unreadable_is_false(cfg):  # noqa: F811
 def test_hello_ops_sorted_and_complete(hcfg):
     r = hello(hcfg)
     assert r["ops"] == sorted(Node(hcfg).ops)
-    assert len(r["ops"]) == 14 and "hello" in r["ops"] and "job_submit" in r["ops"]
+    assert len(r["ops"]) == 15 and "hello" in r["ops"] and "job_submit" in r["ops"]
 
 
 def _run_unconfigured(monkeypatch, tmp_path, ops):

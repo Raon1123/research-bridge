@@ -1,7 +1,8 @@
 """`rb sync`: one reliable pass per node, hub to node only (design 2026-11-10 §6.2, §6.3).
 
-A pass opens one connection for `hello`, `poll` (stored with delivered false) and `git_status`,
-closes it, then refreshes the board sources that are due. Results go to
+A pass opens one connection for `hello`, `poll` (stored with delivered false), `git_status` and,
+when `hello` lists it, `sessions` (merged into `<data_root>/sessions/<node>.json`; design
+2026-11-11-node-sessions §9), closes it, then refreshes the board sources that are due. Results go to
 `<data_root>/sync/<node>.json`: codes only, never message text, paths or exception text.
 Never approves a job and never touches the harness channel.
 """
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TextIO
 
 from . import board, configure, jobs, server, store
+from . import sessions as hub_sessions
 from .client import RemoteError, TransportError, normalize_hello
 from .config import host_json_path
 from .util import age_s
@@ -113,6 +115,35 @@ def _hub_withheld(cfg: Any) -> Dict[str, Optional[int]]:
         return {"hub_withheld_extra": None, "hub_withheld_rejected": None}
 
 
+def _sessions_step(cfg: Any, node: str, c: Any, ops: Any) -> str:
+    """The last call of the pass connection. Returns the status field `sessions`: `ok`,
+    `unsupported` (hello does not list the operation), or a code (`not_configured`,
+    `bad_answer`, an error code). Never raises; none of these fails the pass."""
+    if not isinstance(ops, list) or "sessions" not in ops:
+        code = "unsupported"
+    else:
+        try:
+            ans = c.call("sessions", days=hub_sessions.DAYS)
+        except Exception as exc:
+            code = error_code(exc)
+            _log("sessions", exc)
+        else:
+            try:
+                wh = Withheld.load(Path(cfg.withheld_patterns_file))
+                hub_sessions.record(cfg, node, ans, wh, jobs.now())
+                return "ok"
+            except hub_sessions.BadAnswer:
+                code = "bad_answer"
+            except Exception as exc:
+                code = error_code(exc)
+                _log("sessions", exc)
+    try:
+        hub_sessions.record_failure(cfg, node, code, jobs.now())
+    except Exception as exc:
+        _log("sessions", exc)
+    return code
+
+
 def run_pass(cfg: Any, node: str) -> dict:
     """One pass for one node. Never raises; returns the final status dict."""
     t0 = time.time()
@@ -128,7 +159,8 @@ def run_pass(cfg: Any, node: str) -> dict:
           "node_version": prev.get("node_version"), "protocol": prev.get("protocol"),
           "withheld_extra": prev.get("withheld_extra"), "node_seen_at": prev.get("node_seen_at"),
           "tree_head": prev.get("tree_head"), "tree_dirty": prev.get("tree_dirty"),
-          "git_error": prev.get("git_error"), "duration_s": 0.0}  # type: Dict[str, Any]
+          "git_error": prev.get("git_error"), "duration_s": 0.0,
+          "sessions": prev.get("sessions")}  # type: Dict[str, Any]
     st.update(_hub_withheld(cfg))
     try:
         _write_status(cfg, node, st)
@@ -167,6 +199,7 @@ def run_pass(cfg: Any, node: str) -> dict:
             except RemoteError as exc:
                 st["tree_head"] = st["tree_dirty"] = None
                 st["git_error"] = error_code(exc)
+            st["sessions"] = _sessions_step(cfg, node, c, h["ops"])
     except Exception as exc:
         fail = (stage, error_code(exc))
         _log(stage, exc)
@@ -210,7 +243,7 @@ def run_pass(cfg: Any, node: str) -> dict:
 
 def _line(st: dict) -> str:
     keys = ("node", "ok", "error", "stage", "new_items", "rejected", "rejected_ids", "board", "tree_head",
-            "tree_dirty")
+            "tree_dirty", "sessions")
     return json.dumps({k: st.get(k) for k in keys}, ensure_ascii=False)
 
 

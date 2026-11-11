@@ -93,6 +93,7 @@ python 경로는 설치 시점에 찾은 절대 경로이며(여기서는 예로
 | `experiments_dir` | path under `trm_root` | `lab/experiments` | `read_doc`이 `EXP-nnn`을 찾는 곳: 파일 `EXP-nnn.md` 또는 정확히 하나의 `EXP-nnn_*.md`. 읽기 루트 안에 있어야 하며, 아니면 id로 하는 `read_doc`이 거부된다. |
 | `hypotheses_path` | path under `trm_root` | `lab/registry/HYPOTHESES.md` | `read_doc`이 `H-nnn` 섹션을 돌려주는 파일. 읽기 루트 안에 있어야 한다. |
 | `harness_root` | path | `""` | 하네스 채널용 노드의 `~/.claude`. 비어 있으면 하네스 push와 pull이 거부된다(`no_harness_root`). |
+| `sessions_dir` | path | `""` | 이 계정의 Claude projects 디렉터리(프로젝트마다 하위 디렉터리 하나, 세션마다 `<session id>.jsonl` 기록 파일 하나). 비어 있으면 `sessions` 연산이 `not_configured`로 답하고 아무것도 읽지 않는다. 설정하면 `rb sync`가 돌 때마다, 작업 디렉터리가 `trm_root` 안에 있는 세션마다 id, 시작·끝 시각, UTC 날짜별 활동 초, `trm_root` 기준 상대 디렉터리를 받는다(§10). 세션의 텍스트는 노드를 떠나지 않는다. |
 
 `trm_root`를 설정하면, 이전 루트에서 파생된 값을 아직 그대로 가지고 있는 `queue_dir`, `write_roots`의 큐 항목, 예전 기본 `withheld_source`도 함께 갱신된다.
 
@@ -187,6 +188,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 | `stuck_messages` | warn | 메시지가 답을 받지 못하고 대기하거나 `responding`에 멈춰 있다(§6). | `rb-node respond <msg_id>` 또는 로그 읽기 |
 | `install` | warn | 설치 기록이 없거나, 그 버전이 실행 중인 코드와 다르다. | `scripts/node-install.sh`를 다시 실행 |
 | `wrapper` | warn | 래퍼가 없거나, `PATH`의 python을 쓰거나, 그 python이 없거나 3.8보다 낮다. | `scripts/node-install.sh`를 다시 실행 |
+| `sessions` | warn | `sessions_dir`가 설정됐지만 디렉터리가 아니거나, 기록 파일이 있는데 하나도 세션으로 읽지 못했다(가정한 기록 형식이 틀렸을 수 있다). `sessions_dir`가 비어 있으면 `ok`이고 연산이 꺼져 있다고 말한다. 작동하면 세션 수, 기록 파일 수, 읽지 못한 파일 수, 트리 밖 세션 수를 보여 준다. | `rb-node config set sessions_dir DIR`, 또는 보낼 내용을 보려면 `rb-node sessions` |
 
 허브의 `rb doctor`는 `hello` 상태(§12)를 바탕으로 SSH를 거쳐 짧은 온라인 버전을 실행한다(허브 매뉴얼 §10.2).
 
@@ -205,6 +207,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 ## 10. Git tracking and the live research session
 
 - **Git 상태, 읽기 전용, 파일 이름과 커밋 제목 없음:** `rb-node git-status`(노드 콘솔), bridge 연산 `git_status`, `rb git-status --node node1`(허브)이 `trm_root`와 설치된 코드의 브랜치, HEAD, 변경된 파일 수, ahead/behind, origin URL(자격 증명 제거)을 보고한다. `rb sync`를 한 번 돌 때마다 이 상태를 읽는다.
+- **연구 트리 안의 세션, 읽기 전용, 텍스트 없음:** `sessions_dir`를 설정하면(§4) `rb-node sessions [--days N]`(노드 콘솔)이 bridge 연산 `sessions`가 `rb sync` 때마다 허브로 보내는 내용을 그대로 JSON으로 출력한다. 최근 N일(1~31, 기본 8) 동안 작업 디렉터리가 `trm_root` 안에 있었던 Claude 세션마다 id, 시작·끝 시각, UTC 날짜별 활동 초(기록 줄 사이 간격이 300초 이하이면 활동으로 센다), `trm_root` 기준 상대 디렉터리(루트는 `.`, withheld 패턴에 맞으면 `(withheld)`)다. 트리 밖의 세션은 `outside`라는 숫자 하나로만 나가고, 쓸 수 있는 시각이 없는 기록 파일은 `unparsed`로 센다. 기록 형식은 가정한 것이다(`docs/design/2026-11-11-node-sessions.md` §8). `unparsed`가 `files`와 같으면 허브 세션에 알린다. 이 명령은 아무것도 쓰지 않는다. bridge 연산은 캐시 `~/.research-bridge/sessions-cache.json`을 두는데, 여기에도 기록 텍스트는 없다.
 - **연구 트리의 실시간 세션:** `rb-node link [DIR] [--apply]`는 `rb-node serve-local`을 프로젝트 MCP 서버로 등록하여, `DIR`(기본값 `trm_root`)에서 시작한 Claude 세션이 허브 메시지를 읽고 `reply`와 `post_event`를 호출할 수 있게 한다. `--apply` 없이는 쓰게 될 `.mcp.json`을 출력한다.
 
       {"mcpServers": {"rb-node": {"type": "stdio", "command": "/home/<NODE_USER>/.local/bin/rb-node", "args": ["serve-local"]}}}
@@ -225,6 +228,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 | `approve-key set` / `approve-key clear` | 사용자, 터미널 | §4.2. |
 | `config path\|init [--force]\|show\|set KEY VALUE\|check` | 사용자 | §4. |
 | `git-status` | 사용자 | `trm_root`의 git 상태와 설치 기록을 JSON으로 출력한다. |
+| `sessions [--days N]` | 사용자 | `sessions` 연산이 보낼 내용을 출력한다(§10). `sessions_dir`가 비어 있거나 없으면 종료 코드 1. |
 | `install-record CHECKOUT` | `node-install.sh` | `~/.research-bridge/install.json`을 쓴다. |
 | `doctor` | 사용자 | §7.2. |
 | `link [DIR] [--apply]` | 사용자 | §10. |
@@ -250,7 +254,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 허브는 `hello`를 가장 먼저 보낸다. protocol 2 노드(`rb_node` 0.2.0 이상)는 `node`, `version`, `withheld_extra`(fallback 외에 파일에서 로드한 패턴 수), `protocol`(숫자 2), `ops`(처리하는 연산의 정렬된 목록), `state`로 답한다. `state`는 경로나 패턴 텍스트가 없는 불리언과 개수의 맵이다. 이전 코드의 노드는 `protocol`과 `state`를 생략하며, 허브는 이를 protocol 1로 본다. `node.json`이 없거나 유효하지 않은 노드도 `state.configured`를 false로, `ops`를 `["hello"]`로 하여 `hello`에 답하고, 다른 모든 연산에는 `not_configured`로 답한다.
 
-`state` 키: `configured`, `approval_verifier`, `job_template_set`, `allowed_gpus_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected`(컴파일되지 않는 패턴), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. 그 밖의 연산: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`.
+`state` 키: `configured`, `approval_verifier`, `job_template_set`, `allowed_gpus_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected`(컴파일되지 않는 패턴), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. 그 밖의 연산: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`, `sessions`(2026-11-11 추가. 그 전에 설치한 0.2.0 노드는 이 연산을 나열하지 않으며, 그러면 허브는 `sessions: unsupported`를 기록한다).
 
 ### 12.1 Differences between the documents and the code
 

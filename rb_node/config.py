@@ -21,7 +21,7 @@ def default_trm() -> str:
 
 
 PATH_KEYS = ("trm_root", "queue_dir", "withheld_source", "claude_bin", "mailbox_root",
-             "audit_path", "approval_path", "harness_root")
+             "audit_path", "approval_path", "harness_root", "sessions_dir")
 PATH_LIST_KEYS = ("read_roots", "write_roots")
 
 
@@ -56,6 +56,9 @@ class NodeConfig:
     experiments_dir: str = "lab/experiments"
     hypotheses_path: str = "lab/registry/HYPOTHESES.md"
     harness_root: str = ""  # node's ~/.claude; empty -> harness push/pull refused (no_harness_root)
+    # Directory of Claude session record files (<project dir>/<id>.jsonl). Empty -> the sessions
+    # operation answers not_configured and nothing is read (docs/design/2026-11-11-node-sessions.md).
+    sessions_dir: str = ""
 
 
 def default_dependents(root: str) -> Dict[str, Any]:

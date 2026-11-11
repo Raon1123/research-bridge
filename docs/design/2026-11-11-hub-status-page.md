@@ -5,6 +5,7 @@ Date: 2026-11-11 · Status: draft, not user-approved; built: `share.snapshot`, r
 Status history:
 - 2026-11-11 draft. The user asked for the direction (§11) and said to start without questions, so the design and the build go into one change.
 - 2026-11-11 built on branch `claude/hub-status-page`: steps 1–3, 5 and 6 of §9. Step 4 (the read-only check against the real data root) was not run: the building session was not allowed to read the hub data root. Rulings in §13.
+- 2026-11-11 open question 1 (where the session half comes from) answered by the user on 2026-11-11: the hub asks each node about the sessions that run there and stores them. Design and build: [Sessions on the nodes, collected on the hub](2026-11-11-node-sessions.md) (branch `claude/node-sessions`). The body below is left as it was.
 - 2026-11-11 step 4 run by the coordinating session: the page renders from the real data root (five sections, no error line), the queue and GPU numbers agree with the board cache, the per-day table has 8 rows, nothing was written. The same check found one difference from `/nodes` (ruling 12 in §13), fixed with a test.
 
 Replaces the serving half of [the shared status page design of 2026-11-06](2026-11-06-shared-status-page.md): its snapshot reducers stay, its separate server and its files do not.
