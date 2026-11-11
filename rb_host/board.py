@@ -6,11 +6,9 @@ never writes a source file. No MCP tool is added.
 """
 from __future__ import annotations
 
-import calendar
 import hashlib
 import json
 import os
-import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,6 +18,7 @@ from rb_node.withheld import Withheld
 from . import server
 from .config import HostConfig
 from .jobs import clean, ledger_for, now
+from .util import age_s
 
 NODE_SOURCES = ("queue", "gpu", "state", "events", "kanban")
 CADENCE_S = {"queue": 600, "gpu": 600, "state": 3600, "events": 1800, "kanban": 3600}
@@ -253,13 +252,6 @@ def refresh(cfg: HostConfig, node: Optional[str] = None,
 
 
 # -- load (no connection, no write) -------------------------------------------------------
-def _age_s(ts: Any) -> Optional[float]:
-    try:
-        return time.time() - calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError:
-        return None
-
-
 def _node_source(cfg: HostConfig, sid: str, name: str) -> dict:
     p = _cache_path(cfg, sid)
     try:
@@ -267,7 +259,7 @@ def _node_source(cfg: HostConfig, sid: str, name: str) -> dict:
     except (OSError, ValueError):
         rec = {"source": sid, "fetched_at": None, "ok": False, "error": "never_fetched",
                "cadence_s": CADENCE_S[name], "items": []}
-    age = _age_s(rec.get("fetched_at"))
+    age = age_s(rec.get("fetched_at"))
     rec["stale"] = age is None or age > rec.get("cadence_s", CADENCE_S[name])
     return rec
 

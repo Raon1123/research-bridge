@@ -5,7 +5,6 @@ or `rb_host.sync`, so that the hub page can use it without loading the MCP serve
 """
 from __future__ import annotations
 
-import calendar
 import json
 import os
 import re
@@ -19,6 +18,7 @@ from rb_node.withheld import Withheld
 
 from .jobs import clean, ledger_for
 from .store import _within, valid_msg_id
+from .util import age_s
 
 STALE_AFTER_S = 900  # three default timer intervals
 MAX_BODY = 20000
@@ -64,13 +64,6 @@ def read_status(cfg: Any, node: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def _age_s(ts: Any) -> Optional[float]:
-    try:
-        return max(0.0, time.time() - calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ")))
-    except ValueError:
-        return None
-
-
 def _undelivered(cfg: Any, node: str) -> int:
     from .jobs import ledger_for
     return sum(1 for r in ledger_for(cfg)._latest().values()
@@ -87,7 +80,7 @@ def summary(cfg: Any, node: str) -> dict:
     out = {"synced": st is not None}  # type: dict
     for k in keys:
         out[k] = st.get(k) if st else None
-    age = _age_s(out["last_ok_at"]) if st else None
+    age = age_s(out["last_ok_at"]) if st else None
     out["age_s"] = None if age is None else round(age)
     out["stale"] = age is None or age > STALE_AFTER_S
     out["undelivered"] = _undelivered(cfg, node)

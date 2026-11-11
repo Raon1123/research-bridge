@@ -2,7 +2,6 @@
 approve and reject are called only by the rb CLI and the 8765 page."""
 from __future__ import annotations
 
-import hashlib
 import math
 import os
 import time
@@ -17,6 +16,7 @@ from rb_node.jobs import MAX_GPU_HOURS
 from .client import NodeClient, RemoteError
 from .config import HostConfig, load_host_config
 from .ledger import Ledger
+from .util import now, sha256_file  # noqa: F401  (jobs.now is used by server, sync, board)
 
 DONE = {"submit": "queued", "cancel": "cancelled_requested"}
 # Node codes after which nothing was queued or cancelled: the record goes back to
@@ -63,18 +63,6 @@ def connect(cfg: HostConfig, node: str) -> NodeClient:
     return NodeClient(cfg.alias(node), node=node)
 
 
-def _sha(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(str(path), "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def _existing(ledger: Ledger, op: str, key: str) -> Optional[dict]:
     for r in ledger._latest().values():
         if r.get("kind") == "job" and r.get("op") == op and r.get("idempotency_key") == key:
@@ -110,7 +98,7 @@ def create_submit(ledger: Ledger, cfg: HostConfig, node: str, config_path: str,
         if not p.is_file():
             raise ValueError("config file not found")
         rec = {"kind": "job", "op": "submit", "id": uuid.uuid4().hex, "node": node,
-               "config_path": str(p.resolve()), "config_name": p.name, "config_sha256": _sha(p),
+               "config_path": str(p.resolve()), "config_name": p.name, "config_sha256": sha256_file(p),
                "gpus": list(gpus), "gpu_hours": gpu_hours, "idempotency_key": idempotency_key,
                "note": note, "status": "pending_approval", "created": now()}
         ledger.append(rec)
@@ -193,7 +181,7 @@ def _check_config(rec: dict) -> Path:
     cp = Path(rec["config_path"])
     if rec.get("config_name") != cp.name:
         raise ValueError("config_name does not match config_path; refusing")
-    if not cp.is_file() or _sha(cp) != rec["config_sha256"]:
+    if not cp.is_file() or sha256_file(cp) != rec["config_sha256"]:
         raise ValueError("config file changed since submit; submit again")
     return cp
 

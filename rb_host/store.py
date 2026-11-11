@@ -15,6 +15,7 @@ from rb_node.withheld import Withheld
 
 from .client import RemoteError
 from .config import HostConfig
+from .util import now, sha256_file
 
 
 # Names a hub Claude session may load as instructions (SEC-02). Node-supplied files with
@@ -76,14 +77,6 @@ def _remote_name(name: str) -> str:
 def _safe_name(name: str) -> str:
     """Local file name for a node-supplied name: basename only, never an instruction file."""
     return untrusted_name(_remote_name(name))
-
-
-def _sha(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(str(path), "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def mask_body(wh: Withheld, text: str, kind: Any) -> Any:
@@ -160,7 +153,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             dest = quar / name
             entry.update(status="quarantined", reason=verdict)
         shutil.move(str(stage), str(dest))
-        entry["sha256"] = _sha(dest)
+        entry["sha256"] = sha256_file(dest)
         entry["bytes"] = dest.stat().st_size
         files.append(entry)
     shutil.rmtree(str(stage_dir), ignore_errors=True)
@@ -175,7 +168,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             pf.pop("name", None)  # the name itself may be the withheld content
         prov_files.append(pf)
     prov = {"node": node, "msg_id": msg_id,
-            "received_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "received_at": now(),
             "body_withheld_lines": body_hits, "files": prov_files}
     _atomic_write(inbox / "provenance.json", json.dumps(prov, ensure_ascii=False, indent=2))
     return {"msg_id": msg_id, "node": node, "kind": item.get("kind"),
@@ -283,7 +276,7 @@ def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
     atts = []  # type: List[Dict[str, Any]]
     for idx, f in enumerate(files):
         atts.append({"index": idx, "name": "(withheld)" if wh.name_hit(f.name) else f.name,
-                     "bytes": f.stat().st_size, "sha256": _sha(f)})
+                     "bytes": f.stat().st_size, "sha256": sha256_file(f)})
     body_file = d / "body.txt"
     body_sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
     prov_file = d / "provenance.json"
@@ -305,7 +298,7 @@ def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
         _atomic_write(body_file, masked)
     if not prov_file.is_file():
         prov = {"node": node, "msg_id": msg_id,
-                "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "created": now(),
                 "body_chars": len(body), "body_sha256": body_sha, "body_withheld_lines": hits, "attachments": atts}
         _atomic_write(prov_file, json.dumps(prov, ensure_ascii=False, indent=2))
     return {"dir": str(d), "body_withheld_lines": hits, "attachments": atts}
