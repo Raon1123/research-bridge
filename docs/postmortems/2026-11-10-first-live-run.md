@@ -74,6 +74,12 @@ Abbreviations used: B2, B3 (the security checks and the first live run of `docs/
 
 None recorded. Merging PRs 52 and 53 from the session was refused by the session's permission check; the user merged them on GitHub.
 
-## 4. Open items
+## 4. Prevention rules
+
+- Example values in check tables are facts of the project sheet or are marked as placeholders. (PM-02)
+- A script that updates its own checkout re-executes itself after the pull moves `HEAD`; a test pins it. (PM-03)
+- A node step that pulls names the branch it expects (`git status -sb` first). (PM-04)
+
+## 5. Open items
 
 - B3 row 7: the `job_finished` event of job `75b0b3a9df614fc4becb47f0c079b7a9`, after the research queue reaches it.

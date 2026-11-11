@@ -94,3 +94,4 @@ None recorded.
 ## 5. Open items
 
 - A bridge job claimed by the real queue runner, and every hub-side check: same section, item 3.
+- Afterwards (2026-11-11): the first live run (B3, 2026-11-10) ran `hello`, `send_message` with a pdf, `poll` and a real `submit_job` with `rb approve` (`docs/provisioning.md` §Results, `docs/postmortems/2026-11-10-first-live-run.md`). Still open: B3 row 7 (a job claimed by the real queue runner) and the `cancel_job` check of `docs/HANDOFF.md` item 3, which no result records.

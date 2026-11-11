@@ -6,11 +6,11 @@ Copy [TEMPLATE.md](TEMPLATE.md) to `docs/postmortems/YYYY-MM-DD-<slug>.md`. The 
 
 ## When to write one
 
-- After the Task 13 live run (B3), whatever its outcome.
-- After the final whole-branch review, covering the defects it found.
 - Whenever a B2 security check in `docs/provisioning.md` does not hold.
 - Whenever a defect is found after a task was marked complete, or a reviewer finds a defect that the implementer's tests passed.
 - Whenever an anti-goal of the design (severity S0 below) occurs, immediately, before any other write-up.
+
+Two one-time occasions were listed here and are done: the final whole-branch review ([2026-11-03-whole-branch-review.md](2026-11-03-whole-branch-review.md)) and the first live run, B3 ([2026-11-10-first-live-run.md](2026-11-10-first-live-run.md)).
 
 ## Severity
 

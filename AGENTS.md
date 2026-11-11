@@ -18,13 +18,13 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md` (later des
 
 | Path | Role |
 |---|---|
-| `rb_node/` | Node side. Standard library only, Python >= 3.8, `from __future__ import annotations` in every module. Runs on the node (node1). Besides the bridge operations: `doctor.py` (`rb-node doctor`), `install.py` (helper of `scripts/node-install.sh`), `link.py` (`rb-node link`, registers `serve-local` for a live session in the research tree). |
-| `rb_host/` | Hub side: SSH client, ledger, store, MCP server (`rb-host-mcp`), `rb` CLI, unified board cache (`board.py`, `rb board`). Python >= 3.10 (3.12 on the Linux hub), needs `mcp>=1.27,<2` (extra `host`). Setup and diagnosis: `setup.py` (`rb setup`, `rb agent`), `doctor.py` (`rb doctor`), `sshenv.py` (finds the ssh-agent socket and classifies SSH errors), `service.py` (`rb service`, systemd user units). Sync and display: `sync.py` (`rb sync`, the status file), `threads.py` (builds conversations from the ledger and reads the status file), `web.py` (`rb web serve`, the hub page), `webaccess.py` (`rb web key`, the access keys and sessions of the hub page). Shared status page (reads laptop files; triage decision 18): `share.py` (`rb share build`), `share_serve.py` (`rb share serve`). |
+| `rb_node/` | Node side. Standard library only, Python >= 3.8, `from __future__ import annotations` in every module. Runs on the node (node1). Bridge: `cli.py` (`rb-node`), `protocol.py` (line-delimited JSON shared with the hub), `remote.py` (`serve-remote`, the bridge key's forced command), `mailbox.py` (`in/`, `out/`, `state/`), `jobs.py` (`job_submit`, `job_cancel`), `approval.py` (approval verifier, SEC-01), `run_job.py` (`run-job`, GPU-hour budget), `spawn.py` (`rb-node respond`, the responder), `local.py` (`serve-local`, MCP for server sessions), `harness.py` (`harness-receive`). Rules: `config.py` (`node.json`), `configure.py` (`rb-node config`; also used by `rb config`), `paths.py` (path policy), `withheld.py` (withheld filter, also used by the hub), `audit.py` (audit log). Other: `gitinfo.py` (`git_status`, `rb-node git-status`), `doctor.py` (`rb-node doctor`), `install.py` (helper of `scripts/node-install.sh`), `link.py` (`rb-node link`, registers `serve-local` for a live session in the research tree). |
+| `rb_host/` | Hub side. Python >= 3.10 (3.12 on the Linux hub), needs `mcp>=1.27,<2` (extra `host`). Core: `client.py` (SSH client for `serve-remote`), `server.py` (MCP server `rb-host-mcp`, the ten tools), `cli.py` (`rb`), `ledger.py` (`ledger.jsonl`), `store.py` (stores node items, hub withheld re-check), `jobs.py` (job records, `rb approve`, `rb reject`), `config.py` (reads `host.json`), `configure.py` (`rb config`), `harness.py` (`rb harness`), `board.py` (unified board cache, `rb board`). Setup and diagnosis: `setup.py` (`rb setup`, `rb agent`), `doctor.py` (`rb doctor`), `sshenv.py` (finds the ssh-agent socket and classifies SSH errors), `service.py` (`rb service`, systemd user units). Sync and display: `sync.py` (`rb sync`, the status file), `threads.py` (builds conversations from the ledger and reads the status file), `web.py` (`rb web serve`, the hub page), `webaccess.py` (`rb web key`, the access keys and sessions of the hub page). Shared status page (reads laptop files; triage decision 18): `share.py` (`rb share build`), `share_serve.py` (`rb share serve`). |
 | `scripts/` | `node-install.sh` (the single node entry point: installs or updates `rb_node`, writes `node.json`, prints or applies the `authorized_keys` lines, runs `rb-node doctor`), `demo_dashboard.py` (demo of the pages with seeded data), and `b2-hub.sh`, `b2-node.sh` (the B2 security checks of `docs/provisioning.md`, run by the user). |
 | `tests/` | pytest. Node and host tests run against a local subprocess node, never against node1. |
 | `deploy/` | `node.json.example`, `authorized_keys.example` (placeholders only; the lines are the ones `scripts/node-install.sh` produces). |
 | `vault-export/` | Snapshot and patches of the files this project edited in the vault. See `vault-export/README.md`. |
-| `docs/99_Archive/` | Finished or superseded material, kept for provenance; a file that is no longer needed is moved here, not deleted. `README.md` (index: what, from where, why), `sdd-2026-10-27/` (controller ledger, task briefs and implementer reports from the first build), `plans/` (finished plans). |
+| `docs/99_Archive/` | Finished or superseded material, kept for provenance; a file that is no longer needed is moved here, not deleted. `README.md` (index: what, from where, why), `sdd-2026-10-27/` (controller ledger, task briefs and implementer reports from the first build), `plans/` (finished plans), `manual-appendix-a/` (the Windows and laptop-hub appendices of the manuals). |
 | `docs/design/` | Design documents: `README.md` (when to write one, status lifecycle, index), `TEMPLATE.md`. |
 | `docs/projects/` | One sheet per research project a node serves: `TEMPLATE.md`, and `trm.md` (the current test project; its queue, document and withheld-file facts, moved from `docs/server-facts.md`). |
 | `docs/issues/` | Issue triage: open work and its order (`docs/issues/2026-11-10-triage.md`), and what the 2026-11-11 audit found and left open (`docs/issues/2026-11-11-audit.md`). |
@@ -62,14 +62,15 @@ Rule 8, dead holder (`rb_node/spawn.py`, `_lock_holder_dead`): the lock file `re
 
 ## Commands a session must not run
 
-These need the user at a terminal. `rb setup`, `rb agent`, `rb approve`, `rb reject`, `rb service install` and `rb-node approve-key set` refuse to run unless standard input and output are a terminal (`rb_host/cli.py`, `rb_node/cli.py`), and `scripts/node-install.sh` edits `~/.ssh/authorized_keys` only on a terminal after a y/N answer. A session must not work around these checks:
+These need the user at a terminal. `rb setup`, `rb agent`, `rb approve`, `rb reject`, `rb service install`, `rb-node approve-key set` and `clear`, and `rb-node config set` of the guarded keys refuse to run unless standard input and output are a terminal (`rb_host/cli.py`, `rb_node/cli.py`), and `scripts/node-install.sh` edits `~/.ssh/authorized_keys` only on a terminal after a y/N answer. A session must not work around these checks:
 
 - `rb setup` (writes `host.json`, SSH keys and `~/.ssh/config`; only `rb setup --node NAME --yes-print-only`, which writes and asks nothing, is allowed);
 - `rb agent` (loads the key passphrases into the ssh-agent);
 - `rb approve` and `rb reject` (hard rule 1);
 - `rb service install` (writes systemd user units; `rb service install --print` and `rb service status` are allowed);
 - `scripts/node-install.sh` (on the node console; `--dry-run` writes nothing);
-- `rb-node approve-key set` (on the node console; sets the approval verifier).
+- `rb-node approve-key set` and `rb-node approve-key clear` (on the node console; set or remove the approval verifier);
+- `rb-node config set` of `approval_path`, `read_roots`, `write_roots` or `withheld_source` (the guarded keys, `GUARDED_KEYS` in `rb_node/cli.py`), and `rb-node config init --force` when it would reset one of them to its default (on the node console).
 
 A session may tell the user which command to type and what its last output line should be.
 
@@ -81,7 +82,8 @@ A session may tell the user which command to type and what its last output line 
 - generating or moving SSH keys;
 - `git push`, tag, or merging branches;
 - restarting the 8765 dashboard (laptop only) or editing vault files outside `vault-export/` (see `vault-export/README.md`);
-- starting, stopping or reconfiguring the hub page and the sync timer (`rb web serve`, `systemctl --user` on `rb-sync.timer` and `rb-web.service`).
+- starting, stopping or reconfiguring the hub page and the sync timer (`rb web serve`, `systemctl --user` on `rb-sync.timer` and `rb-web.service`), and starting `rb share serve` (it can bind a LAN address);
+- `rb config init`, `add-node`, `remove-node`, `set` and `local`: they rewrite `host.json` or `private/local.json` without asking. `rb config path`, `show`, `mcp` and `check` only read.
 
 ## Conventions
 
