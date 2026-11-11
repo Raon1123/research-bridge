@@ -429,6 +429,15 @@ def _node_sessions_lines(wh: Withheld, n: dict) -> str:
     if n.get("unparsed"):
         out.append('<p class="err">node %s: %s of %s record file(s) the node could not read as '
                    "sessions</p>\n" % (name, _num(n.get("unparsed")), _num(n.get("files"))))
+    if n.get("ignored"):
+        out.append("<p>node %s: %s file(s) in the node's sessions directory are not session "
+                   "records (ignored)</p>\n" % (name, _num(n.get("ignored"))))
+    for key, how, where in (("deeper", "high", "deeper"), ("shallower", "low", "shallower")):
+        if n.get(key):
+            out.append('<p class="err">node %s: the sessions directory on the node looks one '
+                       "level too %s: %s session record file(s) are one level %s (see the check "
+                       "<code>sessions</code> of <code>rb-node doctor</code> on the node "
+                       "console)</p>\n" % (name, how, _num(n.get(key)), where))
     if n.get("skipped"):
         out.append('<p class="err">node %s: %s session(s) of the last answer failed the checks '
                    "on the hub and were left out</p>\n" % (name, _num(n.get("skipped"))))

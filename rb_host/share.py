@@ -342,9 +342,8 @@ def node_sessions(cfg: HostConfig, node: str, field: Any, wh: Withheld,
     info = {"node": node, "state": state, "error": code,
             "fetched_at": _iso(fa) if fa else None, "active_now": active_now,
             "sessions": in_period, "active_h": round(sum(r["active_h"] for r in rows), 2),
-            "outside": _int(store.get("outside")), "unparsed": _int(store.get("unparsed")),
-            "files": _int(store.get("files")), "truncated": store.get("truncated") is True,
-            "skipped": _int(store.get("skipped"))}
+            "truncated": store.get("truncated") is True, "skipped": _int(store.get("skipped"))}
+    info.update((k, _int(store.get(k))) for k in hub_sessions.COUNTS)  # 0 in an older store
     return info, rows, dropped
 
 
@@ -514,9 +513,10 @@ def snapshot(cfg: HostConfig, days: int = 7, today: Optional[date] = None) -> di
         try:
             got = node_sessions(cfg, node, sync_st.get("sessions"), wh, labels, start, end)
         except Exception:
-            got = ({"node": node, "state": "error", "error": "unparseable", "fetched_at": None,
-                    "active_now": 0, "sessions": 0, "active_h": 0.0, "outside": 0,
-                    "unparsed": 0, "files": 0, "truncated": False, "skipped": 0}, [], 0)
+            got = (dict({"node": node, "state": "error", "error": "unparseable",
+                         "fetched_at": None, "active_now": 0, "sessions": 0, "active_h": 0.0,
+                         "truncated": False, "skipped": 0},
+                        **dict.fromkeys(hub_sessions.COUNTS, 0)), [], 0)
         if got is not None:
             info, rows, n = got
             dropped += n

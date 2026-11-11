@@ -29,6 +29,9 @@ NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 ID_RE = re.compile(r"^[0-9a-f-]{8,64}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LABEL_MAX = 120
+# File counts of the answer kept in the store. `ignored`, `deeper` and `shallower` came later
+# (an answer of an older node lacks them).
+COUNTS = ("outside", "unparsed", "ignored", "files", "deeper", "shallower")
 
 
 class BadAnswer(ValueError):
@@ -120,9 +123,11 @@ def validate(ans: Any, wh: Withheld) -> Tuple[dict, int]:
             continue
         sid, rec = got
         sessions[sid] = merge_entry(sessions[sid], rec) if sid in sessions else rec
-    return {"tree": label_ok(ans.get("tree"), wh), "outside": _count(ans.get("outside")),
-            "unparsed": _count(ans.get("unparsed")), "files": _count(ans.get("files")),
-            "truncated": ans.get("truncated") is True, "sessions": sessions}, skipped
+    out = {"tree": label_ok(ans.get("tree"), wh), "truncated": ans.get("truncated") is True,
+           "sessions": sessions}
+    for k in COUNTS:  # a node without a field gives 0
+        out[k] = _count(ans.get(k))
+    return out, skipped
 
 
 def load(cfg: Any, node: str) -> Tuple[Optional[dict], Optional[str]]:
@@ -176,12 +181,12 @@ def record(cfg: Any, node: str, ans: Any, wh: Withheld, now: str) -> int:
     sessions = _old_sessions(store, wh)
     for sid, rec in checked["sessions"].items():
         sessions[sid] = merge_entry(sessions[sid], rec) if sid in sessions else rec
-    write_store(cfg, node, {
-        "schema": SCHEMA, "node": node, "fetched_at": now, "attempted_at": now, "ok": True,
-        "error": None, "tree": checked["tree"], "outside": checked["outside"],
-        "unparsed": checked["unparsed"], "files": checked["files"],
-        "truncated": checked["truncated"], "skipped": skipped,
-        "sessions": dict(sorted(sessions.items()))})
+    data = {"schema": SCHEMA, "node": node, "fetched_at": now, "attempted_at": now, "ok": True,
+            "error": None, "tree": checked["tree"]}
+    data.update((k, checked[k]) for k in COUNTS)
+    data.update(truncated=checked["truncated"], skipped=skipped,
+                sessions=dict(sorted(sessions.items())))
+    write_store(cfg, node, data)
     return skipped
 
 
