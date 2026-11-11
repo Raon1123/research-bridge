@@ -115,7 +115,7 @@
 
     rb agent [--node NAME]
 
-허브 터미널에서만 실행한다. `host.json`의 각 노드의 두 별칭에 대한 `ssh -G`에서 키 파일 이름을 읽고(모든 노드, 또는 `--node`), agent에 아직 없는 키를 올리고(키마다 passphrase를 묻는다), agent 소켓 경로와 다른 셸용 `export SSH_AUTH_SOCK=...`를 출력한다(`rb harness`에만 필요하다). harness 블록이 없는 것은 오류가 아니라 안내다. bridge 키 파일이 없거나, `ssh-add`가 실패하거나, agent에 닿을 수 없으면 종료 코드 1이다.
+허브 터미널에서만 실행한다. `host.json`의 각 노드의 두 별칭에 대한 `ssh -G`에서 키 파일 이름을 읽고(모든 노드, 또는 `--node`), agent에 아직 없는 키를 올리고(키마다 passphrase를 묻는다), agent 소켓 경로와 다른 셸용 `export SSH_AUTH_SOCK=...`를 출력한다(`rb harness`에만 필요하다). harness 블록이 없는 것은 오류가 아니라 안내다. harness 키 파일이 없는 것도 안내이며, 두 경우 모두 종료 코드는 0이다. bridge 키 파일이 없거나, `ssh-add`가 실패하거나, agent에 닿을 수 없으면 종료 코드 1이다.
 
 ### 4.5 By hand
 

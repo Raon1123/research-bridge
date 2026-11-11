@@ -113,7 +113,7 @@ After a reboot the agent is empty: run `rb agent` in a hub terminal (§4.4).
 
     rb agent [--node NAME]
 
-Hub terminal only. Reads the key file names from `ssh -G` of each node's two aliases in `host.json` (all nodes, or `--node`), loads the ones not yet in the agent (asks each passphrase), prints the agent socket path and `export SSH_AUTH_SOCK=...` for other shells (needed only for `rb harness`). A missing harness block is a note, not an error. Exit 1 if a bridge key file is missing, an `ssh-add` fails, or no agent can be reached.
+Hub terminal only. Reads the key file names from `ssh -G` of each node's two aliases in `host.json` (all nodes, or `--node`), loads the ones not yet in the agent (asks each passphrase), prints the agent socket path and `export SSH_AUTH_SOCK=...` for other shells (needed only for `rb harness`). A missing harness block is a note, not an error; so is a missing harness key file, and the exit status stays 0 for both. Exit 1 if a bridge key file is missing, an `ssh-add` fails, or no agent can be reached.
 
 ### 4.5 By hand
 
