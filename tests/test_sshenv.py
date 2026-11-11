@@ -230,9 +230,11 @@ def test_ssh_config_splits_userknownhostsfile(tmp_path, monkeypatch):
 
 def test_alias_unknown_when_hostname_equals_alias(monkeypatch):
     monkeypatch.setattr(sshenv, "run", lambda argv, **k: (0, "hostname rb-node1\n", ""))
-    assert sshenv.alias_defined("rb-node1") is False
+    assert sshenv.defined(sshenv.ssh_config("rb-node1"), "rb-node1") is False
     monkeypatch.setattr(sshenv, "run", lambda argv, **k: (0, "hostname <NODE_HOST>\n", ""))
-    assert sshenv.alias_defined("rb-node1") is True
+    assert sshenv.defined(sshenv.ssh_config("rb-node1"), "rb-node1") is True
+    assert sshenv.defined({"hostname": ["RB-Node1"]}, "rb-node1") is False
+    assert sshenv.defined({}, "rb-node1") is False
 
 
 def test_identity_file_expands_tilde(tmp_path, monkeypatch):

@@ -177,7 +177,7 @@ Protocol framing details, module layout, test harness, CLI flags, log rotation, 
 
 ## 13. Configuration and commands (current state)
 
-Moved from the README on 2026-11-05. Unlike §1–§12, which record the design as approved on 2026-10-27, this section describes the code as it is now; update it when the commands change. Later designs that changed the behaviour described here: [node-side approval (SEC-01)](../../design/2026-11-03-node-side-approval.md), [unified board](../../design/2026-11-02-unified-board.md). Step-by-step setup with SSH keys and `authorized_keys`: `docs/manual/`.
+Moved from the README on 2026-11-05. Unlike §1–§12, which record the design as approved on 2026-10-27, this section described the code on 2026-11-05 and is no longer updated (see the Superseded note below). Later designs that changed the behaviour described here: [node-side approval (SEC-01)](../../design/2026-11-03-node-side-approval.md), [unified board](../../design/2026-11-02-unified-board.md). Step-by-step setup with SSH keys and `authorized_keys`: `docs/manual/`.
 
 > Superseded 2026-11-10 (command list): §13.2–§13.5 are no longer complete or in step with the code. They lack `rb setup`, `rb agent`, `rb doctor`, `rb service`, `rb sync`, `rb web serve`, `rb share`, `rb git-status` and `rb-node doctor`, `link` and `scripts/node-install.sh`, and they show `<venv python>` and `D:/` paths. Current commands: `README.md`, `docs/manual/hub-setup.md`, `docs/manual/node-setup.md`, and `rb --help` / `rb-node --help`; designs: `docs/design/2026-11-10-setup-and-diagnosis.md`, `docs/design/2026-11-10-sync-and-hub-page.md`. The hub is the Linux server (§13.3 title "Laptop (hub)" is out of date).
 

@@ -6,7 +6,14 @@ Commands: `rb` below means `uv run --extra host rb`, run in the repository's mai
 
 ## Audit of 2026-11-11
 
-A session read the whole repository (code, tests, documents) on 2026-11-11, on branch `claude/audit-2026-11-11`. Fixed in that change: status lines and index rows that named merged branches, broken references, places where a manual or `AGENTS.md` disagreed with the code, a few small code defects, unused imports and helpers. The records of the first build and the two finished plans moved to `docs/99_Archive/` (index: `docs/99_Archive/README.md`). What the audit found and did not fix, code defects first: `docs/issues/2026-11-11-audit.md`.
+A session read the whole repository (code, tests, documents) on 2026-11-11 and changed it in two steps.
+
+- PR 56 (branch `claude/audit-2026-11-11`): status lines and index rows that named merged branches, broken references, places where a manual or `AGENTS.md` disagreed with the code, three small code defects, unused code. The records of the first build and the two finished plans moved to `docs/99_Archive/` (index: `docs/99_Archive/README.md`).
+- PR 57 (branch `claude/audit-fixes-2026-11-11`, on top of PR 56): the fifteen code defects the audit listed (a job stuck in `approved` after a node refusal, wrong-typed `node.json` values, a `poll` stopped by one malformed item, uncleaned board text, and others), duplicated code, code only tests used, and the documents that lagged (triage rows, designs, postmortems, manuals; Appendix A of the manuals is in the archive).
+
+What was fixed, and what is left for the user to decide: `docs/issues/2026-11-11-audit.md`.
+
+What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (the 16:17 pass and the last pass before PR 57 was opened both ended with `Result=success` in `rb service status`). PR 57 has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
@@ -74,17 +81,18 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 
 - Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
+- After PRs 56 and 57 are merged (56 first, each with a merge commit: 57 is stacked on 56): the systemd units of the hub run the code of the main checkout, which was left on branch `claude/audit-2026-11-11`. In that checkout: `git switch main && git pull --ff-only`, `uv sync --extra host --python '>=3.10'`, then `systemctl --user restart rb-web.service` (the sync timer picks the code up by itself). The MCP server of a Claude session is also started from the main checkout (`uv run --directory <main checkout> ... python -m rb_host.server`) and keeps the code it loaded: a session that was open before the update serves the old `rb_host` until it is restarted or its MCP server is reconnected.
 - Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).
 
 ## Pending decisions
 
 All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. Decision 1 (push and merge) is done: PRs 48 and 49. The first open one: transport authentication (#25), which was ordered after the first live run; that run has passed. Open work by workstream: the same file, §4.
 
-Decided by the user on 2026-11-11: PRs merge to `main` with merge commits only, and GitHub deletes a PR branch after the merge (`docs/CONTRIBUTING.md` §1 rule 3; PR 55).
+Decided by the user on 2026-11-11: PRs merge to `main` with merge commits only, and GitHub deletes a PR branch after the merge (`docs/CONTRIBUTING.md` §1 rule 3; PR 55). Also on 2026-11-11: MCP tools may gain optional arguments (the ten tools and their names stay; this refines default (2) of 2026-11-10 below and answers triage §5 item 7 and the open questions of the project-profiles and experiment-records designs, which remain drafts); research family identifiers are not withheld content, and new text names them only when needed (`AGENTS.md` Conventions); merged branches were deleted (`docs/issues/2026-11-11-audit.md` rows U2, U7, U9).
 
 Decided by the user on 2026-11-10 (no longer waiting; items 3, 7, 8, 11, 13 and 20 of the triage list §5 are closed except where noted):
 
-- The user confirmed the six defaults: (1) outgoing bodies are stored under `outbox/` after the withheld check, masked; (2) the ten MCP tools stay with their names and arguments; (3) the hub page has no approval form, approval stays `rb approve` in a hub terminal (the self-approval residual of PM-04 in `2026-11-03-whole-branch-review.md` stays accepted, as before); (4) unattended sync runs only through `rb service install`, run by the user; (5) the Windows instructions shrink to an appendix; (6) the `trm` names in config keys and on the wire are not renamed now.
+- The user confirmed the six defaults: (1) outgoing bodies are stored under `outbox/` after the withheld check, masked; (2) the ten MCP tools stay with their names and arguments; (3) the hub page has no approval form, approval stays `rb approve` in a hub terminal (the self-approval residual of PM-04 in `2026-11-03-whole-branch-review.md` stays accepted, as before); (4) unattended sync runs only through `rb service install`, run by the user; (5) the Windows instructions shrink to an appendix (the appendix moved to `docs/99_Archive/manual-appendix-a/` on 2026-11-11); (6) the `trm` names in config keys and on the wire are not renamed now.
 - The user chose a one-time access key for the hub page: `rb web key` in a hub terminal prints an address; the browser exchanges the key once for a session cookie (defaults 10 minutes for the key, 12 hours for the session). No password and no login form. Design: `docs/design/2026-11-10-sync-and-hub-page.md` §6.6a. The page also refuses connections from other accounts (owner of the client socket, `/proc/net/tcp`). Residual risk: the cookie goes to every port on 127.0.0.1 and can be overwritten from there, which can sign the user out but gives another account nothing it can use against the page; anything running as the hub user is out of scope. A Unix-socket forward is only an alternative transport. Open the address by pasting it into the browser, not as a command-line argument; use `http://127.0.0.1:8767/`, not `localhost`.
 
 ## Test suite and `~/.claude.json` (2026-11-10)
@@ -99,7 +107,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 923 passed on 2026-11-11 (audit branch; 921 on 2026-11-10 after PR 53)
+    rtk proxy uv run --extra host pytest -q        # 975 passed on 2026-11-11 (branch claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.

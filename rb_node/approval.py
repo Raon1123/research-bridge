@@ -4,7 +4,7 @@ The node runs job_submit / job_cancel only when the request carries approval_key
 PBKDF2 key derived from a passphrase the user types at approval time. The node stores only
 sha256(key) (the verifier), set from the node console with `rb-node approve-key set`; no
 bridge op can set or read it. A holder of the bridge key alone therefore cannot queue or
-cancel a job. The laptop derives the key with the same derive() function.
+cancel a job. The hub derives the key with the same derive() function.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from typing import Optional, Tuple
 from .protocol import ProtocolError
 
 ITERATIONS = 600000
-MIN_ITERATIONS = 100000  # the laptop refuses node params below this (a node could weaken the KDF)
+MIN_ITERATIONS = 100000  # the hub refuses node params below this (a node could weaken the KDF)
 MAX_ITERATIONS = 10000000
 MIN_PASSPHRASE = 12
 FREE_FAILURES = 5  # wrong keys allowed before the wait starts
@@ -68,8 +68,8 @@ def _load(path: Path) -> Optional[dict]:
     return rec
 
 
-def path_inside_roots(cfg) -> bool:
-    """True when approval_path lies inside a read or write root (the bridge key could write it)."""
+def root_holding_path(cfg) -> Optional[str]:
+    """The read, write or mailbox root (resolved) that holds approval_path, or None."""
     ap = os.path.realpath(str(cfg.approval_path))
     roots = [r if os.path.isabs(r) else os.path.join(str(cfg.trm_root), r)
              for r in list(cfg.read_roots) + list(cfg.write_roots)]
@@ -77,8 +77,13 @@ def path_inside_roots(cfg) -> bool:
     for root in roots:
         root = os.path.realpath(root)
         if ap == root or ap.startswith(root.rstrip(os.sep) + os.sep):
-            return True
-    return False
+            return root
+    return None
+
+
+def path_inside_roots(cfg) -> bool:
+    """True when approval_path lies inside a read or write root (the bridge key could write it)."""
+    return root_holding_path(cfg) is not None
 
 
 def require_safe_path(cfg) -> None:
@@ -88,7 +93,7 @@ def require_safe_path(cfg) -> None:
 
 
 def params(path: Path) -> dict:
-    """Public parameters for the laptop's derive(); no secret."""
+    """Public parameters for the hub's derive(); no secret."""
     rec = _load(path)
     if rec is None:
         raise ProtocolError("no_verifier", "no approval verifier; run rb-node approve-key set")

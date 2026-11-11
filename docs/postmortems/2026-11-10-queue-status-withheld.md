@@ -45,7 +45,11 @@ Abbreviations used: MCP (Model Context Protocol, the tool interface of Claude se
 
 None. The B3 run was stopped at row 5; `submit_job` was not called.
 
-## 4. Open items
+## 4. Prevention rules
+
+- Every node op that returns names or text passes through the withheld check on the node and again on the hub; a new op names its check in its review. (PM-01)
+
+## 5. Open items
 
 - The session transcript above holds the names; whether to delete or keep it is the user's call.
 - Done 2026-11-10: fix merged as PR 53, node reinstalled, hub sessions restarted; B3 continued from row 4.

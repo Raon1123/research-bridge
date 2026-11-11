@@ -318,6 +318,7 @@ Copying these into `AGENTS.md` is left to the fix change, so the hard rules and 
 - PM-01 to PM-07 (S1): fix before the B3 live run. Tracked in `docs/issues/2026-11-10-triage.md` §2.
 - PM-08 to PM-17 (S2): tracked in `docs/issues/2026-11-10-triage.md` §2.
 - Afterwards (2026-11-10): the two lines above first pointed to a section of `docs/HANDOFF.md` that never existed. Still open on 2026-11-10: PM-02 residual, PM-03, PM-04 residual, PM-07 residual, PM-13, PM-15, PM-16, PM-17 server half, PM-18, PM-19. Board question 6 and the `reduce_state` allowlist, last line below, are in issue 14 (the HANDOFF table it names was removed with the 2026-11-10 rewrite).
+- Afterwards (2026-11-11): the live run of 2026-11-10 closed the PM-07 residual (4 patterns loaded on each side, `docs/provisioning.md` B3 row 4 and B2 row 5) and the command-line half of the PM-02 residual (B2 rows 7 and 8: the Claude command line accepted the responder's arguments and did not run `id`). The confinement half of the PM-02 residual stays open as N-15 in `docs/issues/2026-11-10-triage.md`. The other items listed above stay open.
 - PM-13: a laptop attachment allowlist needs a design (`docs/design/TEMPLATE.md`).
 - PM-18: the user confirms whether withheld identifiers can appear in another case.
 - Board question 6 (`events.jsonl` refused by the node as unscannable) and the `reduce_state` key allowlist are already in `docs/HANDOFF.md` (MVP scope table) and are not repeated here.

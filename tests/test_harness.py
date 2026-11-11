@@ -160,7 +160,7 @@ def test_receive_rejects_device(env):
 
 def test_safe_extract_function_nothing_written(tmp_path):
     with pytest.raises(nh.HarnessError):
-        nh.stage_tar(_tar([("agents/a.md", b"1"), ("../evil", b"2")]), tmp_path / "st", "S1")
+        nh.extract_tar(_tar([("agents/a.md", b"1"), ("../evil", b"2")]), tmp_path / "st", "S1")
     assert not (tmp_path / "st").exists()
 
 

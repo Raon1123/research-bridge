@@ -2,9 +2,9 @@
 
 # Node setup
 
-노드는 `rb_node`(표준 라이브러리만 사용, Python 3.8 이상)를 실행하며, 허브에서 강제 명령(forced command)을 쓰는 SSH (Secure Shell)로 접속한다. SSH 키는 허브가 정해진 프로그램 하나만 실행하게 허락하고 그 외에는 아무것도 허락하지 않는다. 첫 번째 노드는 `node1`이다. `scripts/node-install.sh`가 노드에서 쓰는 유일한 진입점이다. 코드를 설치하고, 래퍼(wrapper)와 `node.json`을 쓰고, `authorized_keys` 두 줄을 출력하거나 적용한다. 이 매뉴얼의 모든 명령은 사용자가 노드 콘솔에서 실행한다. 세션은 노드에서 실행하는 명령마다 사용자의 승인이 필요하다(`AGENTS.md`). 허브 쪽은 [hub-setup.md](hub-setup.md)를 본다. 노드에 관한 Windows 허브 설명은 부록 A에 있다.
+노드는 `rb_node`(표준 라이브러리만 사용, Python 3.8 이상)를 실행하며, 허브에서 강제 명령(forced command)을 쓰는 SSH (Secure Shell)로 접속한다. SSH 키는 허브가 정해진 프로그램 하나만 실행하게 허락하고 그 외에는 아무것도 허락하지 않는다. 첫 번째 노드는 `node1`이다. `scripts/node-install.sh`가 노드에서 쓰는 유일한 진입점이다. 코드를 설치하고, 래퍼(wrapper)와 `node.json`을 쓰고, `authorized_keys` 두 줄을 출력하거나 적용한다. 이 매뉴얼의 모든 명령은 사용자가 노드 콘솔에서 실행한다. 세션은 노드에서 실행하는 명령마다 사용자의 승인이 필요하다(`AGENTS.md`). 허브 쪽은 [hub-setup.md](hub-setup.md)를 본다. 노드에 관한 Windows 허브 설명(2026-11-05부터 유지하지 않음)은 `docs/99_Archive/manual-appendix-a/node-setup.ko.md`에 보관했다.
 
-자리표시자: `node1`(노드 이름), `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`(노드의 주소, SSH 포트, 로그인 이름), `<HUB_ADDR>`(노드가 보는 허브의 주소), `<HUB_SUBNET>`(허브의 네트워크 범위). 약어: MCP = Model Context Protocol, GPU = graphics processing unit.
+자리표시자: `node1`과 꺾쇠괄호 안의 이름(`<NODE_HOST>`, `<HUB_ADDR>` 등)은 비공개 값을 대신한다. 유일한 목록은 [README.md](README.md)의 표기 규칙에 있다. 약어: MCP = Model Context Protocol, GPU = graphics processing unit.
 
 ## 1. Requirements
 
@@ -13,7 +13,7 @@
 - 노드가 서버 Claude 세션으로 메시지에 답하게 하려면 Claude Code CLI가 필요하다(§6). 비대화형 SSH에서는 `PATH`에 없는 경우가 많다. 설치 프로그램은 `claude_bin`의 현재 값이 실행 파일이 아니면 `PATH`에서 처음 찾은 `claude`로 설정한다. 그래도 부족하면 `rb-node doctor`의 `claude_bin` 검사가 알려 준다.
 - 문서를 공유하는 연구 트리("research root", `node.json`의 `trm_root`. `node1`에서는 [../projects/trm.md](../projects/trm.md)에 설명된 프로젝트)와, `jobs/`, `processing/`, `done/`, `failed/`가 있는 작업 큐 디렉터리.
 - 노드에 있는 이 저장소의 체크아웃. 노드에서 `git clone <REPO_URL>`을 하거나, `.git`을 포함한 허브 체크아웃의 사본을 쓴다(허브에서 노드로 복사한다. 노드는 허브로 연결을 열지 않는다).
-- 노드는 허브이면 안 된다. `~/.local/share/research-bridge`에 `host.json`이나 `ledger.jsonl`이 있으면 설치 프로그램이 실행을 거부한다.
+- 노드는 허브이면 안 된다. `~/.local/share/research-bridge`나 `$RB_HOST_ROOT`에 `host.json`이나 `ledger.jsonl`이 있거나, `$RB_HOST_CONFIG`가 존재하는 파일을 가리키면 설치 프로그램이 실행을 거부한다.
 
 ## 2. Install: `scripts/node-install.sh`
 
@@ -86,7 +86,7 @@ python 경로는 설치 시점에 찾은 절대 경로이며(여기서는 예로
 | `claude_bin` | path | `~/.local/bin/claude` | responder가 쓰는 Claude CLI의 절대 경로. |
 | `job_template` | list of strings | `[]` | config 자리표시자(`{config}`, `{config_dir}`, `{config_stem}` 중 하나, §4.1.1)가 있는 argv. 예: `["uv", "run", "pretrain.py", "--config", "{config}"]`. 비어 있으면 `job_submit`이 거부된다(`no_job_template`). 노드 소유자가 설정한다. |
 | `allowed_gpus` | list of integers | `[]` | 브리지 작업이 쓸 수 있는 GPU 인덱스, 즉 노드 소유자의 GPU. 예: `[4, 5, 6, 7]`. 비어 있으면 `job_submit`은 `no_allowed_gpus`로 거부되고 `run-job`은 아무것도 시작하지 않는다. 목록 밖의 GPU나 둘 이상의 GPU는 `invalid`로 거부된다. 노드 소유자가 설정한다. |
-| `max_file` | positive integer | 52428800 (50 MB) | 첨부 파일 크기 상한(바이트). |
+| `max_file` | positive integer | 52428800 (50 MB) | 첨부 파일, 가져오는 파일, 문서, 하네스 파일의 크기 상한(바이트). 최대 52428800이다(hard rule 5). `config set`은 더 큰 값을 거부한다. |
 | `mailbox_root` | path | `~/.research-bridge/mailbox` | 메일함(`in/`, `out/`, `state/`). |
 | `audit_path` | path | `~/.research-bridge/audit.jsonl` | 감사 로그(메시지 본문 없음). |
 | `approval_path` | path | `~/.research-bridge/approve.json` | 작업 승인 verifier(§4.2). 모든 읽기·쓰기 루트 밖에 둔다. |
@@ -155,18 +155,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 ### 7.1 Security checks from the hub (provisioning step B2)
 
-허브 매뉴얼 §4~§6을 마친 뒤 실행한다. 결과는 자리표시자를 쓴 형태로 `docs/provisioning.md` §Results에 기록한다.
-
-| Command on the hub | Expected |
-|---|---|
-| `ssh rb-node1` (아무것도 보내지 않는다) | 셸 프롬프트가 없다. |
-| `ssh rb-node1 cat /etc/passwd` | passwd 내용이 나오지 않는다. |
-| `ssh rb-node1-harness <anything except harness-push / harness-send>` | 종료 코드 1. |
-| Claude 세션에서 `read_doc("node1", "../../.ssh/authorized_keys")` | `denied` |
-| `send_message("node1", "test", [<small pdf>])`, 이어서 `poll` | 답장이 `provenance.json`과 함께 `<data root>/inbox/node1/<msg_id>/` 아래에 저장된다 |
-| `gpu_hours=0.01`로 `submit_job`, 이어서 `rb approve` | 상태가 `done` 또는 `budget_exceeded`인 `job_finished` 이벤트 |
-
-전송 검사와 읽기 검사는 노드가 withheld 패턴 파일을 로드한 뒤에만 의미가 있다(§4.3).
+허브 매뉴얼 §4~§6을 마친 뒤 실행한다. 허브 터미널에서 `scripts/b2-hub.sh [NODE]`를, 노드 콘솔에서 `sh scripts/b2-node.sh`를 실행한다. 각 행, 9행(세션이 하는 `read_doc` 검사), 첫 실연결 실행은 `docs/provisioning.md`의 §B2와 §B3에 있다. 결과는 자리표시자를 쓴 형태로 같은 파일의 §Results에 기록한다. 전송 검사와 읽기 검사는 노드가 withheld 패턴 파일을 로드한 뒤에만 의미가 있다(§4.3).
 
 ### 7.2 `rb-node doctor` (on the node console)
 
@@ -178,13 +167,14 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 |---|---|---|---|
 | `config` | fail | `node.json`이 없거나, 유효한 JSON이 아니거나, 객체가 아니다. 다른 것은 검사하지 않는다. | `rb-node config init` 또는 `scripts/node-install.sh`를 다시 실행 |
 | `config_keys` | warn | 알 수 없는 키나 타입이 틀린 값은 무시된다. | `rb-node config show` |
+| `max_file` | fail | `node.json`의 `max_file`이 52428800보다 크다(hard rule 5). 52428800이 적용된다. | `rb-node config set max_file 52428800` |
 | `research_root` | fail | `trm_root`가 디렉터리가 아니다. | `rb-node config set trm_root DIR` |
 | `read_roots` | warn | 읽기 루트가 존재하지 않는다. | `mkdir -p DIR` 또는 `rb-node config set read_roots '[...]'` |
 | `doc_paths` | warn | `experiments_dir` 또는 `hypotheses_path`가 모든 읽기 루트 밖에 있어서 id로 하는 `read_doc`이 거부된다. | `rb-node config set KEY PATH` |
 | `queue_dir` | warn | `queue_dir/jobs`가 없거나 쓸 수 없다. 작업이 어떤 runner도 보지 않는 곳으로 가게 된다. | `mkdir -p DIR/jobs` 또는 `queue_dir` 설정 |
 | `withheld` | 파일이 없거나, 읽을 수 없거나, 유효한 JSON이 아니거나, 비어 있거나, 컴파일되지 않는 패턴이 있으면 fail. `withheld_source`가 설정되지 않았으면 warn | fallback 패턴 다섯 개만 적용된다(또는 파일이 손상됐다). | `scripts/node-install.sh --withheld-file FILE` 또는 `rb-node config set withheld_source PATH` |
 | `approval` | fail | verifier가 없거나 읽을 수 없다. 모든 `job_submit`과 `job_cancel`이 거부된다. | `rb-node approve-key set` |
-| `approval_path` | fail | `approval_path`가 읽기 또는 쓰기 루트 안에 있어서 허브가 닿을 수 있다. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
+| `approval_path` | fail | `approval_path`가 읽기, 쓰기 또는 메일함 루트 안에 있어서(심볼릭 링크는 따라가서 판단한다) 허브가 닿을 수 있다. `job_submit`이 쓰는 규칙과 같다. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
 | `job_template` | 비어 있으면 warn, `{config}`, `{config_dir}`, `{config_stem}` 중 어느 것도 없으면 fail | 작업이 거부되거나(`no_job_template`) config 파일을 받을 수 없다. | `rb-node config set job_template '[...,"{config}"]'` |
 | `allowed_gpus` | 비어 있으면 warn | `allowed_gpus`가 비었거나 형식이 틀렸다. 모든 `job_submit`이 `no_allowed_gpus`로 거부된다. | `rb-node config set allowed_gpus '[4, 5, 6, 7]'`(본인 GPU 인덱스) |
 | `claude_bin` | warn | responder를 시작할 수 없다. 메시지는 살아 있는 세션을 기다린다. | `rb-node config set claude_bin PATH` |
@@ -268,15 +258,6 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 - git 연산은 트리를 `trm`이라는 키로 보낸다. 허브는 `tree`를 먼저 받아들이고 없으면 `trm`으로 대체한다.
 
-### 12.2 Removed scripts
+## Appendix A
 
-`scripts/hub-connect.sh`, `scripts/hub-agent.sh`, `scripts/trm-link.sh`는 더 이상 없다. 이 스크립트들의 일은 `rb setup`, `rb agent`(허브 매뉴얼 §4), `rb-node link`(§10)가 한다.
-
-## Appendix A. Windows hub notes (not maintained since 2026-11-05)
-
-2026-11-05에 노트북을 허브로 쓰던 상태에서 마지막으로 확인했으며, 코드와 보조를 맞추지 않는다.
-
-- 코드를 LF 줄 끝으로 복사한다. Windows 허브에서는 `core.autocrlf=input`으로 체크아웃하거나 먼저 변환한다. CRLF는 래퍼 스크립트를 깨뜨린다. 지금의 설치 프로그램은 노드의 체크아웃에서 실행되므로, 체크아웃을 Windows에서 만들어 복사하는 경우에만 해당한다.
-- §7.1의 허브 쪽 검사는 옛 매뉴얼에서 노트북 경로를 지정했다. 답장은 `D:/raw/research-bridge/inbox/node1/<msg_id>/` 아래에 저장됐다.
-- `authorized_keys`의 `from=`은 노트북의 서브넷이었다(옛 주석의 `research-bridge-laptop`). 설치 프로그램은 이제 주석 `research-bridge-hub`와 허브의 주소를 쓴다.
-- 첫 노드의 수동 설치 방법은 다음과 같았다. `ssh node1 "mkdir -p ~/.local/share/research-bridge ~/.local/bin ~/.research-bridge && chmod 700 ~/.research-bridge"`, 이어서 `scp -r rb_node node1:~/.local/share/research-bridge/`(여기서 `node1`은 제한된 `rb-node1`이 아니라 일반 로그인 별칭이다), 그리고 절대 경로 대신 `python3`를 쓴 §3의 세 줄짜리 래퍼. `scripts/node-install.sh`가 이를 대체한다.
+Windows 허브와 노트북 허브 설명(2026-11-05부터 유지하지 않음)은 2026-11-11에 `docs/99_Archive/manual-appendix-a/node-setup.ko.md`로 옮겼다.

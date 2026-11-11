@@ -2,8 +2,7 @@
 approve and reject are called only by the rb CLI and the 8765 page."""
 from __future__ import annotations
 
-import hashlib
-import os
+import math
 import time
 import unicodedata
 import uuid
@@ -11,14 +10,27 @@ from pathlib import Path
 from typing import List, Optional
 
 from rb_node import approval
+from rb_node.jobs import MAX_GPU_HOURS
 
 from .client import NodeClient, RemoteError
-from .config import HostConfig, load_host_config
+from .config import HostConfig, host_json_path, load_host_config
+from . import ledger as _ledger
 from .ledger import Ledger
+from .util import now, sha256_file  # jobs.now is also called by server, sync and board
 
 DONE = {"submit": "queued", "cancel": "cancelled_requested"}
-REFUSED = ("not_authorized", "approval_wait", "no_verifier",  # node refused the approval
-           "gpu_status_unavailable", "no_gpus")  # node refused the job: it is not queued, ask again later
+# Node codes after which nothing was queued or cancelled: the record goes back to
+# pending_approval, so it is listed again and can be approved again or rejected. Not here:
+# "internal" and transport errors, after which the job may have been queued.
+REFUSED = (
+    # the node refused the approval
+    "not_authorized", "approval_wait", "no_verifier", "approval_path_unsafe",
+    # the node refused the job after the approval check (rb_node/jobs.py)
+    "gpu_status_unavailable", "no_gpus", "invalid", "no_job_template", "no_allowed_gpus",
+    "bad_args", "bad_id", "conflict", "not_found",
+    # the config upload or its check failed (rb_node/remote.py, mailbox.py, jobs.py)
+    "no_message", "no_attachment", "no_part", "incomplete", "checksum", "too_large",
+    "bad_b64", "bad_seq")
 CLAIM_TTL_S = 300.0  # an approve call that died mid-way blocks a retry for this long
 
 
@@ -38,12 +50,10 @@ def origin_allowed(origin: object) -> bool:
 
 
 def load_cfg() -> HostConfig:
-    p = os.environ.get("RB_HOST_CONFIG")
-    return load_host_config(Path(p) if p else None)
+    return load_host_config(host_json_path())
 
 
-def ledger_for(cfg: HostConfig) -> Ledger:
-    return Ledger(Path(cfg.data_root) / "ledger.jsonl")
+ledger_for = _ledger.ledger_for  # kept here too: server, sync, web and the 8765 page use it
 
 
 def connect(cfg: HostConfig, node: str) -> NodeClient:
@@ -51,23 +61,25 @@ def connect(cfg: HostConfig, node: str) -> NodeClient:
     return NodeClient(cfg.alias(node), node=node)
 
 
-def _sha(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(str(path), "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def _existing(ledger: Ledger, op: str, key: str) -> Optional[dict]:
-    for r in ledger._latest().values():
+    for r in ledger.records():
         if r.get("kind") == "job" and r.get("op") == op and r.get("idempotency_key") == key:
             return r
     return None
+
+
+def check_shape(gpus: object, gpu_hours: object) -> None:
+    """D10: the shape of a GPU list and budget, checked on the hub before a record is written.
+    Whether the GPUs exist and are in the node's allowed_gpus is the node's check after approval."""
+    if not isinstance(gpus, list) or not gpus or not all(
+            isinstance(g, int) and not isinstance(g, bool) and g >= 0 for g in gpus):
+        raise ValueError("gpus must be a non-empty list of non-negative integers")
+    if len(set(gpus)) != len(gpus):
+        raise ValueError("gpus must be distinct")
+    h = gpu_hours
+    if (isinstance(h, bool) or not isinstance(h, (int, float)) or not math.isfinite(h)
+            or not 0 < h <= MAX_GPU_HOURS):
+        raise ValueError("gpu_hours must be a number with 0 < gpu_hours <= %d" % MAX_GPU_HOURS)
 
 
 def create_submit(ledger: Ledger, cfg: HostConfig, node: str, config_path: str,
@@ -75,32 +87,37 @@ def create_submit(ledger: Ledger, cfg: HostConfig, node: str, config_path: str,
     cfg.alias(node)  # unknown node -> ValueError
     if not idempotency_key:
         raise ValueError("idempotency_key required")
-    prior = _existing(ledger, "submit", idempotency_key)
-    if prior is not None:
-        return prior
+    check_shape(gpus, gpu_hours)
     p = Path(config_path)
-    if not p.is_file():
-        raise ValueError("config file not found")
-    rec = {"kind": "job", "op": "submit", "id": uuid.uuid4().hex, "node": node,
-           "config_path": str(p.resolve()), "config_name": p.name, "config_sha256": _sha(p),
-           "gpus": list(gpus), "gpu_hours": gpu_hours, "idempotency_key": idempotency_key,
-           "note": note, "status": "pending_approval", "created": now()}
-    ledger.append(rec)
+    with ledger.locked():  # one record per key, also for two calls at once
+        prior = _existing(ledger, "submit", idempotency_key)
+        if prior is not None:
+            return prior
+        if not p.is_file():
+            raise ValueError("config file not found")
+        rec = {"kind": "job", "op": "submit", "id": uuid.uuid4().hex, "node": node,
+               "config_path": str(p.resolve()), "config_name": p.name, "config_sha256": sha256_file(p),
+               "gpus": list(gpus), "gpu_hours": gpu_hours, "idempotency_key": idempotency_key,
+               "note": note, "status": "pending_approval", "created": now()}
+        ledger.append(rec)
     return rec
 
 
 def create_cancel(ledger: Ledger, cfg: HostConfig, node: str, job_id: str,
                   idempotency_key: str) -> dict:
+    """The target is not checked: a job started on the node console is not in this ledger and
+    must stay cancellable. The node answers not_found after approval for an unknown job."""
     cfg.alias(node)
     if not idempotency_key:
         raise ValueError("idempotency_key required")
-    prior = _existing(ledger, "cancel", idempotency_key)
-    if prior is not None:
-        return prior
-    rec = {"kind": "job", "op": "cancel", "id": uuid.uuid4().hex, "node": node,
-           "target_job_id": job_id, "idempotency_key": idempotency_key,
-           "status": "pending_approval", "created": now()}
-    ledger.append(rec)
+    with ledger.locked():
+        prior = _existing(ledger, "cancel", idempotency_key)
+        if prior is not None:
+            return prior
+        rec = {"kind": "job", "op": "cancel", "id": uuid.uuid4().hex, "node": node,
+               "target_job_id": job_id, "idempotency_key": idempotency_key,
+               "status": "pending_approval", "created": now()}
+        ledger.append(rec)
     return rec
 
 
@@ -162,7 +179,7 @@ def _check_config(rec: dict) -> Path:
     cp = Path(rec["config_path"])
     if rec.get("config_name") != cp.name:
         raise ValueError("config_name does not match config_path; refusing")
-    if not cp.is_file() or _sha(cp) != rec["config_sha256"]:
+    if not cp.is_file() or sha256_file(cp) != rec["config_sha256"]:
         raise ValueError("config file changed since submit; submit again")
     return cp
 

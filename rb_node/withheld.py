@@ -94,6 +94,19 @@ class Withheld:
         w.source_set = source is not None
         return w
 
+    def problem(self) -> Optional[str]:
+        """Why a loaded pattern file is unusable, in a fixed order, or None when it is usable:
+        "unreadable", "unparseable" (not UTF-8 or not JSON), "rejected" (a pattern does not
+        compile) or "empty" (no pattern). One rule for every check of a pattern file; callers
+        word the message. Never carries pattern text."""
+        if self.source_error:
+            return self.source_error
+        if self.rejected_count:
+            return "rejected"
+        if self.extra_count == 0:
+            return "empty"
+        return None
+
     def _hit(self, text: str) -> bool:
         if any(r.search(text) for r in self._re):
             return True

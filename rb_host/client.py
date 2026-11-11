@@ -230,32 +230,43 @@ class NodeClient:
         return resp.get("result")
 
     # -- files -------------------------------------------------------------
+    def put_files(self, msg_id: str, paths: List[Path], body: str = "",
+                  from_session: Optional[str] = None) -> List[str]:
+        """Upload a message with its attachments (msg_begin, 1 MiB chunks, msg_commit); returns
+        the sanitized stored names in the order of `paths`. An empty file is sent as one empty
+        chunk with seq 0."""
+        paths = [Path(p) for p in paths]
+        metas = []
+        for path in paths:
+            h = hashlib.sha256()
+            size = 0
+            with open(str(path), "rb") as fh:
+                for chunk in iter(lambda: fh.read(CHUNK), b""):
+                    h.update(chunk)
+                    size += len(chunk)
+            metas.append({"name": path.name, "bytes": size, "sha256": h.hexdigest()})
+        res = self.call("msg_begin", msg_id=msg_id, body=body, from_session=from_session,
+                        attachments=metas)
+        stored_names = list(res["names"])
+        for path, stored in zip(paths, stored_names):
+            with open(str(path), "rb") as fh:
+                seq = 0
+                while True:
+                    data = fh.read(CHUNK)
+                    if not data and seq > 0:
+                        break
+                    self.call("put_chunk", msg_id=msg_id, name=stored, seq=seq,
+                              data_b64=base64.b64encode(data).decode("ascii"))
+                    seq += 1
+                    if len(data) < CHUNK:
+                        break
+        self.call("msg_commit", msg_id=msg_id)
+        return stored_names
+
     def put_file(self, msg_id: str, path: Path, body: str = "",
                  from_session: Optional[str] = None) -> str:
         """Upload one file as a one-attachment message; returns the sanitized stored name."""
-        path = Path(path)
-        h = hashlib.sha256()
-        size = 0
-        with open(str(path), "rb") as fh:
-            for chunk in iter(lambda: fh.read(CHUNK), b""):
-                h.update(chunk)
-                size += len(chunk)
-        res = self.call("msg_begin", msg_id=msg_id, body=body, from_session=from_session,
-                        attachments=[{"name": path.name, "bytes": size, "sha256": h.hexdigest()}])
-        stored = res["names"][0]
-        with open(str(path), "rb") as fh:
-            seq = 0
-            while True:
-                data = fh.read(CHUNK)
-                if not data and seq > 0:
-                    break
-                self.call("put_chunk", msg_id=msg_id, name=stored, seq=seq,
-                          data_b64=base64.b64encode(data).decode("ascii"))
-                seq += 1
-                if len(data) < CHUNK:
-                    break
-        self.call("msg_commit", msg_id=msg_id)
-        return stored
+        return self.put_files(msg_id, [Path(path)], body, from_session)[0]
 
     def get_file(self, kind: str, ref: str, dest: Path) -> str:
         dest = Path(dest)

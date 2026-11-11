@@ -34,11 +34,6 @@ def _ask(prompt: str) -> bool:
     return line.strip().lower() in ("y", "yes")
 
 
-def _not_implemented(name: str) -> int:
-    sys.stderr.write("rb-node %s: not implemented yet\n" % name)
-    return 2
-
-
 def _harness_receive() -> int:
     # Forced command for the harness key; harness-send is only reachable through it.
     from .config import load_config
@@ -307,7 +302,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if ns.command == "link":
         from . import link
         return link.main(_rest)
-    return _not_implemented(ns.command)
+    # only run-job is left: main() handles it above when it is the first argument
+    sys.stderr.write("usage: rb-node run-job --gpus G --gpu-hours H --job-id ID -- CMD... "
+                     "(run-job must be the first argument)\n")
+    return 2
 
 
 if __name__ == "__main__":

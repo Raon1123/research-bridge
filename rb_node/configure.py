@@ -1,6 +1,6 @@
 """Write and check config files from the command line, without leaking them into git.
 
-Shared by `rb config` (laptop) and `rb-node config` (node console). Standard library only.
+Shared by `rb config` (hub) and `rb-node config` (node console). Standard library only.
 A config file holds real host names, paths and user names, so every write first asks git
 whether the target would be tracked: inside a work tree and not ignored -> refused.
 """
@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from dataclasses import asdict, fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class ConfigError(Exception):
@@ -115,6 +115,9 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
     elif want is int:
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ConfigError("%s needs a positive integer" % key)
+        from .protocol import MAX_FILE
+        if key == "max_file" and value > MAX_FILE:
+            raise ConfigError("max_file can be at most %d (50 MB, AGENTS.md hard rule 5)" % MAX_FILE)
     elif not isinstance(value, str):
         value = str(value)
     from .config import NodeConfig, PATH_KEYS, PATH_LIST_KEYS, default_dependents
@@ -137,9 +140,3 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
             if out.get("withheld_source") == od["old_withheld"]:
                 out["withheld_source"] = NodeConfig().withheld_source
     return out
-
-
-def node_check(data: Dict[str, Any]) -> List[str]:
-    """Problems that block a feature, one line each. Empty list = ready."""
-    from . import doctor
-    return [c.message for c in doctor.config_checks(data) if c.level != "ok"]

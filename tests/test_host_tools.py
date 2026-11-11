@@ -41,7 +41,7 @@ def env(tmp_path, monkeypatch):
         "allowed_gpus": [0],
         "approval_path": str(tmp_path / "rb" / "approve.json"),
     }
-    # a fast KDF for tests; the laptop's lower bound is lowered to match
+    # a fast KDF for tests; the hub's lower bound is lowered to match
     approval.write_record(Path(conf["approval_path"]), approval.make_record(PW, iterations=1000)[0])
     monkeypatch.setattr(approval, "MIN_ITERATIONS", 1)
     monkeypatch.setattr("getpass.getpass", lambda prompt="": PW)
@@ -101,6 +101,38 @@ def test_submit_rejects_bad_input(env):
         server.submit_job("nope", "x.yaml", [0], 1, "k")
     with pytest.raises(ValueError):
         server.submit_job("n1", str(env["tmp"] / "missing.yaml"), [0], 1, "k")
+
+
+@pytest.mark.parametrize("gpus,hours", [
+    ([], 1), ([-1], 1), ([True], 1), ([0, 0], 1), ([0.0], 1), (["0"], 1), (0, 1), (None, 1),
+    ([0], 0), ([0], -1), ([0], float("nan")), ([0], float("inf")), ([0], True), ([0], "1"),
+    ([0], None), ([0], 169),
+])
+def test_submit_rejects_bad_gpu_list_or_budget_d10(env, monkeypatch, gpus, hours):
+    # D10: the hub checks the shape; nothing is written for a bad GPU list or budget
+    def boom(cfg, node):
+        raise AssertionError("ssh used")
+    monkeypatch.setattr(jobs, "connect", boom)
+    cfgf = env["tmp"] / "run.yaml"
+    cfgf.write_text("a: 1\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        server.submit_job("n1", str(cfgf), gpus, hours, "k-bad")
+    assert not (env["root"] / "ledger.jsonl").exists()
+
+
+def test_submit_accepts_shape_and_leaves_allowed_gpus_to_the_node(env, monkeypatch):
+    def boom(cfg, node):
+        raise AssertionError("ssh used")
+    monkeypatch.setattr(jobs, "connect", boom)
+    cfgf = env["tmp"] / "run.yaml"
+    cfgf.write_text("a: 1\n", encoding="utf-8")
+    for i, (gpus, hours) in enumerate((([7], 168), ([0, 3], 0.25), ([1], 1))):
+        r = server.submit_job("n1", str(cfgf), gpus, hours, "k-ok-%d" % i)
+        assert r["status"] == "pending_approval"
+    # a cancel names any job id: one started on the node console is not in this ledger
+    assert server.cancel_job("n1", "console-job-1", "kc")["status"] == "pending_approval"
+    from rb_node.jobs import MAX_GPU_HOURS
+    assert "gpu_hours <= %d" % MAX_GPU_HOURS in " ".join(server.submit_job.__doc__.split())
 
 
 def _submit(env, key="k1"):
@@ -180,7 +212,7 @@ def test_weak_node_params_refused(env, monkeypatch):
 
 
 def test_bridge_key_alone_cannot_queue(env):
-    # SEC-01: a laptop process that talks to the node directly, skipping the ledger
+    # SEC-01: a hub process that talks to the node directly, skipping the ledger
     import hashlib
     cfgf = env["tmp"] / "x.yaml"
     cfgf.write_text("a: 1\n", encoding="utf-8")
@@ -539,7 +571,8 @@ def test_nested_lock_across_ledger_objects(tmp_path):
     assert a.get("n")["x"] == 1 and not (tmp_path / "l.jsonl.lock").exists()
 
 
-@pytest.mark.parametrize("code", ["gpu_status_unavailable", "no_gpus"])
+@pytest.mark.parametrize("code", ["gpu_status_unavailable", "no_gpus", "invalid", "no_job_template",
+                                  "no_allowed_gpus", "conflict", "checksum"])
 def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeypatch, capsys, code):
     from rb_host.client import RemoteError
     real = jobs.connect
@@ -583,6 +616,74 @@ def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeyp
                                       "t", "approve", "127.0.0.1:8765")
     assert st == 403 and code in body and PW not in body
     assert env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def _rewrite_node(env, **changes):
+    p = env["tmp"] / "node.json"
+    conf = json.loads(p.read_text(encoding="utf-8"))
+    for k, v in changes.items():
+        if v is None:
+            conf.pop(k, None)
+        else:
+            conf[k] = v
+    p.write_text(json.dumps(conf), encoding="utf-8")
+
+
+@pytest.mark.parametrize("change,code", [
+    ({"job_template": None}, "no_job_template"),
+    ({"allowed_gpus": []}, "no_allowed_gpus"),
+    ({"allowed_gpus": [1]}, "invalid"),
+])
+def test_real_node_refusal_after_approval_returns_job_to_pending(env, change, code):
+    # D1: the node accepted the approval key and then refused the job; nothing was queued, so
+    # the record must be listed again and rejectable
+    jid = _submit(env)
+    _rewrite_node(env, **change)
+    with pytest.raises(jobs.RemoteError) as e:
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert e.value.code == code
+    assert not list(_jobs_dir(env).glob("*.job"))
+    rec = env["ledger"].get(jid)
+    assert rec["status"] == "pending_approval" and not rec.get("approving")
+    assert [r["id"] for r in env["ledger"].pending_jobs()] == [jid]
+    assert jobs.reject(env["ledger"], jid)["status"] == "rejected"
+
+
+def test_retry_after_lost_submit_reply_is_queued_not_refused(env, monkeypatch):
+    # the node queued the job but its reply was lost: the record stays approved, and the retry
+    # (upload again, then the node's idempotent replay) must end queued, not back in pending
+    real = jobs.connect
+    lost = {"done": False}
+
+    class LosesReply:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self.inner.__exit__(*a)
+
+        def put_file(self, *a, **k):
+            return self.inner.put_file(*a, **k)
+
+        def call(self, op, **k):
+            out = self.inner.call(op, **k)
+            if op == "job_submit" and not lost["done"]:
+                lost["done"] = True
+                raise TransportError("ssh_failed")
+            return out
+
+    monkeypatch.setattr(jobs, "connect", lambda *a: LosesReply(real(*a)))
+    jid = _submit(env)
+    with pytest.raises(TransportError):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert env["ledger"].get(jid)["status"] == "approved"
+    assert len(list(_jobs_dir(env).glob("*.job"))) == 1
+    assert jobs.approve(env["ledger"], server.load_cfg(), jid, PW)["status"] == "queued"
+    assert len(list(_jobs_dir(env).glob("*.job"))) == 1
 
 
 def test_poll_reply_body_readable_from_disk(env):
@@ -685,7 +786,7 @@ def test_send_message_rejects_unsafe_msg_id(env):
     with pytest.raises(ValueError, match="unsafe msg_id"):
         server.send_message("n1", "hi", msg_id="../../x")
     assert not (env["root"] / "outbox").exists()
-    assert not (env["root"] / "ledger.jsonl").exists() or "x" not in env["ledger"]._latest()
+    assert not (env["root"] / "ledger.jsonl").exists() or env["ledger"].get("x") is None
     assert env["calls"] == []
     assert not (env["tmp"] / "x").exists()
 
@@ -874,6 +975,58 @@ def test_inbound_id_clashing_with_outgoing_is_rejected_not_acked(env):
     prog = {}
     server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=False, progress=prog)
     assert prog == {"new": 0, "rejected": 1, "rejected_ids": [mid]}
+
+
+@pytest.mark.parametrize("delivered", [False, True])
+def test_malformed_node_items_are_rejected_and_the_rest_stored(env, delivered):
+    # D3: one malformed item must not fail the whole fetch before the ack
+    acked = []
+    bad = ["not an object", None, {"kind": "reply", "body": "no id"},
+           {"id": None, "kind": "reply", "body": "null id"},
+           {"id": 7, "kind": "reply", "body": "int id"},
+           {"id": "badatt1", "kind": "reply", "body": "x", "attachments": [None]},
+           {"id": "badatt2", "kind": "reply", "body": "x", "attachments": "a.txt"},
+           {"id": "badatt3", "kind": "reply", "body": "x", "attachments": [{"name": 5}]}]
+    good = {"id": "good1", "kind": "reply", "body": "fine", "reply_to": None, "attachments": []}
+
+    class Fake:
+        def call(self, op, **kw):
+            if op == "poll":
+                return {"items": bad + [good]}
+            acked.extend(kw.get("ids", []))
+            return {}
+    r = server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=delivered)
+    assert [i["msg_id"] for i in r["items"]] == ["good1"] and "error" not in r
+    assert r["rejected"] == len(bad)
+    assert acked == ["good1"]
+    ids = {rec.get("id") for rec in env["ledger"].records()}
+    assert ids == {"good1"}
+    inbox = env["root"] / "inbox" / "n1"
+    assert sorted(p.name for p in inbox.iterdir()) == ["good1"]
+
+
+def test_fetch_reads_the_ledger_once_and_acks_a_repeated_id_once(env, monkeypatch):
+    # hostcore-16: the seen-check uses one read of the ledger, not one get() per item
+    acked = []
+    items = [{"id": "r%d" % i, "kind": "reply", "body": "b%d" % i, "reply_to": None,
+              "attachments": []} for i in range(3)]
+    items.append(dict(items[0]))  # the node repeats an id within one reply
+
+    class Fake:
+        def call(self, op, **kw):
+            if op == "poll":
+                return {"items": items}
+            acked.extend(kw.get("ids", []))
+            return {}
+    gets = []
+    real_get = Ledger.get
+    with monkeypatch.context() as m:
+        m.setattr(Ledger, "get", lambda self, i: gets.append(i) or real_get(self, i))
+        r = server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=False)
+    assert gets == []
+    assert [i["msg_id"] for i in r["items"]] == ["r0", "r1", "r2"] and r["rejected"] == 0
+    assert acked == ["r0", "r1", "r2"]
+    assert len([x for x in (env["root"] / "ledger.jsonl").read_text().splitlines() if x]) == 3
 
 
 def test_node_answering_with_another_jobs_queue_file_returns_job_to_pending(env, monkeypatch):

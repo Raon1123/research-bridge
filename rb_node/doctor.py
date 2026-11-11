@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__, approval, gitinfo, spawn
-from .config import NodeConfig, config_path, expand_paths
+from .config import NodeConfig, coerce, config_path, expand_paths
 from .jobs import allowed_set
+from .protocol import MAX_FILE
 from .withheld import Withheld
 
 Check = namedtuple("Check", "id level message fix")  # level in ("ok", "warn", "fail")
@@ -65,31 +66,9 @@ def _ok(cid: str, message: str) -> Check:
 
 # -- config checks (rows marked C in the design) ------------------------------------------------
 def _coerce(data: dict) -> Tuple[NodeConfig, List[str]]:
-    """NodeConfig from node.json data; values of the wrong type are dropped and named."""
-    default = NodeConfig()
-    kept = {}  # type: Dict[str, Any]
-    wrong = []  # type: List[str]
-    for f in fields(NodeConfig):
-        if f.name not in data:
-            continue
-        v, d = data[f.name], getattr(default, f.name)
-        if f.name == "withheld_source":
-            good = v is None or isinstance(v, str)
-        elif f.name == "allowed_gpus":
-            good = isinstance(v, list) and all(
-                isinstance(e, int) and not isinstance(e, bool) and e >= 0 for e in v)
-        elif isinstance(d, list):
-            good = isinstance(v, list) and all(isinstance(e, str) for e in v)
-        elif isinstance(d, bool):
-            good = isinstance(v, bool)
-        elif isinstance(d, int):
-            good = isinstance(v, int) and not isinstance(v, bool)
-        else:
-            good = isinstance(v, str)
-        if good:
-            kept[f.name] = v
-        else:
-            wrong.append(f.name)
+    """NodeConfig from node.json data; values of the wrong type are dropped and named
+    (the same rule as load_config, config.coerce)."""
+    kept, wrong = coerce(data)
     return NodeConfig(**expand_paths(kept)), wrong
 
 
@@ -120,6 +99,12 @@ def config_checks(data: Optional[dict], path: Optional[Path] = None) -> List[Che
     bad += ["key %r has the wrong type and is ignored" % k for k in wrong]
     out.append(Check("config_keys", "warn", "; ".join(bad), "rb-node config show") if bad
                else _ok("config_keys", "no unknown keys"))
+    if "max_file" not in wrong and data.get("max_file", 0) > MAX_FILE:  # raw value: load clamps it
+        out.append(Check("max_file", "fail",
+                         "max_file is above %d (hard rule 5); %d applies" % (MAX_FILE, MAX_FILE),
+                         "rb-node config set max_file %d" % MAX_FILE))
+    else:
+        out.append(_ok("max_file", "max_file is at most %d" % MAX_FILE))
     trm = Path(cfg.trm_root)
     if trm.is_dir():
         out.append(_ok("research_root", "research root exists"))
@@ -192,20 +177,20 @@ def _withheld_check(cfg: NodeConfig) -> Check:
         return Check("withheld", "warn", "no pattern file: five fallback patterns only", fix)
     src = Path(cfg.withheld_source)
     w = Withheld.load(src)
-    if w.source_error == "unreadable":
+    problem = w.problem()
+    if problem is None:
+        return _ok("withheld", "%d pattern(s) loaded besides the fallback" % w.extra_count)
+    if problem == "unreadable":
         msg = ("withheld pattern file not found" if not src.exists()
                else "withheld pattern file is unreadable")
-        return Check("withheld", "fail", msg, fix)
-    if w.source_error:
-        return Check("withheld", "fail", "withheld pattern file is not valid JSON", fix)
-    if w.rejected_count:
-        idx = ", ".join(str(i) for i in w.rejected_indexes)
-        return Check("withheld", "fail",
-                     "%d pattern(s) do not compile (positions in the flattened string list: %s)"
-                     % (w.rejected_count, idx), fix)
-    if w.extra_count == 0:
-        return Check("withheld", "fail", "withheld pattern file has no pattern", fix)
-    return _ok("withheld", "%d pattern(s) loaded besides the fallback" % w.extra_count)
+    elif problem == "unparseable":
+        msg = "withheld pattern file is not valid JSON"
+    elif problem == "rejected":
+        msg = ("%d pattern(s) do not compile (positions in the flattened string list: %s)"
+               % (w.rejected_count, ", ".join(str(i) for i in w.rejected_indexes)))
+    else:
+        msg = "withheld pattern file has no pattern"
+    return Check("withheld", "fail", msg, fix)
 
 
 def _approval_checks(cfg: NodeConfig) -> List[Check]:
@@ -219,17 +204,14 @@ def _approval_checks(cfg: NodeConfig) -> List[Check]:
         out.append(Check("approval", "fail",
                          "approval verifier missing: job_submit and job_cancel are refused",
                          "rb-node approve-key set"))
-    inside = None
-    for r in list(cfg.read_roots) + list(cfg.write_roots):
-        root = _abs(cfg.trm_root, r).absolute()
-        if _inside(ap.absolute(), root):
-            inside = root
-            break
+    # the rule hello and job_submit use: read, write and mailbox roots, symlinks resolved
+    inside = approval.root_holding_path(cfg)
     if inside is None:
-        out.append(_ok("approval_path", "approval_path is outside every read and write root"))
+        out.append(_ok("approval_path",
+                       "approval_path is outside every read, write and mailbox root"))
     else:
         out.append(Check("approval_path", "fail",
-                         "approval_path is inside a read/write root: %s" % inside,
+                         "approval_path is inside a read/write or mailbox root: %s" % inside,
                          "rb-node config set approval_path ~/.research-bridge/approve.json"))
     return out
 
@@ -512,16 +494,20 @@ def render(checks: List[Check], only_problems: bool) -> str:
             continue
         lines.append("[%s] %s: %s" % (c.level, c.id, c.message))
         lines.append("      next: %s" % c.fix)
-    fails = len([c for c in checks if c.level == "fail"])
-    warns = len([c for c in checks if c.level == "warn"])
-    if not fails and not warns:
-        lines.append("ok")
-    else:
-        parts = ["%d to fix" % fails] if fails else ["all ok"]
-        if warns:
-            parts.append("%d warning(s)" % warns)
-        lines.append(", ".join(parts))
+    lines.append(verdict(len([c for c in checks if c.level == "fail"]),
+                         len([c for c in checks if c.level == "warn"])))
     return "\n".join(lines)
+
+
+def verdict(fails: int, warns: int) -> str:
+    """Closing line of a doctor report: `ok`, `N to fix`, `all ok, M warning(s)` or
+    `N to fix, M warning(s)` (failures and warnings counted apart)."""
+    if not fails and not warns:
+        return "ok"
+    parts = ["%d to fix" % fails] if fails else ["all ok"]
+    if warns:
+        parts.append("%d warning(s)" % warns)
+    return ", ".join(parts)
 
 
 def exit_code(checks: List[Check]) -> int:

@@ -20,7 +20,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from rb_node.withheld import Withheld
 
 from .config import HostConfig
-from .ledger import Ledger
+from .ledger import ledger_for
+from .util import age_s, now, parse_utc
 
 SCHEMA_VERSION = 1
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
@@ -42,28 +43,8 @@ def owner_dir(cfg: HostConfig) -> Path:
     return share_dir(cfg) / "owner"
 
 
-def _now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
-def _parse(ts: Any) -> Optional[datetime]:
-    """An aware UTC datetime from an ISO string, or None."""
-    if not isinstance(ts, str):
-        return None
-    try:
-        d = datetime.fromisoformat(ts.strip().replace("Z", "+00:00"))
-        return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
-    except (ValueError, OverflowError):
-        return None
-
-
 def _iso(d: datetime) -> str:
     return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _age_s(ts: Any) -> Optional[float]:
-    d = _parse(ts)
-    return None if d is None else time.time() - d.timestamp()
 
 
 def _in_period(d: date, start: date, end: date) -> bool:
@@ -104,7 +85,7 @@ def _read_list(path: Any, key: str) -> Tuple[Optional[list], Optional[str], Opti
 
 def _source(sid: str, fetched_at: Optional[str], ok: bool, error: Optional[str],
             cadence_s: Optional[int]) -> dict:
-    age = _age_s(fetched_at)
+    age = age_s(fetched_at)
     stale = False if cadence_s is None else (age is None or age > cadence_s)
     return {"id": sid, "fetched_at": fetched_at, "ok": ok, "error": error, "stale": stale}
 
@@ -119,7 +100,7 @@ def reduce_sessions(recs: list, start: date, end: date, wh: Withheld,
     for r in recs:
         if not isinstance(r, dict):
             continue
-        s = _parse(r.get("start"))
+        s = parse_utc(r.get("start"))
         if s is None or not _in_period(s.date(), start, end):
             continue
         proj, hit = _label(r.get("project"), wh, labels)
@@ -132,7 +113,7 @@ def reduce_sessions(recs: list, start: date, end: date, wh: Withheld,
         lane_raw = r.get("machine", r.get("lane"))
         lane = "laptop" if lane_raw == "laptop" else "server"
         hours = 0.0
-        e = _parse(r.get("end"))
+        e = parse_utc(r.get("end"))
         if e is not None:
             h = (e - s).total_seconds() / 3600.0
             if 0 <= h <= 24:
@@ -163,8 +144,8 @@ def reduce_runs(recs: list, start: date, end: date, wh: Withheld,
             dropped += 1
             continue
         failed = isinstance(status, str) and status.lower() in FAILED
-        s = _parse(r.get("started"))
-        e = _parse(r.get("ended"))
+        s = parse_utc(r.get("started"))
+        e = parse_utc(r.get("ended"))
         if s is not None and _in_period(s.date(), start, end):
             cell = acc.setdefault((s.date().isoformat(), proj or "other"), [0, 0, 0])
             cell[0] += 1
@@ -205,9 +186,10 @@ def reduce_tracks(items: list, wh: Withheld, labels: Optional[Set[str]]) -> Tupl
     for ev in items:
         if not isinstance(ev, dict) or not isinstance(ev.get("track"), str):
             continue
-        age = _age_s(ev.get("ts"))
-        if age is None:
+        d = parse_utc(ev.get("ts"))
+        if d is None:
             continue
+        age = time.time() - d.timestamp()  # not floored here: the most recent of future stamps wins
         raw = ev["track"]
         if raw not in newest or age < newest[raw][0]:
             newest[raw] = (age, ev)
@@ -248,12 +230,12 @@ def _node_cache(cfg: HostConfig, sid: str) -> dict:
 def _ledger(cfg: HostConfig, start: date, end: date) -> Tuple[int, float]:
     """(pending_approvals, gpu_hours_in_period) from job records."""
     pending, hours = 0, 0.0
-    for r in Ledger(Path(cfg.data_root) / "ledger.jsonl")._latest().values():
+    for r in ledger_for(cfg).records():
         if r.get("kind") != "job":
             continue
         if r.get("status") == "pending_approval":
             pending += 1
-        c = _parse(r.get("created"))
+        c = parse_utc(r.get("created"))
         g = r.get("gpu_hours")
         if (c is not None and _in_period(c.date(), start, end)
                 and isinstance(g, (int, float)) and not isinstance(g, bool)):
@@ -306,7 +288,7 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
                     raise ValueError
                 cal_err = None
                 gen = st.get("generated")
-                cal_fetched = _iso(_parse(gen)) if _parse(gen) else None
+                cal_fetched = _iso(parse_utc(gen)) if parse_utc(gen) else None
                 c = st.get("cost_usd")
                 cost = c if isinstance(c, (int, float)) and not isinstance(c, bool) else None
             except OSError:
@@ -341,7 +323,7 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
             if isinstance(e, str) and wh._hit(e):
                 e, dropped = "withheld", dropped + 1
             cad = rec.get("cadence_s")
-            fa = _parse(rec.get("fetched_at"))
+            fa = parse_utc(rec.get("fetched_at"))
             sources.append(_source(sid, _iso(fa) if fa else None, ok, e,
                                    cad if isinstance(cad, int) and not isinstance(cad, bool)
                                    else 600))
@@ -359,7 +341,7 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
 
     try:
         pending, gpu_hours = _ledger(cfg, start, end)
-        sources.append(_source("rb:ledger", _now(), True, None, None))
+        sources.append(_source("rb:ledger", now(), True, None, None))
     except (OSError, ValueError, TypeError, AttributeError):
         pending, gpu_hours = 0, 0.0
         sources.append(_source("rb:ledger", None, False, "unreadable", None))
@@ -368,7 +350,7 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
     queue["pending_approvals"] = pending
 
     snap = {
-        "schema_version": SCHEMA_VERSION, "tier": tier, "built_at": _now(),
+        "schema_version": SCHEMA_VERSION, "tier": tier, "built_at": now(),
         "period": {"from": start.isoformat(), "to": end.isoformat()},
         "sources": sources,
         "sessions": {"per_day": per_day, "totals": totals},
@@ -402,7 +384,7 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
               "experiments.tracks": len(tracks)}
     if tier == "owner":
         counts["waiting"] = len(snap["waiting"])
-    rec = {"ts": _now(), "tier": tier, "sources": [s["id"] for s in sources], "items": counts,
+    rec = {"ts": now(), "tier": tier, "sources": [s["id"] for s in sources], "items": counts,
            "dropped": dropped, "sha256": hashlib.sha256(body).hexdigest()}
     audit = share_dir(cfg) / "audit.jsonl"
     audit.parent.mkdir(parents=True, exist_ok=True)

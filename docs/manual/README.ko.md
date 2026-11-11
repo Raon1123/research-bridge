@@ -37,13 +37,13 @@ Claude session ──stdio MCP── hub (rb-host-mcp, rb CLI, ledger, rb sync t
 | 5 | 허브 터미널 | 출력된 `claude mcp add-json ...`, 이어서 새 Claude 세션 시작 | 허브 §6 |
 | 6 | 허브 | `rb doctor` | 허브 §10 |
 | 7 | 허브 터미널 | `rb service install`, 이어서 출력된 `systemctl` 명령 | 허브 §13, §14 |
-| 8 | 허브 | 보안 검사와 작업 한 건 | 노드 §7.1 |
+| 8 | 허브와 노드 | 보안 검사와 첫 실연결 실행(`scripts/b2-hub.sh`, `scripts/b2-node.sh`, 작업 한 건) | 노드 §7.1, `docs/provisioning.md` §B2, §B3 |
 
 일상 사용: 재부팅할 때마다 `rb agent`, 그리고 `rb pending` / `rb approve`, 허브 페이지, 문제가 생기면 `rb doctor`.
 
 ## 섹션 번호
 
-다른 문서가 매뉴얼 섹션을 번호로 인용하므로 번호는 고정이다. 허브 §12는 Linux 허브, 노드 §5는 `authorized_keys` 줄, 노드 §7은 검사다. 새 내용은 부록 앞의 끝에 추가한다. Windows와 노트북 허브 설명은 각 매뉴얼의 부록 A에 있으며 2026-11-05부터 유지하지 않는다.
+다른 문서가 매뉴얼 섹션을 번호로 인용하므로 번호는 고정이다. 허브 §12는 Linux 허브, 노드 §5는 `authorized_keys` 줄, 노드 §7은 검사다. 새 내용은 끝에 추가한다. 2026-11-05부터 유지하지 않는 Windows와 노트북 허브 설명은 각 매뉴얼의 부록 A였고, 2026-11-11에 `docs/99_Archive/manual-appendix-a/`로 옮겼다.
 
 ## 매뉴얼의 표기 규칙
 

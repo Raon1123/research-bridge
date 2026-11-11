@@ -201,10 +201,6 @@ def _rmtree(p: Path) -> None:
     shutil.rmtree(str(p), ignore_errors=True)
 
 
-def stage_tar(data: bytes, staging_root: Path, stamp: str) -> Tuple[Path, int]:
-    return extract_tar(data, staging_root, stamp)
-
-
 def utc_stamp() -> str:
     return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
 

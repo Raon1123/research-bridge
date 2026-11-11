@@ -18,7 +18,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from rb_node.configure import ConfigError, read_json, write_json
 
 from . import config
-from .config import default_root
 
 REPO = Path(__file__).resolve().parent.parent
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
@@ -42,8 +41,7 @@ NODE_BOARD_KEYS = ("state", "events", "kanban")
 
 
 def host_path() -> Path:
-    p = os.environ.get("RB_HOST_CONFIG")
-    return Path(p) if p else Path(default_root()) / "host.json"
+    return config.host_json_path()
 
 
 def local_path() -> Path:
@@ -235,9 +233,6 @@ def entry_differences(entry: Dict[str, Any]) -> List[str]:
     if "RB_HOST_ROOT" in env and "RB_HOST_ROOT" not in want["env"]:
         out.append("env RB_HOST_ROOT")
     return out
-
-
-wrong_types = config.wrong_types
 
 
 HOST_SETUP_HINT = "run: rb setup --node NAME --host HOST --user USER"

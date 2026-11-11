@@ -8,19 +8,20 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from rb_node.configure import ConfigError, git_exposure, read_json
 
 from . import configure, doctor, jobs, sshenv
-from .config import HostConfig, load_host_config
+from .config import HostConfig, default_root, load_host_config, wrong_types
 
 STEP_TITLES = ("data root and host.json", "node entry", "keys", "ssh config blocks", "host key",
                "agent and keys", "node command", "MCP registration", "doctor")
@@ -61,11 +62,6 @@ def _ssh(a: Args, alias: str, fresh: bool = False) -> Dict[str, List[str]]:
     return a.cache[alias]
 
 
-def _defined(cfg: Dict[str, List[str]], alias: str) -> bool:
-    host = cfg.get("hostname")
-    return bool(host) and host[0].lower() != alias.lower()
-
-
 def _tilde(path: Path) -> str:
     home = sshenv.user_home()
     try:
@@ -87,12 +83,19 @@ def _unsafe_target(path: Path) -> Optional[str]:
     return None
 
 
-def _backup(path: Path) -> Optional[Path]:
+def _backup(path: Path, say: Callable[[str], None] = _say) -> Optional[Path]:
+    """Copy `path` to `<name>.bak.<stamp>`; a name taken already (a backup in the same second)
+    gets `.1`, `.2`, ... as in rb_node/install.py. None when `path` is not a file."""
     if not path.is_file():
         return None
-    bak = path.with_name("%s.bak.%s" % (path.name, _stamp()))
+    stamp = _stamp()
+    bak = path.with_name("%s.bak.%s" % (path.name, stamp))
+    n = 0
+    while bak.exists() or os.path.islink(str(bak)):
+        n += 1
+        bak = path.with_name("%s.bak.%s.%d" % (path.name, stamp, n))
     shutil.copy2(str(path), str(bak))
-    _say("backup: %s" % bak)
+    say("backup: %s" % bak)
     return bak
 
 
@@ -126,7 +129,7 @@ def _key_paths(a: Args) -> Tuple[Path, Path]:
     for alias, name in zip((a.alias, a.harness_alias), names):
         cfg = _ssh(a, alias)
         files = cfg.get("identityfile") or []
-        key = sshenv.pick_identity(files, names) if files and _defined(cfg, alias) else None
+        key = sshenv.pick_identity(files, names) if files and sshenv.defined(cfg, alias) else None
         out.append(key or sshenv.user_ssh_dir() / "research-bridge" / name)
     return out[0], out[1]
 
@@ -153,7 +156,7 @@ def step_host_json(a: Args) -> str:
         os.chmod(str(root), 0o700)
         _say("created the data root %s" % root)
         return "done"
-    root = Path(configure_root())
+    root = Path(default_root())
     if a.print_only:
         _say("would create the data root %s and %s" % (root, path))
         return "printed"
@@ -166,11 +169,6 @@ def step_host_json(a: Args) -> str:
         return "failed: %s" % exc
     _say("wrote %s" % path)
     return "done"
-
-
-def configure_root() -> str:
-    from .config import default_root
-    return default_root()
 
 
 def step_node_entry(a: Args) -> str:
@@ -279,7 +277,7 @@ def step_ssh_config(a: Args) -> str:
     diffs = []  # type: List[str]
     for alias, key in pairs:
         cfg = _ssh(a, alias)
-        if _defined(cfg, alias):
+        if sshenv.defined(cfg, alias):
             diffs.extend(_differences(alias, cfg, a, key))
         else:
             add.append((alias, key))
@@ -327,7 +325,7 @@ def step_ssh_config(a: Args) -> str:
 def step_host_key(a: Args, keys_generated: bool) -> str:
     cfg = dict(_ssh(a, a.alias))
     host, port = a.host, a.port
-    if _defined(cfg, a.alias):  # scan what ssh will connect to, not what the command line says
+    if sshenv.defined(cfg, a.alias):  # scan what ssh will connect to, not what the command line says
         host = cfg["hostname"][0]
         try:
             port = int((cfg.get("port") or ["22"])[0])
@@ -461,17 +459,14 @@ def node_command(a: Args, bridge_pub: str, harness_pub: str, hub_from: str, with
     lines = ["On the node, in a research-bridge checkout (git clone %s; cd research-bridge):" % repo_url,
              "", "  scripts/node-install.sh \\"]
     if a.research_root:
-        lines.append("    --research-root %s \\" % shlex_quote(a.research_root))
-    lines += ["    --hub-key %s \\" % shlex_quote(bridge_pub),
-              "    --harness-key %s \\" % shlex_quote(harness_pub),
+        lines.append("    --research-root %s \\" % shlex.quote(a.research_root))
+    lines += ["    --hub-key %s \\" % shlex.quote(bridge_pub),
+              "    --harness-key %s \\" % shlex.quote(harness_pub),
               "    --hub-from %s%s --apply-authorized-keys" % (
-                  hub_from if hub_from == "<HUB_ADDR>" else shlex_quote(hub_from), " --withheld-file ~/withheld-patterns.json" if withheld else "")]
+                  hub_from if hub_from == "<HUB_ADDR>" else shlex.quote(hub_from), " --withheld-file ~/withheld-patterns.json" if withheld else "")]
     return "\n".join(lines)
 
 
-def shlex_quote(s: str) -> str:
-    import shlex
-    return shlex.quote(s)
 
 
 def step_node_command(a: Args) -> str:
@@ -588,7 +583,7 @@ def _resolve(a: Args) -> int:
             data = read_json(path)
         except ConfigError:
             data = None  # step 1 reports an unreadable file
-        bad = configure.wrong_types(data) if data is not None else []
+        bad = wrong_types(data) if data is not None else []
         if bad:
             print("error: host.json has wrong types: %s; fix %s, then run rb setup"
                   % ("; ".join(bad), path))
@@ -601,7 +596,7 @@ def _resolve(a: Args) -> int:
                 a.harness_alias = entry["harness_alias"]
     if not (a.host and a.user):
         cfg = _ssh(a, a.alias)
-        if not _defined(cfg, a.alias):
+        if not sshenv.defined(cfg, a.alias):
             print("error: give --host and --user on the first run")
             return 2
         if not a.host:
@@ -672,7 +667,7 @@ def agent_main(node: Optional[str]) -> int:
                                        (entry.get("harness_alias") or "rb-%s-harness" % n, False,
                                         sshenv.key_names(n)[1])):
             c = sshenv.ssh_config(alias)
-            if not _defined(c, alias):
+            if not sshenv.defined(c, alias):
                 print("%s: ssh has no Host block for %s%s" % (
                     "error" if required else "note", alias, "" if required else " (harness channel only)"))
                 code = code or (1 if required else 0)
@@ -685,7 +680,7 @@ def agent_main(node: Optional[str]) -> int:
                 continue
             if not key.is_file():
                 print("%s: key file missing: %s" % ("error" if required else "note", key))
-                code = 1
+                code = code or (1 if required else 0)
                 continue
             keys.append(key)
     if not keys:

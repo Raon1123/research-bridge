@@ -13,13 +13,13 @@ import re
 import sys
 import tempfile
 import time
-import calendar
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TextIO
 
 from . import board, configure, jobs, server, store
 from .client import RemoteError, TransportError, normalize_hello
-from .config import default_root
+from .config import host_json_path
+from .util import age_s
 from .threads import read_status, status_path  # noqa: F401  (re-exported readers)
 from rb_node.withheld import Withheld
 
@@ -75,13 +75,8 @@ def due_sources(cfg: Any, node: str, now_s: Optional[float] = None) -> List[str]
         if not isinstance(rec, dict) or rec.get("ok") is not True:
             due.append(name)
             continue
-        try:
-            age = now_s - calendar.timegm(time.strptime(str(rec.get("fetched_at")),
-                                                         "%Y-%m-%dT%H:%M:%SZ"))
-        except ValueError:
-            due.append(name)
-            continue
-        if age >= board.CADENCE_S[name] / 2.0:
+        age = age_s(rec.get("fetched_at"), now_s)
+        if age is None or age >= board.CADENCE_S[name] / 2.0:
             due.append(name)
     return due
 
@@ -220,7 +215,7 @@ def _line(st: dict) -> str:
 
 
 def _hostjson_path() -> str:
-    return os.environ.get("RB_HOST_CONFIG") or str(Path(default_root()) / "host.json")
+    return str(host_json_path())
 
 
 def run(node: Optional[str], watch: int, out: Optional[TextIO] = None,

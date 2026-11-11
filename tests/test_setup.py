@@ -157,6 +157,21 @@ def test_ssh_block_overridden_by_earlier_host_star_warns(hub, capsys):
     assert "stricthostkeychecking" in out and "overridden" in out
 
 
+def test_backup_in_the_same_second_keeps_the_earlier_one(tmp_path, monkeypatch):
+    # D14: as rb_node/install.py does, a name that exists gets a counter
+    monkeypatch.setattr(setup, "_stamp", lambda: "20260101000000")
+    p = tmp_path / "config"
+    p.write_text("one\n", encoding="utf-8")
+    b1 = setup._backup(p)
+    p.write_text("two\n", encoding="utf-8")
+    b2 = setup._backup(p)
+    p.write_text("three\n", encoding="utf-8")
+    b3 = setup._backup(p)
+    assert [b.name for b in (b1, b2, b3)] == [
+        "config.bak.20260101000000", "config.bak.20260101000000.1", "config.bak.20260101000000.2"]
+    assert [b.read_text(encoding="utf-8") for b in (b1, b2, b3)] == ["one\n", "two\n", "three\n"]
+
+
 def test_ssh_config_backup_kept(hub):
     _keys(hub)
     old = "Host other\n    HostName x.example\n"
@@ -526,11 +541,16 @@ def test_ssh_config_write_failure_is_reported_not_raised(hub, capsys, monkeypatc
     assert "could not write" in capsys.readouterr().out
 
 
-def test_rb_agent_missing_harness_key_exits_1(hub, capsys):
+def test_rb_agent_missing_harness_key_is_a_note_and_exits_0(hub, capsys):
+    # D12: the harness key is optional; its missing file is a note and the bridge key still loads
     hubfake.linked(hub, port=2222)
     (hub.ssh_dir / KEYS / "node1_harness_ed25519").unlink()
     hub.add_agent("rb-ssh-agent", [])
-    assert cli.main(["agent"]) == 1
+    assert cli.main(["agent"]) == 0
+    out = capsys.readouterr().out
+    assert "note: key file missing" in out and "error" not in out
+    adds = [c[1][1] for c in hub.calls if c[0] == "interactive" and c[1][0] == "ssh-add"]
+    assert adds == [str(hub.ssh_dir / KEYS / "node1_ed25519")]
 
 
 def test_same_key_for_both_aliases_is_refused(hub, capsys):

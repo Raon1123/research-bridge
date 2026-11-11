@@ -10,10 +10,12 @@ Each document carries one status line at the top. Update it in place and keep th
 
 | Status | Meaning |
 |---|---|
-| `draft` | Written, not yet shown to the user. |
+| `draft` | Written; the user has not approved it. |
 | `user-approved` | The user read it and approved it. Record the date and what was changed on review. |
 | `built` | The implementation landed. Record the commit range. |
 | `superseded` | A later design replaces it. Link the replacement; do not delete the old file. |
+
+A design built before the user approved it carries both parts: `draft, not user-approved; built: <where>`.
 
 ## Rules
 
@@ -41,9 +43,4 @@ The first design stays at `docs/superpowers/specs/` because `AGENTS.md` and othe
 
 ## Candidates
 
-Open items in `docs/issues/2026-11-10-triage.md` that change the protocol or the ledger and so need a design first:
-
-- `to_session` and attachment byte totals in ledger records (bridge edges show `<node>:responder` and 0 bytes today).
-- `reply_to` on the node side (`msg_begin` has no such field).
-- Locking of node queue numbering for more than one submitter.
-- Restricting or removing `<SHARED_KEY>` on node1 (issue #2; decision 5 of `docs/issues/2026-11-10-triage.md` §5).
+Open items that need a design first are kept in one place: `docs/issues/2026-11-10-triage.md`, the rows marked "design first" in §1 and the proposed issues of §3 marked "Design: none yet".

@@ -9,6 +9,8 @@
 # login with <SHARED_KEY> (row 4); without it row 4 is skipped. It opens SSH connections to the
 # node but writes nothing there. It never prints what the node sent for rows 1 and 2 (a failing
 # row could carry /etc/passwd); it prints only whether the shell marker or passwd lines appeared.
+# Rows 1 and 2 fail as "not reached" when ssh exits with status 255, prints a connection or
+# authentication error, or does not end within 30 s: absent markers then prove nothing.
 # Exit status: 0 when every row holds, 1 otherwise.
 set -u
 
@@ -16,7 +18,7 @@ NODE=""; SHARED=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --shared-alias) SHARED="${2:?--shared-alias needs a value}"; shift 2 ;;
-    -h|--help) sed -n '3,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '3,14p' "$0"; exit 0 ;;
     *) NODE="$1"; shift ;;
   esac
 done
@@ -44,17 +46,33 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # The marker is computed by a shell: "$((40+2))MARK" becomes "42MARK" only if a shell ran it.
 # An echo of the input by the protocol would keep the literal "$((40+2))MARK".
 
+# not_reached ROW STATUS FILE: true when ssh did not reach the forced command. Status 255 is
+# ssh's own error status; 124 is timeout's. Prints only fixed text, never the file's content.
+SSH_ERR='^ssh: |Permission denied|Host key verification failed|Could not resolve hostname'
+SSH_ERR="$SSH_ERR|Connection (refused|closed|reset|timed out)|No route to host|kex_exchange_identification"
+not_reached() {
+  if [ "$2" = 124 ]; then fail "$1" "not reached: ssh did not end within 30 s (output not shown)"; return 0; fi
+  if [ "$2" = 255 ] || grep -qE "$SSH_ERR" "$3"; then
+    fail "$1" "not reached: ssh exit $2 or an ssh error line (output not shown)"; return 0
+  fi
+  return 1
+}
+
 echo "B2 hub checks for node $NODE (alias $ALIAS, harness alias $HALIAS)"
 
 # Row 1: no shell on the bridge key. Feed a shell line on stdin; the forced command reads protocol.
 printf 'echo $((40+2))MARK\n' | timeout 30 ssh -T "$ALIAS" >"$TMP/r1" 2>&1
+rc=$?  # status of the last command of the pipeline: timeout, which passes on ssh's status
 if grep -q '42MARK' "$TMP/r1"; then fail 1 "a shell ran input on the bridge key"
+elif not_reached 1 "$rc" "$TMP/r1"; then :
 else pass 1 "no shell on $ALIAS ($(wc -c <"$TMP/r1") bytes of protocol output, not shown)"; fi
 
 # Row 2: the requested command is ignored.
 timeout 30 ssh "$ALIAS" 'echo $((40+3))MARK; cat /etc/passwd' </dev/null >"$TMP/r2" 2>&1
+rc=$?
 if grep -q '43MARK' "$TMP/r2" || grep -q '^root:' "$TMP/r2"; then
   fail 2 "the requested command ran (marker or passwd lines in the output)"
+elif not_reached 2 "$rc" "$TMP/r2"; then :
 else pass 2 "requested command ignored ($(wc -c <"$TMP/r2") bytes, not shown)"; fi
 
 # Row 3: the harness key accepts only its own commands.

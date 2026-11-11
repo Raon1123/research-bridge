@@ -1,8 +1,6 @@
 """FastMCP server `research-bridge` (stdio). Mutations only create pending_approval records."""
 from __future__ import annotations
 
-import base64
-import hashlib
 import os
 import re
 import uuid
@@ -11,7 +9,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from rb_node.protocol import CHUNK
 from rb_node.withheld import Withheld
 
 from . import jobs, store, threads
@@ -49,35 +46,9 @@ def nodes() -> dict:
     """
     cfg = load_cfg()
     names = sorted(cfg.nodes)
-    return {"nodes": names, "status": {n: threads.summary(cfg, n) for n in names}}
-
-
-def _upload(c: NodeClient, msg_id: str, body: str, files: List[Path],
-            from_session: Optional[str]) -> None:
-    metas = []
-    for f in files:
-        h = hashlib.sha256()
-        size = 0
-        with open(str(f), "rb") as fh:
-            for chunk in iter(lambda: fh.read(CHUNK), b""):
-                h.update(chunk)
-                size += len(chunk)
-        metas.append({"name": f.name, "bytes": size, "sha256": h.hexdigest()})
-    res = c.call("msg_begin", msg_id=msg_id, body=body, from_session=from_session,
-                 attachments=metas)
-    for f, stored in zip(files, res["names"]):
-        with open(str(f), "rb") as fh:
-            seq = 0
-            while True:
-                data = fh.read(CHUNK)
-                if not data and seq > 0:
-                    break
-                c.call("put_chunk", msg_id=msg_id, name=stored, seq=seq,
-                       data_b64=base64.b64encode(data).decode("ascii"))
-                seq += 1
-                if len(data) < CHUNK:
-                    break
-    c.call("msg_commit", msg_id=msg_id)
+    counts = threads.undelivered_counts(cfg)
+    return {"nodes": names,
+            "status": {n: threads.summary(cfg, n, undelivered=counts) for n in names}}
 
 
 def send_message(node: str, body: str, attachments: Optional[List[str]] = None,
@@ -113,7 +84,7 @@ def send_message(node: str, body: str, attachments: Optional[List[str]] = None,
                     "reply_to": reply_to, "from_session": from_session,
                     "attachments": [f.name for f in files], "body_chars": len(body),
                     "status": "pending_send", "created": jobs.now()})
-    res = _run(node, lambda c: _upload(c, mid, body, files, from_session or None))
+    res = _run(node, lambda c: c.put_files(mid, files, body, from_session or None))
     if isinstance(res, dict) and "error" in res:
         return {"msg_id": mid, "status": "pending_send", "error": res["error"]}
     led.update(mid, status="sent")
@@ -155,18 +126,26 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
             rejected_ids.append(iid)
 
     def work() -> None:
+        if not isinstance(items, list):
+            raise ValueError("malformed poll result")
+        # one read for the seen-check; append still checks under the lock
+        known = {r["id"]: r for r in led.records()} if items else {}
         for it in items:
-            iid = str(it.get("id"))
-            seen = led.get(iid)
+            iid = it.get("id") if isinstance(it, dict) else None
+            if not isinstance(iid, str):  # D3: reject one malformed item, keep the others
+                reject("")
+                continue
+            seen = known.get(iid)
             if seen is not None and seen.get("direction") == "in":
-                ack.append(iid)
+                if iid not in ack:
+                    ack.append(iid)
                 continue
             if seen is not None:  # the id belongs to an outgoing or job record: do not ack
                 reject(iid)
                 continue
             try:
                 stored = store_incoming(cfg, node, it, c)
-            except (ValueError, OSError):
+            except (ValueError, OSError, KeyError, AttributeError, TypeError):
                 reject(iid)
                 continue
             rec = {"kind": "message", "id": iid, "direction": "in", "node": node,
@@ -177,11 +156,13 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
                 rec["delivered_at"] = jobs.now()
             if led.append(rec):
                 new.append(stored)
+                known[iid] = rec
             else:
                 cur = led.get(iid)
                 if cur is None or cur.get("direction") != "in":
                     reject(iid)  # lost the race to a non-inbound record: leave it on the node
                     continue
+                known[iid] = cur
             ack.append(iid)
         if ack:
             c.call("ack", ids=ack)
@@ -410,7 +391,10 @@ def submit_job(node: str, config_path: str, gpus: List[int], gpu_hours: float,
     idempotency_key (the same key returns the same job); note (free text). Returns {"job_id",
     "status": "pending_approval"}. The user approves or rejects it with `rb approve <job_id>` in a
     hub terminal, where the approval passphrase is typed; no tool can approve. Raises ValueError
-    for bad input (unknown node, missing config, bad GPU list or budget).
+    for an unknown node, an empty idempotency_key, a missing config file, a gpus value that is not
+    a non-empty list of distinct non-negative integers, or a gpu_hours that is not a number with
+    0 < gpu_hours <= 168. Whether the GPUs exist and are allowed on the node is checked by the
+    node after approval; a refusal then returns the job to pending_approval.
     """
     cfg = load_cfg()
     rec = jobs.create_submit(ledger_for(cfg), cfg, node, config_path, gpus, gpu_hours,
@@ -421,10 +405,12 @@ def submit_job(node: str, config_path: str, gpus: List[int], gpu_hours: float,
 def cancel_job(node: str, job_id: str, idempotency_key: str) -> dict:
     """Request a job cancel. This only creates a pending_approval record; nothing is sent.
 
-    Arguments: node; job_id (a job of this ledger); idempotency_key (the same key returns the same
-    request). Returns {"job_id": the cancel request id, "status": "pending_approval"}. The user
-    approves with `rb approve <id>` in a hub terminal; no tool can approve. Raises ValueError for
-    an unknown node or job.
+    Arguments: node; job_id (the node's job id; a job started on the node console is not in the
+    hub ledger and can be named too); idempotency_key (the same key returns the same request).
+    Returns {"job_id": the cancel request id, "status": "pending_approval"}. The user approves
+    with `rb approve <id>` in a hub terminal; no tool can approve. Raises ValueError for an unknown
+    node or an empty idempotency_key. The job id is not checked on the hub: the node answers
+    not_found after approval when it has no pending or running job with that id.
     """
     cfg = load_cfg()
     rec = jobs.create_cancel(ledger_for(cfg), cfg, node, job_id, idempotency_key)

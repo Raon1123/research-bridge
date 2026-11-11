@@ -8,10 +8,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
-import shutil
 import sys
-import tempfile
-import time
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -77,20 +74,6 @@ WantedBy=default.target
     return {"rb-sync.service": sync, "rb-sync.timer": timer, "rb-web.service": web}
 
 
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, str(path))
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
-
-
 def install(interval: int = 300, port: int = 8767, print_only: bool = False) -> int:
     from . import setup
 
@@ -136,10 +119,8 @@ def install(interval: int = 300, port: int = 8767, print_only: bool = False) -> 
             print("%s: not written" % path)
             continue
         if old is not None:
-            bak = path.with_name("%s.bak.%s" % (name, time.strftime("%Y%m%d%H%M%S")))
-            shutil.copy2(str(path), str(bak))
-            print("backup: %s" % bak)
-        _write(path, new)
+            setup._backup(path, say=print)
+        setup._atomic_write(path, new.encode("utf-8"), 0o644)
         print("%s: written" % path)
     print("Then run these yourself (rb does not run them):")
     print("  systemctl --user daemon-reload && systemctl --user enable --now "

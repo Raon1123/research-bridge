@@ -41,6 +41,7 @@ Abbreviations used: SSH = Secure Shell; MCP = Model Context Protocol (the tool i
 - Fix verified: recorded for unit tests: `tests/test_client_errors.py` (for example `test_publickey_key_loaded_is_node_refused`, `test_publickey_key_not_loaded`), part of 760 passed on 2026-11-10. Not verified on the real link: the hub and the node do not run this code yet.
 - Prevention: an error message names one cause only when the code has checked that cause; otherwise it lists the possible causes. A test per cause pins the message.
 - Evidence: `rb_host/client.py` at `0b16b47`, line 107 「return AgentLockedError("ssh key unavailable (agent locked?)")」; PR 44 body 「`ssh key unavailable (agent locked?)` is also returned when the node refuses the key (for example a `from=` mismatch)」.
+- Afterwards (2026-11-11): merged to `main` in PR 48 (merge commit `c503667`); the hub has run it since 2026-11-10, and `rb doctor --node node1` passed (`docs/provisioning.md` B2 row 6). No SSH failure occurred in that run, so the error classification is still verified by unit tests only. The open item "Live confirmation" below stays open, for a real failure case.
 
 ## 3. Deviations from user instructions
 

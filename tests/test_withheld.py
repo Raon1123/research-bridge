@@ -210,3 +210,19 @@ def test_ascii_control_split_is_hit_and_tab_or_crlf_lines_stay_clean():
     assert not w._hit("step\t1\tloss\t0.5\r")
     masked, n = w.mask_text("a\tb\r\n" + name[:2] + "\x7f" + name[2:] + "\r\nc\td\r\n")
     assert n == 1 and masked.split("\n")[0] == "a\tb\r" and masked.split("\n")[2] == "c\td\r"
+
+
+def test_problem_order_unreadable_unparseable_rejected_empty(tmp_path):
+    # one rule for every pattern-file check (rb-node doctor, node-install.sh --withheld-file)
+    assert Withheld.load(tmp_path / "missing.json").problem() == "unreadable"
+    f = tmp_path / "p.json"
+    f.write_bytes(b"\xff\xfe")
+    assert Withheld.load(f).problem() == "unparseable"
+    f.write_text("a: b\n", encoding="utf-8")
+    assert Withheld.load(f).problem() == "unparseable"
+    f.write_text(json.dumps({"patterns": ["bad(["]}), encoding="utf-8")
+    assert Withheld.load(f).problem() == "rejected"  # before "empty": no pattern compiled either
+    f.write_text("{}", encoding="utf-8")
+    assert Withheld.load(f).problem() == "empty"
+    f.write_text(json.dumps({"patterns": ["zzq_[a-z]+"]}), encoding="utf-8")
+    assert Withheld.load(f).problem() is None
