@@ -10,6 +10,7 @@ research-bridge is one SSH-key-authenticated channel between the **hub** and an 
 - masked reading of server hypothesis (H-xxx) and experiment (EXP-xxx) documents;
 - job submission with a budget (one GPU from the node's `allowed_gpus` and GPU-hours, chosen by the user), approved in two steps;
 - a manual, staging-only harness sync channel;
+- session metadata from the nodes: which Claude sessions ran in the served research tree, when, and for how long per day (no session text), fetched by `rb sync` and kept on the hub (`docs/design/2026-11-11-node-sessions.md`);
 - display of all of it in two places: the read-only hub page (`rb web serve`, loopback port 8767 on the hub, reached from the laptop through an SSH local forward) and, on the laptop only, the 8765 dashboard and the session browser (vault side). The 8765 dashboard is not present on the hub. Routes of both and the forward command: `docs/session-dashboard.md`. `rb web key` issues a one-time read-only access key for the hub page; it approves nothing.
 
 Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md` (later designs: `docs/design/README.md`). Plan (Tasks 0–13, finished and archived): `docs/99_Archive/plans/2026-10-27-research-bridge.md`. Project facts (what the node serves): `docs/projects/`, the current test project is `docs/projects/trm.md`. Setup: `README.md` and `docs/manual/`; provisioning steps: `docs/provisioning.md`.
