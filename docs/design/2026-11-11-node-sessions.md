@@ -1,9 +1,10 @@
 # Sessions on the nodes, collected on the hub — design
 
-Date: 2026-11-11 · Status: draft, not user-approved · Author: research-bridge audit session (2026-11-11) · Code: `rb_node/sessions.py` (new), `rb_node/remote.py`, `rb_node/config.py`, `rb_node/doctor.py`, `rb_node/cli.py`, `rb_host/sessions.py` (new), `rb_host/sync.py`, `rb_host/share.py`, `rb_host/web.py`, tests · Data: node `<node data dir>/sessions-cache.json`; hub `<data_root>/sessions/<node>.json`
+Date: 2026-11-11 · Status: draft, not user-approved; built: steps 1–5 of §9 (node operation `sessions`, `rb-node sessions`, the doctor check, the `rb sync` step and hub store, the `/status` lines, documents) on branch `claude/node-sessions`, not merged; steps 6 and 7 are the user's · Author: research-bridge audit session (2026-11-11) · Code: `rb_node/sessions.py` (new), `rb_node/remote.py`, `rb_node/config.py`, `rb_node/doctor.py`, `rb_node/cli.py`, `rb_host/sessions.py` (new), `rb_host/sync.py`, `rb_host/share.py`, `rb_host/web.py`, tests · Data: node `<node data dir>/sessions-cache.json`; hub `<data_root>/sessions/<node>.json`
 
 Status history:
 - 2026-11-11 draft. The user gave the direction (§11) and had said to start without questions, so the design and the build go into one change.
+- 2026-11-11 built on branch `claude/node-sessions` (on top of `claude/hub-status-page`): steps 1–5 of §9. The two live rows of §10 are not verified: no real record was read. Rulings in §13.
 
 Fills the "Sessions" section of [the status page on the hub](2026-11-11-hub-status-page.md), whose open question 1 asked where the session half comes from.
 
@@ -145,20 +146,20 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 
 | Goal / anti-goal | Check | Kind | Status |
 |---|---|---|---|
-| G1 | `tests/test_node_sessions.py`: reduction, window, label, outside count | unit test | not run |
+| G1 | `tests/test_node_sessions.py`: reduction, window, label, outside count | unit test | passed: `test_plain_reduction`, `test_gap_rule_and_day_of_the_earlier_time`, `test_session_spanning_two_days`, `test_one_line_session_counts_with_no_active_seconds`, `test_days_window`, `test_label_rules`, `test_outside_and_missing_cwd_are_only_counted`, `test_hello_lists_sessions_and_a_subprocess_node_answers` |
 | G1 on real records | `rb-node sessions` on the node | live check (user) | not verified: no real record was read (§5) |
-| G2 | unset key gives `not_configured`; a path outside the directory or through a symlink is not read | unit test | not run |
-| G3 | merge rule, failed fetch keeps data, atomic write | unit test | not run |
-| G4 | `/status` content from a seeded store | unit test | not run |
-| G5 | the four states give four different lines | unit test | not run |
-| G6 | a sync pass against a node whose `hello.ops` lacks `sessions` ends ok with `sessions: unsupported` | unit test | not run |
-| G7 | `rb-node sessions` prints the op result; doctor check states | unit test | not run |
-| Anti-goal: nothing else leaves the node | a record with marker strings in its message text, branch and paths: no marker in the op result, the audit line or the cache | unit test | not run |
-| Anti-goal: withheld label | masked on the node; a hit injected into the answer is dropped on the hub | unit test | not run |
-| Anti-goal: bounds | a file larger than the per-call budget is finished over several calls; the result says `truncated` | unit test | not run |
-| Anti-goal: silent zero | files that do not parse give `unparsed` above 0 and a line on the page | unit test | not run |
-| Anti-goal: page writes | the data root is identical before and after `/status` with a store present | unit test | not run |
-| Whole path on node1 | after the user's steps of §9: the page shows node sessions | live check (user) | not verified |
+| G2 | unset key gives `not_configured`; a path outside the directory or through a symlink is not read | unit test | passed: `test_op_unset_or_missing_directory`, `test_only_depth_two_jsonl_files_inside_the_directory_are_read`, `test_config_key` |
+| G3 | merge rule, failed fetch keeps data, atomic write | unit test | passed: `test_sessions_merge_by_id`, `test_sessions_failure_keeps_the_store`, `test_sessions_from_a_configured_node_are_stored` (one file, mode 600; the write is a temporary file and `os.replace`) |
+| G4 | `/status` content from a seeded store | unit test | passed: `test_status_node_sessions_content`, `test_node_sessions_rows_from_the_store` |
+| G5 | the four states give four different lines | unit test | passed: `test_status_node_sessions_four_states_four_lines`, `test_node_sessions_four_states`, `test_sessions_state_follows_the_node_after_an_ok_fetch` |
+| G6 | a sync pass against a node whose `hello.ops` lacks `sessions` ends ok with `sessions: unsupported` | unit test | passed: `test_sessions_unsupported_when_hello_does_not_list_it`, `test_sessions_not_configured_on_the_node` |
+| G7 | `rb-node sessions` prints the op result; doctor check states | unit test | passed: `test_cli_sessions_prints_what_the_op_returns`, `test_cli_sessions_not_configured`, `test_doctor_sessions_check` |
+| Anti-goal: nothing else leaves the node | a record with marker strings in its message text, branch and paths: no marker in the op result, the audit line or the cache | unit test | passed: `test_nothing_else_leaves_the_node`; hub side `test_sessions_from_a_configured_node_are_stored` |
+| Anti-goal: withheld label | masked on the node; a hit injected into the answer is dropped on the hub | unit test | passed: `test_label_rules`, `test_malformed_sessions_answer_is_checked_entry_by_entry`, `test_node_store_codes_and_labels_are_checked`, `test_status_node_store_escapes_and_masks` |
+| Anti-goal: bounds | a file larger than the per-call budget is finished over several calls; the result says `truncated` | unit test | passed: `test_big_file_is_finished_over_several_calls`, `test_session_and_file_bounds`, `test_old_files_are_not_opened`, `test_very_long_line_is_handled` |
+| Anti-goal: silent zero | files that do not parse give `unparsed` above 0 and a line on the page | unit test | passed: `test_files_without_usable_time_are_unparsed`, `test_doctor_sessions_check`, `test_status_node_counts_lines` |
+| Anti-goal: page writes | the data root is identical before and after `/status` with a store present | unit test | passed: `test_status_writes_nothing_with_a_node_store`, `test_snapshot_writes_nothing_with_a_node_store` |
+| Whole path on node1 | after the user's steps of §9: the page shows node sessions | live check (user) | not verified: needs the user's steps of §9 step 6 |
 
 ## 11. Decided by the user
 
@@ -183,7 +184,32 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 
 | # | Ruling | Cost if wrong | Where recorded |
 |---|---|---|---|
-| 1 | | | |
+| 1 | A `.jsonl` file at depth 2 whose stem is not an id is not read but counts in `files` and `unparsed`, so a wrong file-name assumption shows as a number, not as zero sessions. | A noisy `unparsed` count if such files are normal on the node. | `rb_node/sessions.py` `collect` |
+| 2 | Lines are parsed with `json.loads` up to 8 MiB (`LINE_MAX`); a longer line is read through and skipped, never held. A line in progress is always finished, so one call can read one line past the 64 MiB budget. A wall-clock bound of 20 s per call (`MAX_SECONDS`) is added to the design's bounds, because the hub client has no read timeout. | A session whose only times are on lines above 8 MiB counts as unparsed. | `rb_node/sessions.py` constants, `_read` |
+| 3 | The read offset moves only past newline-terminated lines; a half-written last line waits for its newline (`tail` in the cache). | A record file whose last line never gets a newline loses that line. | `_read` |
+| 4 | A gap counts only when 0 ≤ gap ≤ 300 s between consecutive times in file order; an earlier time after a later one adds no active time. `start` and `end` are the minimum and maximum. | Out-of-order records undercount activity. | `_take` |
+| 5 | A session with times but no top-level `cwd`, or with a relative `cwd`, counts as `outside`. | Such sessions are never listed. | `label_for`, `collect` |
+| 6 | Two files with the same id (two project directories) are one session on the node, merged by the hub's rule; the label is the more recently active file's. | Two different sessions with one id would merge. | `_merge` |
+| 7 | Files whose modification time is older than the window are not opened and not counted; `files` counts record files in the window (at most 2000, newest first); `outside` and `unparsed` count within the window. | A file whose times are newer than its modification time is missed. | `collect` |
+| 8 | Cache at `<mailbox_root parent>/sessions-cache.json` (the directory of `install.json`; beside `node.json` in the default layout). Keys are a hash of the path below `sessions_dir`; an entry holds sizes, offset, a hash of the first 4096 bytes, times, seconds per day and the relative label, never a `cwd` or path. A cache made for another `sessions_dir` or tree is rebuilt. A file of the same size with a new modification time is read again from the start. | One full re-read after a `touch`. | `cache_path`, `_load_cache`, `_update` |
+| 9 | The window and the withheld mask are applied when the answer is built, not when the cache is filled, so a pattern added later covers cached labels. The tree root is matched both as configured and resolved. | None known. | `collect`, `tree_roots` |
+| 10 | `rb-node sessions` and the doctor check do not write the cache (the design says "reads only"; the doctor never writes). | Each run reads the files again, within the bounds. | `rb_node/cli.py` `_sessions`, `rb_node/doctor.py` `_sessions_check` |
+| 11 | The doctor has no "note" level: unset `sessions_dir` is level `ok` with a message saying the operation is off. | A user may miss that the operation is off. | `_sessions_check` |
+| 12 | A `sessions_dir` that is not a directory answers `not_found`. | None known. | `collect` |
+| 13 | On the hub a label is dropped (counted in `skipped`) when it is empty, longer than 120 characters, has a control, format or separator character, an HTML-special character (`<>&"'` and the backquote), or a withheld hit. The page escapes all text as well; a label in a store not written by `rb sync` is cleaned and escaped by the page's label rule. | A real directory name with one of those characters never shows. | `rb_host/sessions.py` `label_ok` |
+| 14 | An answer that is not an object with a `sessions` list gives the code `bad_answer`. | None known. | `rb_host/sessions.py` `validate` |
+| 15 | A hub store that cannot be read is replaced on the next good fetch; no copy is kept. | History older than the node's window is lost after a corrupted store. | `record` |
+| 16 | A failed or refused fetch (`unsupported` and `not_configured` included) updates an existing store (`ok` false, `error`, `attempted_at`); without a store nothing is written. So the store always says how the last pass went. | None known. | `record_failure`, `sync._sessions_step` |
+| 17 | Stored entries are checked again at each merge, so a pattern added on the hub later drops its hits from the store. | None known. | `_old_sessions` |
+| 18 | The store also keeps the node's `files` count, so the page can say "N of M record files". | None known. | `record` |
+| 19 | `share.snapshot` takes the state from the store, else from the status field. A node with neither ("never asked") has no source row and no line, so the old no-source line stays until a pass with this code ran. A status field `ok` with no store is the error `missing`. | None known. | `share.node_sessions` |
+| 20 | The per-day rows come from the stored sessions whatever the state of the last fetch, so history stays visible beside an error line (the design's "one of" applies to the node's line only). | None known. | `share.node_sessions`, `web._status_sessions` |
+| 21 | Node labels go through the page's label rule: `share.labels`, when set, turns other labels into `other`; labels are cut at 60 characters on the page. | With an allowlist set, node labels show as `other` until they are added. | `share.node_sessions` |
+| 22 | `totals` stay the file source's; node numbers are per node in `sessions.nodes`. `SCHEMA_VERSION` stays 2 (the new keys `active_now` and `nodes` are additions). | None known. | `share.snapshot` |
+| 23 | A node source row is stale after 900 s (three timer periods). `unsupported` is shown as "not offered by the node" and never stale. | None known. | `share.SESSIONS_CADENCE_S`, `web._status_sources` |
+| 24 | An error code with a digit (allowed in the sync status file) shows as `bad_error_code` on the page, whose code pattern has no digits; asserted in a test. | A real code with a digit is hidden. | `share.ERROR_CODE` (unchanged) |
+| 25 | No version change of `rb_node` (`0.2.0`, pinned by tests): the operation is announced by `hello.ops`. `hello.state` gains no field. | `rb-node doctor` cannot tell an updated node from an old one by version. | `rb_node/__init__.py` (unchanged) |
+| 26 | The hub asks `days=8` on every pass; no hub command prints the store (§14, not added). | None known. | `rb_host/sessions.py` `DAYS` |
 
 ## 14. Left to the builder
 

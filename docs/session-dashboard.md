@@ -72,7 +72,7 @@ The status column was checked with `curl` on the loopback address. Re-check befo
 | `/thread/<id>` | one conversation: every message with direction, kind, attachments (name, size, hash start, status) and the body |
 | `/jobs` | job records by status, with the `job_finished` events beside them |
 | `/nodes` | per node: all fields of the sync status file and the board caches |
-| `/status` | summary of the last 7 days and today (UTC dates): queue counts and GPUs in use of all nodes, pending approvals, GPU-hours requested, one row per day (jobs submitted, cancels, approvals, `job_finished` events and failed ones, messages sent and received), sessions and runs when `host.json` `share.*` names their files, and every source with its age and error code (`docs/design/2026-11-11-hub-status-page.md`) |
+| `/status` | summary of the last 7 days and today (UTC dates): queue counts and GPUs in use of all nodes, pending approvals, GPU-hours requested, one row per day (jobs submitted, cancels, approvals, `job_finished` events and failed ones, messages sent and received), sessions collected from the nodes by `rb sync` (`<data_root>/sessions/<node>.json`; per node one line: operation not offered, directory not configured, an error code, or the numbers with "active now" and the fetch time; `docs/design/2026-11-11-node-sessions.md`), sessions and runs when `host.json` `share.*` names their files, and every source with its age and error code (`docs/design/2026-11-11-hub-status-page.md`) |
 | `/healthz` | `{"ok": true}` as JSON; open without a session; liveness only |
 
 Anything else answers 404.

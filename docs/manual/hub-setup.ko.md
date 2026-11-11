@@ -45,6 +45,7 @@
 | `quarantine/<node>/` | 허브 쪽 withheld 재검사에 실패한 파일 | `poll`, `rb sync` |
 | `fetched/<node>/` | `fetch_file`로 받은 파일 | `fetch_file` |
 | `sync/<node>.json` | 마지막 동기화 한 번의 상태(§13.2). 모드 600 | `rb sync` |
+| `sessions/<node>.json` | `sessions` 연산으로 노드에서 모은 세션: 세션 id마다 레이블, 시작, 끝, 날짜별 활동 초. 지우지 않는다. 모드 600 (`docs/design/2026-11-11-node-sessions.md`) | `rb sync` |
 | `board/` | 통합 board 캐시 | `rb board refresh`, `rb sync` |
 | `harness-staging/<stamp>/` | harness pull 결과(§8) | `rb harness pull` |
 | `web/access.json` | 허브 페이지 접근 키와 세션의 해시(§14). 디렉터리 모드 700, 파일 모드 600 | `rb web key`, 허브 페이지의 `/enter` |
@@ -328,7 +329,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
 ### 13.2 Status file
 
-`<data root>/sync/<node>.json`(모드 600, 원자적으로 교체)에는 다음이 들어 있다. `schema`, `node`, `last_attempt_at`, `last_ok_at`, `ok`, `error`(코드 또는 null), `stage`(마지막 실패가 일어난 곳: `connect`, `hello`, `poll`, `git`, `board`. 한 번이 진행 중이면 `running`), `new_items`, `rejected`, `rejected_ids`(거부된 항목의 id, 최대 10개), `board`(소스별: `ok`, `skipped`, `no_path`, `gpu_status_unavailable`, `no_gpus`, `source_error`, 또는 오류 코드), `node_version`, `protocol`, `withheld_extra`, `hub_withheld_extra`, `hub_withheld_rejected`, `node_seen_at`, `tree_head`, `tree_dirty`, `git_error`, `duration_s`. 전송 오류, poll 오류, 또는 `no_path`, `gpu_status_unavailable`, `no_gpus`가 아닌 board 소스 오류가 있으면 한 번이 실패한 것이다. `last_ok_at`이 900초보다 오래되면 파일이 오래된 것으로 보며, `nodes` 도구, 페이지, `rb doctor`가 이 한 가지 규칙을 쓴다. 허브는 노드의 git 상태를 키 `tree`에서 읽고 없으면 `trm`으로 대체하는데, 현재 노드가 보내는 것이 `trm`이다.
+`<data root>/sync/<node>.json`(모드 600, 원자적으로 교체)에는 다음이 들어 있다. `schema`, `node`, `last_attempt_at`, `last_ok_at`, `ok`, `error`(코드 또는 null), `stage`(마지막 실패가 일어난 곳: `connect`, `hello`, `poll`, `git`, `board`. 한 번이 진행 중이면 `running`), `new_items`, `rejected`, `rejected_ids`(거부된 항목의 id, 최대 10개), `board`(소스별: `ok`, `skipped`, `no_path`, `gpu_status_unavailable`, `no_gpus`, `source_error`, 또는 오류 코드), `node_version`, `protocol`, `withheld_extra`, `hub_withheld_extra`, `hub_withheld_rejected`, `node_seen_at`, `tree_head`, `tree_dirty`, `git_error`, `duration_s`, `sessions`(`ok`, 노드의 `hello`가 이 연산을 나열하지 않으면 `unsupported`, 노드에 `sessions_dir`가 없으면 `not_configured`, `bad_answer`, 또는 오류 코드. 어느 것도 한 번을 실패로 만들지 않는다). 전송 오류, poll 오류, 또는 `no_path`, `gpu_status_unavailable`, `no_gpus`가 아닌 board 소스 오류가 있으면 한 번이 실패한 것이다. `last_ok_at`이 900초보다 오래되면 파일이 오래된 것으로 보며, `nodes` 도구, 페이지, `rb doctor`가 이 한 가지 규칙을 쓴다. 허브는 노드의 git 상태를 키 `tree`에서 읽고 없으면 `trm`으로 대체하는데, 현재 노드가 보내는 것이 `trm`이다.
 
 ### 13.3 `rb service`
 
@@ -359,7 +360,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `/thread/<id>` | 대화 하나: 모든 레코드의 시간, 방향, 상태, 본문, 첨부 파일 | 60 s |
 | `/jobs` | 상태별 작업 레코드와 `job_finished` 이벤트 | 60 s |
 | `/nodes` | 노드별 상태 파일과 board 소스 | 60 s |
-| `/status` | 최근 7일과 오늘(UTC)의 요약: 모든 노드의 큐 개수와 사용 중인 GPU, 대기 중인 승인, 요청된 GPU 시간, 날짜별 브리지 활동 한 줄, `share.*`가 파일을 지정하면 세션과 실행(§5), 소스별 경과 시간과 오류 코드 | 60 s |
+| `/status` | 최근 7일과 오늘(UTC)의 요약: 모든 노드의 큐 개수와 사용 중인 GPU, 대기 중인 승인, 요청된 GPU 시간, 날짜별 브리지 활동 한 줄, 노드에서 모은 세션(`sessions/`. 노드마다 한 줄: 연산을 제공하지 않음, 디렉터리가 설정되지 않음, 오류 코드, 또는 "지금 활동 중"과 가져온 시각이 붙은 숫자)과 `share.*`가 지정한 파일의 세션(§5), 실행, 소스별 경과 시간과 오류 코드 | 60 s |
 | `/healthz` | JSON `{"ok": true}`(생존 확인만, 키 불필요) | 없음 |
 | `/enter?key=KEY` | 일회용 키를 세션 쿠키로 교환한 뒤 `/`로 이동 | 없음 |
 

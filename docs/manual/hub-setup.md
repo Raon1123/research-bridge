@@ -43,6 +43,7 @@ The data root holds everything the hub stores. It is outside the repository and 
 | `quarantine/<node>/` | files that failed the hub-side withheld re-check | `poll`, `rb sync` |
 | `fetched/<node>/` | files from `fetch_file` | `fetch_file` |
 | `sync/<node>.json` | status of the last sync pass (§13.2); mode 600 | `rb sync` |
+| `sessions/<node>.json` | sessions collected from the node by the `sessions` operation: per session id, label, start, end, active seconds per day; never pruned; mode 600 (`docs/design/2026-11-11-node-sessions.md`) | `rb sync` |
 | `board/` | unified board cache | `rb board refresh`, `rb sync` |
 | `harness-staging/<stamp>/` | harness pulls (§8) | `rb harness pull` |
 | `web/access.json` | hashes of the access keys and sessions of the hub page (§14); directory mode 700, file mode 600 | `rb web key`, the hub page on `/enter` |
@@ -326,7 +327,7 @@ One pass per node (all nodes, or `--node`), hub to node only; it never approves 
 
 ### 13.2 Status file
 
-`<data root>/sync/<node>.json` (mode 600, replaced atomically) holds: `schema`, `node`, `last_attempt_at`, `last_ok_at`, `ok`, `error` (a code or null), `stage` (where the last failure happened: `connect`, `hello`, `poll`, `git`, `board`; `running` while a pass is in progress), `new_items`, `rejected`, `rejected_ids` (ids of refused items, at most 10), `board` (per source: `ok`, `skipped`, `no_path`, `gpu_status_unavailable`, `no_gpus`, `source_error`, or an error code), `node_version`, `protocol`, `withheld_extra`, `hub_withheld_extra`, `hub_withheld_rejected`, `node_seen_at`, `tree_head`, `tree_dirty`, `git_error`, `duration_s`. A pass fails on a transport error, a poll error, or a board source error other than `no_path`, `gpu_status_unavailable` and `no_gpus`. The file is stale when `last_ok_at` is older than 900 s; the `nodes` tool, the page and `rb doctor` use that one rule. The hub reads the node's git state from the key `tree` and falls back to `trm`, which is what the current node sends.
+`<data root>/sync/<node>.json` (mode 600, replaced atomically) holds: `schema`, `node`, `last_attempt_at`, `last_ok_at`, `ok`, `error` (a code or null), `stage` (where the last failure happened: `connect`, `hello`, `poll`, `git`, `board`; `running` while a pass is in progress), `new_items`, `rejected`, `rejected_ids` (ids of refused items, at most 10), `board` (per source: `ok`, `skipped`, `no_path`, `gpu_status_unavailable`, `no_gpus`, `source_error`, or an error code), `node_version`, `protocol`, `withheld_extra`, `hub_withheld_extra`, `hub_withheld_rejected`, `node_seen_at`, `tree_head`, `tree_dirty`, `git_error`, `duration_s`, `sessions` (`ok`, `unsupported` when the node's `hello` does not list the operation, `not_configured` when the node has no `sessions_dir`, `bad_answer`, or an error code; none of them fails the pass). A pass fails on a transport error, a poll error, or a board source error other than `no_path`, `gpu_status_unavailable` and `no_gpus`. The file is stale when `last_ok_at` is older than 900 s; the `nodes` tool, the page and `rb doctor` use that one rule. The hub reads the node's git state from the key `tree` and falls back to `trm`, which is what the current node sends.
 
 ### 13.3 `rb service`
 
@@ -357,7 +358,7 @@ No unit holds `SSH_AUTH_SOCK`, a key path or a passphrase. The unit finds the ag
 | `/thread/<id>` | one conversation: every record with time, direction, status, body, attachments | 60 s |
 | `/jobs` | job records by status, with `job_finished` events | 60 s |
 | `/nodes` | status file and board sources per node | 60 s |
-| `/status` | summary of the last 7 days and today (UTC): queue counts and GPUs in use of all nodes, pending approvals, GPU-hours requested, one row per day of bridge activity, sessions and runs when `share.*` names their files (§5), the sources with age and error code | 60 s |
+| `/status` | summary of the last 7 days and today (UTC): queue counts and GPUs in use of all nodes, pending approvals, GPU-hours requested, one row per day of bridge activity, sessions collected from the nodes (`sessions/`; one line per node: the operation not offered, the directory not configured, an error code, or the numbers with "active now" and the fetch time) and from the files `share.*` names (§5), runs, the sources with age and error code | 60 s |
 | `/healthz` | JSON `{"ok": true}` (liveness only; needs no key) | none |
 | `/enter?key=KEY` | exchanges a one-time key for a session cookie, then redirects to `/` | none |
 

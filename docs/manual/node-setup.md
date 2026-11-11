@@ -91,6 +91,7 @@ Edit it on the node console only, with `rb-node config` (no bridge operation rea
 | `experiments_dir` | path under `trm_root` | `lab/experiments` | Where `read_doc` finds `EXP-nnn`: a file `EXP-nnn.md` or exactly one `EXP-nnn_*.md`. Must lie inside a read root, else `read_doc` by id is denied. |
 | `hypotheses_path` | path under `trm_root` | `lab/registry/HYPOTHESES.md` | File whose section for `H-nnn` `read_doc` returns. Must lie inside a read root. |
 | `harness_root` | path | `""` | The node's `~/.claude` for the harness channel. Empty means harness push and pull are refused (`no_harness_root`). |
+| `sessions_dir` | path | `""` | The Claude projects directory of this account (one subdirectory per project, one `<session id>.jsonl` record file per session). Empty means the `sessions` operation answers `not_configured` and reads nothing. When set, each `rb sync` pass gets, per session whose working directory is inside `trm_root`: the id, start and end times, active seconds per UTC day and the directory relative to `trm_root` (§10). No text of a session leaves the node. |
 
 Setting `trm_root` also updates `queue_dir`, the queue entry of `write_roots` and an old default `withheld_source` if they still have the values derived from the previous root.
 
@@ -185,6 +186,7 @@ Read-only: it creates no directory and writes no audit record. Output is `[ok|wa
 | `stuck_messages` | warn | A message waits unanswered or is stuck in `responding` (§6). | `rb-node respond <msg_id>` or read the log |
 | `install` | warn | No install record, or its version differs from the running code. | rerun `scripts/node-install.sh` |
 | `wrapper` | warn | The wrapper is missing, uses the `PATH` python, or its python is missing or older than 3.8. | rerun `scripts/node-install.sh` |
+| `sessions` | warn | `sessions_dir` is set but is not a directory, or record files were found and none could be read as a session (the assumed record format may be wrong). When `sessions_dir` is unset the check is `ok` and says the operation is off. When it works it gives the counts: sessions, record files, unparsed, outside the tree. | `rb-node config set sessions_dir DIR`, or `rb-node sessions` to see what would be sent |
 
 The hub's `rb doctor` runs a short online version over SSH (hub manual §10.2) from the `hello` state (§12).
 
@@ -203,6 +205,7 @@ Which GPU the job gets: the node's queue runner has one worker per GPU and expor
 ## 10. Git tracking and the live research session
 
 - **Git state, read only, without file names or commit subjects:** `rb-node git-status` (node console), the `git_status` bridge operation, and `rb git-status --node node1` (hub) report branch, HEAD, dirty-file count, ahead/behind and the origin URL (credentials removed) for `trm_root` and for the installed code. Every `rb sync` pass reads it.
+- **Sessions in the research tree, read only, without text:** with `sessions_dir` set (§4), `rb-node sessions [--days N]` (node console) prints, as JSON, exactly what the `sessions` bridge operation sends to the hub on every `rb sync` pass: per Claude session of the last N days (1 to 31, default 8) whose working directory is inside `trm_root`, its id, start and end times, active seconds per UTC day (gaps of at most 300 s between record lines count as active) and its directory relative to `trm_root` (`.` for the root; `(withheld)` when it matches a withheld pattern). Sessions elsewhere are one number, `outside`; record files that give no usable time are counted in `unparsed`. The record format is assumed (`docs/design/2026-11-11-node-sessions.md` §8): if `unparsed` equals `files`, tell the hub session. The command writes nothing; the bridge operation keeps a cache, `~/.research-bridge/sessions-cache.json`, that holds no record text.
 - **Live session in the research tree:** `rb-node link [DIR] [--apply]` registers `rb-node serve-local` as a project MCP server, so a Claude session started in `DIR` (default `trm_root`) can read hub messages and call `reply` and `post_event`. Without `--apply` it prints the `.mcp.json` it would write:
 
       {"mcpServers": {"rb-node": {"type": "stdio", "command": "/home/<NODE_USER>/.local/bin/rb-node", "args": ["serve-local"]}}}
@@ -223,6 +226,7 @@ Which GPU the job gets: the node's queue runner has one worker per GPU and expor
 | `approve-key set` / `approve-key clear` | the user, terminal | §4.2. |
 | `config path\|init [--force]\|show\|set KEY VALUE\|check` | the user | §4. |
 | `git-status` | the user | Prints the git state of `trm_root` and the install record as JSON. |
+| `sessions [--days N]` | the user | Prints what the `sessions` operation would send (§10). Exit 1 when `sessions_dir` is unset or missing. |
 | `install-record CHECKOUT` | `node-install.sh` | Writes `~/.research-bridge/install.json`. |
 | `doctor` | the user | §7.2. |
 | `link [DIR] [--apply]` | the user | §10. |
@@ -248,7 +252,7 @@ An unknown flag prints the usage and exits 2.
 
 The hub sends `hello` first. A node of protocol 2 (`rb_node` 0.2.0 and later) answers with `node`, `version`, `withheld_extra` (patterns loaded from the file, besides the fallback), `protocol` (the number 2), `ops` (the sorted list of operations it serves) and `state`, a map of booleans and counts without any path or pattern text; a node of the older code omits `protocol` and `state`, and the hub treats it as protocol 1. A node whose `node.json` is missing or invalid still answers `hello` with `state.configured` false and `ops` `["hello"]`, and answers every other operation with `not_configured`.
 
-`state` keys: `configured`, `approval_verifier`, `job_template_set`, `allowed_gpus_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected` (patterns that do not compile), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. The other operations: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`.
+`state` keys: `configured`, `approval_verifier`, `job_template_set`, `allowed_gpus_set`, `withheld_source_set`, `withheld_loaded`, `withheld_rejected` (patterns that do not compile), `harness_root_set`, `claude_bin_found`, `queue_dir_exists`, `python`. The other operations: `msg_begin`, `put_chunk`, `msg_commit`, `poll`, `ack`, `get_file`, `read_doc`, `queue_status`, `gpu_status`, `job_submit`, `job_cancel`, `approve_params`, `git_status`, `sessions` (added 2026-11-11; a node of 0.2.0 installed before that date does not list it, and the hub then records `sessions: unsupported`).
 
 ### 12.1 Differences between the documents and the code
 
