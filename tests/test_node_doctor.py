@@ -449,3 +449,10 @@ def test_approval_path_check_uses_the_submit_rule(home, tmp_path):
     assert by_id(doctor.config_checks(cfg))["approval_path"].level == "fail"
     _, cfg = write_cfg(home, mailbox_root=str(mb), approval_path=str(home / "approve.json"))
     assert by_id(doctor.config_checks(cfg))["approval_path"].level == "ok"
+
+
+def test_run_job_after_an_option_is_a_usage_error(capsys):
+    # D13: run-job is parsed only as the first argument; anything else is a usage error
+    assert cli.main(["-x", "run-job"]) == 2
+    err = capsys.readouterr().err
+    assert "run-job must be the first argument" in err and "not implemented" not in err
