@@ -14,13 +14,9 @@ WARNING = ("warning: a live session and the spawned responder are not arbitrated
 
 
 def _launcher() -> Optional[str]:
+    """The rb-node executable (launcher_argv already tried PATH and ~/.local/bin), else None."""
     argv = spawn.launcher_argv()
-    if argv and os.path.isabs(argv[0]) and len(argv) == 1:
-        return argv[0]
-    fallback = os.path.expanduser("~/.local/bin/rb-node")
-    if os.path.isfile(fallback) and os.access(fallback, os.X_OK):
-        return fallback
-    return None
+    return argv[0] if len(argv) == 1 and os.path.isabs(argv[0]) else None
 
 
 def entry(cfg_path_env: Optional[str]) -> dict:
