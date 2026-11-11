@@ -88,7 +88,7 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 
 All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. Decision 1 (push and merge) is done: PRs 48 and 49. The first open one: transport authentication (#25), which was ordered after the first live run; that run has passed. Open work by workstream: the same file, §4.
 
-Decided by the user on 2026-11-11: PRs merge to `main` with merge commits only, and GitHub deletes a PR branch after the merge (`docs/CONTRIBUTING.md` §1 rule 3; PR 55).
+Decided by the user on 2026-11-11: PRs merge to `main` with merge commits only, and GitHub deletes a PR branch after the merge (`docs/CONTRIBUTING.md` §1 rule 3; PR 55). Also on 2026-11-11: MCP tools may gain optional arguments (the ten tools and their names stay; this refines default (2) of 2026-11-10 below and answers triage §5 item 7 and the open questions of the project-profiles and experiment-records designs, which remain drafts); research family identifiers are not withheld content, and new text names them only when needed (`AGENTS.md` Conventions); merged branches were deleted (`docs/issues/2026-11-11-audit.md` rows U2, U7, U9).
 
 Decided by the user on 2026-11-10 (no longer waiting; items 3, 7, 8, 11, 13 and 20 of the triage list §5 are closed except where noted):
 
