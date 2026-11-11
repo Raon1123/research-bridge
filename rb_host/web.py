@@ -383,7 +383,8 @@ def _status_now(wh: Withheld, snap: dict, by_suffix: Dict[str, List[dict]]) -> s
                                        % _e(_num(q.get("pending_approvals"))))],
              ["GPU-hours requested in the period", _num(g.get("gpu_hours_period"))]]
     return (_table(["", "all nodes"], rows)
-            + _src_errors(wh, by_suffix.get("queue", []) + by_suffix.get("gpu", []))
+            + _src_errors(wh, by_suffix.get("queue", []) + by_suffix.get("gpu", [])
+                          + by_suffix.get("ledger", []))
             + '<p>Each node: <a href="/nodes">nodes</a>.</p>\n')
 
 

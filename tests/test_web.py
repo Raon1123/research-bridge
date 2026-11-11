@@ -1243,3 +1243,14 @@ def test_status_shows_cost_when_its_file_is_configured(cfg, tmp_path):
     c = dataclasses.replace(c, share=dict(c.share, calendar_status=str(stat)))
     assert "sessions 1, routines 0, active hours 0.0, cost (USD) 12.5" in _section(_status(c),
                                                                                    "Sessions")
+
+
+def test_status_unreadable_ledger_shows_its_error_beside_the_numbers(cfg):
+    # anti-goal: a source that cannot be read is not shown as zeros with no error
+    with open(str(Path(cfg.data_root) / "ledger.jsonl"), "ab") as fh:
+        fh.write(b"\xff\xfe not utf8\n")
+    page = _status(cfg)
+    line = '<p class="err">rb:ledger: unreadable'
+    assert line in _section(page, "Now")
+    day = _section(page, "Per day")
+    assert line in day and "(no rows)" in day
