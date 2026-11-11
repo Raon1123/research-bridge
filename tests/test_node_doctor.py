@@ -431,3 +431,21 @@ def test_load_config_replaces_wrong_typed_values_by_defaults(home):
     msg = by_id(doctor.config_checks(cfg))["config_keys"].message
     for k in ("read_roots", "allowed_gpus", "max_file", "withheld_source", "job_template"):
         assert "%r has the wrong type" % k in msg
+
+
+def test_approval_path_check_uses_the_submit_rule(home, tmp_path):
+    # D7: doctor and job_submit share approval.path_inside_roots (mailbox root, symlinks resolved)
+    mb = home / "mb"
+    mb.mkdir()
+    _, cfg = write_cfg(home, mailbox_root=str(mb), approval_path=str(mb / "approve.json"))
+    c = by_id(doctor.config_checks(cfg))["approval_path"]
+    assert c.level == "fail" and str(mb) in c.message
+    jobs = tmp_path / "trm" / "scripts" / "queue" / "jobs"
+    jobs.mkdir(parents=True)
+    link = home / "link"
+    link.symlink_to(jobs)
+    _, cfg = write_cfg(home, trm_root=str(tmp_path / "trm"), mailbox_root=str(mb),
+                       write_roots=[str(jobs)], approval_path=str(link / "approve.json"))
+    assert by_id(doctor.config_checks(cfg))["approval_path"].level == "fail"
+    _, cfg = write_cfg(home, mailbox_root=str(mb), approval_path=str(home / "approve.json"))
+    assert by_id(doctor.config_checks(cfg))["approval_path"].level == "ok"

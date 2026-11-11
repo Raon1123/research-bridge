@@ -197,17 +197,14 @@ def _approval_checks(cfg: NodeConfig) -> List[Check]:
         out.append(Check("approval", "fail",
                          "approval verifier missing: job_submit and job_cancel are refused",
                          "rb-node approve-key set"))
-    inside = None
-    for r in list(cfg.read_roots) + list(cfg.write_roots):
-        root = _abs(cfg.trm_root, r).absolute()
-        if _inside(ap.absolute(), root):
-            inside = root
-            break
+    # the rule hello and job_submit use: read, write and mailbox roots, symlinks resolved
+    inside = approval.root_holding_path(cfg)
     if inside is None:
-        out.append(_ok("approval_path", "approval_path is outside every read and write root"))
+        out.append(_ok("approval_path",
+                       "approval_path is outside every read, write and mailbox root"))
     else:
         out.append(Check("approval_path", "fail",
-                         "approval_path is inside a read/write root: %s" % inside,
+                         "approval_path is inside a read/write or mailbox root: %s" % inside,
                          "rb-node config set approval_path ~/.research-bridge/approve.json"))
     return out
 
