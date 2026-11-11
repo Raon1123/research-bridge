@@ -1230,3 +1230,16 @@ def test_status_snapshot_failure_gives_one_error_line(cfg, monkeypatch):
     assert page.count('class="err"') == 1
     assert "SNAPSHOT-SECRET-TEXT" not in page and "RuntimeError" not in page
     assert "Traceback" not in page
+
+
+def test_status_shows_cost_when_its_file_is_configured(cfg, tmp_path):
+    stat = tmp_path / "share-src" / "status.json"
+    stat.parent.mkdir(parents=True, exist_ok=True)
+    stat.write_text(json.dumps({"generated": _stamp(0), "cost_usd": 12.5}), encoding="utf-8")
+    c = dataclasses.replace(cfg, share={"calendar_status": str(stat)})
+    sess = _section(_status(c), "Sessions")
+    assert "No session source is configured" in sess and "<p>cost (USD) 12.5</p>" in sess
+    c = _with_share(cfg, tmp_path, sessions=[{"start": _stamp(0), "lane": "hub", "project": "p"}])
+    c = dataclasses.replace(c, share=dict(c.share, calendar_status=str(stat)))
+    assert "sessions 1, routines 0, active hours 0.0, cost (USD) 12.5" in _section(_status(c),
+                                                                                   "Sessions")

@@ -407,14 +407,13 @@ def _no_source(what: str, key: str, src: Optional[dict], wh: Withheld) -> Option
 def _status_sessions(wh: Withheld, snap: dict, src: Optional[dict]) -> str:
     sess = snap["sessions"]
     tot = sess.get("totals", {})
-    cost = (", cost (USD) %s" % _num(tot.get("cost_usd"))
-            if _num(tot.get("cost_usd")) else "")
-    line = "<p>sessions %s, routines %s, active hours %s%s</p>\n" % (
-        _num(tot.get("sessions")), _num(tot.get("routines")), _num(tot.get("active_h")),
-        _e(cost))
+    cost = _num(tot.get("cost_usd"))
     none = _no_source("session", "calendar_sessions", src, wh)
     if none is not None:
-        return none + (line if cost else "")
+        return none + ("<p>cost (USD) %s</p>\n" % _e(cost) if cost else "")
+    line = "<p>sessions %s, routines %s, active hours %s%s</p>\n" % (
+        _num(tot.get("sessions")), _num(tot.get("routines")), _num(tot.get("active_h")),
+        _e(", cost (USD) %s" % cost) if cost else "")
     rows = [[_t(wh, r.get("date"), 10), _t(wh, r.get("lane"), 40), _t(wh, r.get("project"), 60),
              _num(r.get("count")), _num(r.get("active_h"))]
             for r in sess.get("per_day", []) if isinstance(r, dict)]
