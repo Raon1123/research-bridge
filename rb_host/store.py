@@ -101,10 +101,16 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     provenance.json (in the inbox dir) never contains the name of a quarantined file,
     only its index; the real name exists only inside quarantine/.
     """
-    wh = Withheld.load(Path(cfg.withheld_patterns_file))
-    msg_id = str(item["id"])
-    if not valid_msg_id(msg_id):
+    # the shape is checked before anything is written, so a malformed item leaves nothing behind
+    msg_id = item.get("id") if isinstance(item, dict) else None
+    if not isinstance(msg_id, str) or not valid_msg_id(msg_id):
         raise ValueError("unsafe message id")
+    atts = item.get("attachments", [])
+    if not isinstance(atts, list) or not all(
+            isinstance(a, dict) and isinstance(a.get("name", ""), str)
+            and isinstance(a.get("original", ""), (str, type(None))) for a in atts):
+        raise ValueError("malformed attachment list")
+    wh = Withheld.load(Path(cfg.withheld_patterns_file))
     root = Path(cfg.data_root)
     inbox = root / "inbox" / node / msg_id
     quar = root / "quarantine" / node / msg_id
@@ -115,7 +121,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     _atomic_write(inbox / "body.txt", body)
     files = []  # type: list
     used = set()  # type: set
-    for idx, att in enumerate(item.get("attachments", [])):
+    for idx, att in enumerate(atts):
         remote = _remote_name(att.get("name", ""))
         name = untrusted_name(remote)
         entry = {"index": idx, "name": name, "status": "ok"}  # type: Dict[str, Any]

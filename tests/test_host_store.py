@@ -53,6 +53,18 @@ def test_store_incoming_rejects_unsafe_names(tmp_path, bad):
     assert _files(data) == ["body.txt", "good.txt", "provenance.json"]
 
 
+@pytest.mark.parametrize("item", [
+    "not an object", None, {"body": "no id"}, {"id": None}, {"id": 5},
+    {"id": "m7", "attachments": [None]}, {"id": "m7", "attachments": "a.txt"},
+    {"id": "m7", "attachments": [{"name": 5}]}, {"id": "m7", "attachments": None},
+])
+def test_store_incoming_refuses_malformed_item_before_writing(tmp_path, item):
+    # D3: a ValueError the caller counts as a rejected item, and nothing on disk
+    with pytest.raises(ValueError):
+        store_incoming(_hcfg(tmp_path), "node1", item, FakeClient({}))
+    assert not (tmp_path / "data").exists()
+
+
 @pytest.mark.parametrize("bad", ["C:x", "CON", "a/b", "..", ".hidden", "x y.", "", "m:1"])
 def test_store_incoming_rejects_unsafe_message_id(tmp_path, bad):
     cfg = _hcfg(tmp_path)

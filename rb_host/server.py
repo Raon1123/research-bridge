@@ -155,8 +155,13 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
             rejected_ids.append(iid)
 
     def work() -> None:
+        if not isinstance(items, list):
+            raise ValueError("malformed poll result")
         for it in items:
-            iid = str(it.get("id"))
+            iid = it.get("id") if isinstance(it, dict) else None
+            if not isinstance(iid, str):  # D3: reject one malformed item, keep the others
+                reject("")
+                continue
             seen = led.get(iid)
             if seen is not None and seen.get("direction") == "in":
                 ack.append(iid)
@@ -166,7 +171,7 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
                 continue
             try:
                 stored = store_incoming(cfg, node, it, c)
-            except (ValueError, OSError):
+            except (ValueError, OSError, KeyError, AttributeError, TypeError):
                 reject(iid)
                 continue
             rec = {"kind": "message", "id": iid, "direction": "in", "node": node,

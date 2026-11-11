@@ -945,6 +945,34 @@ def test_inbound_id_clashing_with_outgoing_is_rejected_not_acked(env):
     assert prog == {"new": 0, "rejected": 1, "rejected_ids": [mid]}
 
 
+@pytest.mark.parametrize("delivered", [False, True])
+def test_malformed_node_items_are_rejected_and_the_rest_stored(env, delivered):
+    # D3: one malformed item must not fail the whole fetch before the ack
+    acked = []
+    bad = ["not an object", None, {"kind": "reply", "body": "no id"},
+           {"id": None, "kind": "reply", "body": "null id"},
+           {"id": 7, "kind": "reply", "body": "int id"},
+           {"id": "badatt1", "kind": "reply", "body": "x", "attachments": [None]},
+           {"id": "badatt2", "kind": "reply", "body": "x", "attachments": "a.txt"},
+           {"id": "badatt3", "kind": "reply", "body": "x", "attachments": [{"name": 5}]}]
+    good = {"id": "good1", "kind": "reply", "body": "fine", "reply_to": None, "attachments": []}
+
+    class Fake:
+        def call(self, op, **kw):
+            if op == "poll":
+                return {"items": bad + [good]}
+            acked.extend(kw.get("ids", []))
+            return {}
+    r = server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=delivered)
+    assert [i["msg_id"] for i in r["items"]] == ["good1"] and "error" not in r
+    assert r["rejected"] == len(bad)
+    assert acked == ["good1"]
+    ids = {rec.get("id") for rec in env["ledger"]._latest().values()}
+    assert ids == {"good1"}
+    inbox = env["root"] / "inbox" / "n1"
+    assert sorted(p.name for p in inbox.iterdir()) == ["good1"]
+
+
 def test_node_answering_with_another_jobs_queue_file_returns_job_to_pending(env, monkeypatch):
     real = jobs.connect
 
