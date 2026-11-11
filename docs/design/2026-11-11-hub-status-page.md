@@ -1,9 +1,10 @@
 # Status page on the hub (sessions and experiment progress in one place) — design
 
-Date: 2026-11-11 · Status: draft, not user-approved · Author: research-bridge audit session (2026-11-11) · Code: `rb_host/share.py`, `rb_host/web.py`, `rb_host/cli.py`, `tests/test_share.py`, `tests/test_web.py`; archived: `rb_host/share_serve.py` · Data: none written (the page reads `board/`, `ledger.jsonl`, `inbox/` and the optional files named in `host.json` `share.*`)
+Date: 2026-11-11 · Status: draft, not user-approved; built: `share.snapshot`, route `/status`, `rb share build|serve` and `share_serve.py` archived (branch `claude/hub-status-page`, not merged; step 4 not run) · Author: research-bridge audit session (2026-11-11) · Code: `rb_host/share.py`, `rb_host/web.py`, `rb_host/cli.py`, `tests/test_share.py`, `tests/test_web.py`; archived: `rb_host/share_serve.py` · Data: none written (the page reads `board/`, `ledger.jsonl`, `inbox/` and the optional files named in `host.json` `share.*`)
 
 Status history:
 - 2026-11-11 draft. The user asked for the direction (§11) and said to start without questions, so the design and the build go into one change.
+- 2026-11-11 built on branch `claude/hub-status-page`: steps 1–3, 5 and 6 of §9. Step 4 (the read-only check against the real data root) was not run: the building session was not allowed to read the hub data root. Rulings in §13.
 
 Replaces the serving half of [the shared status page design of 2026-11-06](2026-11-06-shared-status-page.md): its snapshot reducers stay, its separate server and its files do not.
 
@@ -137,14 +138,16 @@ Relation to the experiment-records draft: when its run records exist on the hub,
 
 | Goal / anti-goal | Check | Kind | Status |
 |---|---|---|---|
-| G1 | `tests/test_web.py`: `/status` content from a seeded data root | unit test | not run |
-| G2 | `tests/test_web.py`: no-source lines; `tests/test_share.py`: reducers with fixture files | unit test | not run |
-| G3 | `tests/test_web.py`: a missing and an unparseable board file show an error code, not zeros alone | unit test | not run |
-| G4 | `tests/test_web.py`: the data root tree is identical before and after a request; step 4 on the real data root | unit test, live check | not run |
-| G5 | `tests/test_share.py`: `jobs` and `processing` counted; unknown state in `other`; step 4 compares with `/nodes` | unit test, live check | not run |
-| G6 | `rb share` is not a command; the test that pins the CLI command list, if any | unit test | not run |
-| Anti-goal: escaping, withheld | `tests/test_web.py`: HTML-special and withheld-pattern payload in a label, a node error and an event status | unit test | not run |
-| Anti-goal: access | `tests/test_web.py`: `/status` without a session is refused like `/jobs` | unit test | not run |
+| G1 | `tests/test_web.py`: `/status` content from a seeded data root | unit test | pass (`test_status_page_content`, `test_status_link_on_every_page`, `test_status_shows_cost_when_its_file_is_configured`) |
+| G2 | `tests/test_web.py`: no-source lines; `tests/test_share.py`: reducers with fixture files | unit test | pass (`test_status_says_when_no_source_is_configured`; `test_all_sections_present`, `test_snapshot_lane_rule`, `test_snapshot_label_rule_without_allowlist`, `test_snapshot_activity_rows`) |
+| G3 | `tests/test_web.py`: a missing and an unparseable board file show an error code, not zeros alone | unit test | pass (`test_status_broken_board_files_show_error_codes`; `tests/test_share.py` `test_snapshot_never_raises_for_broken_sources`, `test_snapshot_error_codes_are_filtered`, `test_stale_and_failed_sources_marked`) |
+| G4 | `tests/test_web.py`: the data root tree is identical before and after a request; step 4 on the real data root | unit test, live check | unit test pass (`test_status_writes_nothing`, `test_page_writes_no_file` with `/status` in its route list; `tests/test_share.py` `test_snapshot_writes_nothing`); live check not run |
+| G5 | `tests/test_share.py`: `jobs` and `processing` counted; unknown state in `other`; step 4 compares with `/nodes` | unit test, live check | unit test pass (`test_queue_states_of_the_node_are_counted`, `test_snapshot_counts_node_queue_states`); live check not run |
+| G6 | `rb share` is not a command; the test that pins the CLI command list, if any | unit test | pass (`tests/test_share.py` `test_share_is_no_longer_a_command`; no test pins the command list; the three host.json tests of `tests/test_doctor.py` no longer list `rb share`) |
+| Anti-goal: escaping, withheld | `tests/test_web.py`: HTML-special and withheld-pattern payload in a label, a node error and an event status | unit test | pass (`test_status_escapes_and_masks`; `test_security_headers` with `/status` in its route list) |
+| Anti-goal: access | `tests/test_web.py`: `/status` without a session is refused like `/jobs` | unit test | pass (`test_status_needs_a_session_like_jobs`, `test_every_protected_route_needs_a_session`, `test_wrong_host_refused`) |
+| Anti-goal: no connection | `tests/test_web.py`: no node client, `jobs.connect` or subprocess on `/status` | unit test | pass (`test_page_opens_no_connection` with `/status` in its route list; `tests/test_share.py` `test_no_network_client_imported`) |
+| Snapshot failure | `tests/test_web.py`: an exception in the snapshot gives one error line and no exception text | unit test | pass (`test_status_snapshot_failure_gives_one_error_line`) |
 | Page in the browser | open `/status` after the post-merge step | manual (user) | not run |
 
 ## 11. Decided by the user
@@ -169,7 +172,17 @@ Relation to the experiment-records draft: when its run records exist on the hub,
 
 | # | Ruling | Cost if wrong | Where recorded |
 |---|---|---|---|
-| 1 | | | |
+| 1 | `finished` counts the events that `threads.load` treats as `job_finished` (those `/jobs` shows beside a job or under "Events whose job is not in the ledger"); a `job_finished` event without a string `job_id` is not counted. | An event without a job id is missing from the count. | `share._ledger_part` |
+| 2 | `failed` is read with the masked body reader. A body whose line is blanked by a withheld hit, or that does not parse, counts as finished but not as failed. The status is compared after cleaning, in lower case. | A failed run whose event carries withheld text shows as finished only. | `share._ledger_part`, `test_snapshot_activity_rows` |
+| 3 | Day of a message or event: `threads.node_time` (the node's time for inbound records with a node id, the hub's `created` otherwise), the time the thread pages show. | A day boundary differs by the clock skew between node and hub. | `share._ledger_part` |
+| 4 | Every source error code, the pattern-file one included, goes through `^[a-z_]{1,40}$` and the withheld check; a hit shows `withheld` and adds to `dropped`. A missing board file is `never_fetched` (as `board.load` reports it), another read error `unreadable`. A reducer exception on one source makes that source `unparseable`. | None (stricter). | `share._error_code`, `share.snapshot` |
+| 5 | A label is withheld-checked before and after cleaning; a label empty after cleaning is `other`; the allowlist is compared with the raw value. The lane of a session that is not a string is `other`; a configured node name that fails the node-name rule or the withheld check is not a lane. | A label that differs from the allowlist entry only by control characters shows as `other`. | `share._label`, `share.reduce_sessions` |
+| 6 | `share.py` has its own copy of the `jobs.clean` rule instead of importing `jobs` or moving the function, so that importing `share` loads no node client and `jobs.py` is not touched. | Two copies of one rule can drift. | `share._clean` |
+| 7 | A failed queue or GPU source gets an error line under "Now", a failed ledger read one under "Per day"; an unconfigured source is shown as "not configured" without a stale mark; an exception in the snapshot gives one line, "status summary unavailable". | None. | `web._status_page` |
+| 8 | `snapshot(days < 0)` raises `ValueError`: it is a caller error, not a source. The period has `days + 1` UTC dates (7 days and today: 8 rows). | None. | `share.snapshot` |
+| 9 | Until the removal commit, `share.build` was a wrapper over `snapshot`, so that every commit passes the suite and the removal can be reverted alone. The archived tests are the versions of that commit. | None. | git history |
+| 10 | When no session file is configured but `share.calendar_status` gives a cost, the page shows the cost alone, not a totals line of zeros. | None. | `web._status_sessions`, `test_status_shows_cost_when_its_file_is_configured` |
+| 11 | Step 4 of §9 (render against the real data root) was not run by the building session; it is left to the user or the coordinating session. | A difference from `/nodes` on real data is found later. | this table, §10 |
 
 ## 14. Left to the builder
 

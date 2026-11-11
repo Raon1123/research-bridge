@@ -13,6 +13,8 @@ A session read the whole repository (code, tests, documents) on 2026-11-11 and c
 
 What was fixed, and what is left for the user to decide: `docs/issues/2026-11-11-audit.md`.
 
+A third change, on branch `claude/hub-status-page` (on top of PR 57), answers audit row U3 as the user decided on 2026-11-11: the hub page gets the route `/status` (queue counts, GPUs in use, pending approvals, GPU-hours requested, one row per day of bridge activity, sessions and runs when `host.json` `share.*` names their files), and `rb share build|serve` with `rb_host/share_serve.py` moved to `docs/99_Archive/shared-status-page/` (`docs/design/2026-11-11-hub-status-page.md`). The route is visible only after the post-merge step below (restart of `rb-web.service`). Step 4 of that design, a read-only render against the real data root, has not been run.
+
 What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (the 16:17 pass and the last pass before PR 57 was opened both ended with `Result=success` in `rb service status`). PR 57 has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
 
 ## Node state and node-local tests (2026-11-10, session on node1)
@@ -107,7 +109,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 975 passed on 2026-11-11 (branch claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
+    rtk proxy uv run --extra host pytest -q        # 977 passed on 2026-11-11 (branch claude/hub-status-page; 975 on claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.

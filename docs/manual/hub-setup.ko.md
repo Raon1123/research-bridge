@@ -46,7 +46,6 @@
 | `fetched/<node>/` | `fetch_file`로 받은 파일 | `fetch_file` |
 | `sync/<node>.json` | 마지막 동기화 한 번의 상태(§13.2). 모드 600 | `rb sync` |
 | `board/` | 통합 board 캐시 | `rb board refresh`, `rb sync` |
-| `share/` | 공유 상태 페이지 스냅숏 | `rb share build` |
 | `harness-staging/<stamp>/` | harness pull 결과(§8) | `rb harness pull` |
 | `web/access.json` | 허브 페이지 접근 키와 세션의 해시(§14). 디렉터리 모드 700, 파일 모드 600 | `rb web key`, 허브 페이지의 `/enter` |
 | `withheld_patterns.json` | withheld 패턴의 허브 사본(§3.1) | 사용자가 복사한다 |
@@ -187,7 +186,7 @@ Agent:
 이 파일에 있는 별칭만 쓰인다. 허브는 도구 인자로 받은 호스트 이름에는 절대 연결하지 않는다. 모든 키는 §16.1에 있다. 선택 항목은 다음과 같다.
 
 - **통합 board**(`rb board refresh|show`, 그리고 동기화 한 번마다의 board 부분). 노드별 경로이며, 노드의 연구 루트에 대한 상대 경로이고 노드의 `read_roots` 중 하나 안에 있어야 한다. `nodes.node1.board.state|events|kanban`(`rb config set nodes.node1.board.state PATH`). 생략한 경로는 `no_path`로 기록된다. `.jsonl` 파일은 노드가 거부하므로(`deny_unscannable`) events 소스에는 `.json` 내보내기가 필요하다. 노트북의 소스(`board.portfolio`, `board.priorities`)는 노트북 파일의 로컬 사본을 가리킨다. 사본이 없으면 이 허브에서 그 두 board 행은 없는 것으로 표시된다.
-- **공유 상태 페이지**(`rb share`): `rb config set`으로 설정하는 `share.calendar_sessions|calendar_status|runs`. `share.labels`(허용되는 프로젝트와 트랙 레이블의 목록)는 명령이 없으므로 `host.json`에 직접 추가한다. 없으면 모든 레이블이 `other`로 표시된다.
+- **상태 경로의 세션, 실행, 비용**(허브 페이지의 `/status`, §14): `rb config set`으로 설정하는 `share.calendar_sessions|calendar_status|runs`. 설정하지 않으면 그 경로는 소스가 설정되지 않았다고 표시한다. `share.labels`(허용되는 프로젝트와 트랙 레이블의 목록)는 명령이 없으므로 `host.json`에 직접 추가한다. 있으면 목록에 없는 레이블은 `other`로 표시되고, 없으면 레이블이 그대로(정리한 뒤 최대 60자) 표시된다.
 
 사용할 수 있는 `host.json`이 없으면, 그것이 필요한 모든 `rb` 명령이 한 줄 `error: no usable host.json at <path>; run: rb setup --node NAME --host HOST --user USER`를 출력하고 종료 코드 1로 끝난다.
 
@@ -351,7 +350,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
 ## 14. Hub page
 
-`rb web serve [--port PORT] [--bind 127.0.0.1]`(기본 포트 8767)는 읽기 전용 페이지를 제공한다. 대화, 작업 레코드, 대기 중인 승인, 동기화 상태를 보여 준다. 요청은 파일만 읽으며, 페이지는 노드 연결을 열지 않고, 프로세스를 시작하지 않고, 키를 쓸 때의 접근 파일 `web/access.json`(아래) 외에는 아무것도 쓰지 않는다. `--bind`는 `127.0.0.1`만 받으며, 다른 값은 아래의 SSH 포워드를 알려 주는 메시지와 함께 거부된다. 보통 `rb-web.service`가 시작한다(§13.3). 데이터를 바꾸지는 않지만, 시작하는 것은 session-safe가 아니다. 세션은 사용자의 승인이 필요하다(`AGENTS.md`).
+`rb web serve [--port PORT] [--bind 127.0.0.1]`(기본 포트 8767)는 읽기 전용 페이지를 제공한다. 대화, 작업 레코드, 대기 중인 승인, 동기화 상태, 상태 요약을 보여 준다. 요청은 파일만 읽으며, 페이지는 노드 연결을 열지 않고, 프로세스를 시작하지 않고, 키를 쓸 때의 접근 파일 `web/access.json`(아래) 외에는 아무것도 쓰지 않는다. `--bind`는 `127.0.0.1`만 받으며, 다른 값은 아래의 SSH 포워드를 알려 주는 메시지와 함께 거부된다. 보통 `rb-web.service`가 시작한다(§13.3). 데이터를 바꾸지는 않지만, 시작하는 것은 session-safe가 아니다. 세션은 사용자의 승인이 필요하다(`AGENTS.md`).
 
 | Route | Content | Refresh |
 |---|---|---|
@@ -360,6 +359,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `/thread/<id>` | 대화 하나: 모든 레코드의 시간, 방향, 상태, 본문, 첨부 파일 | 60 s |
 | `/jobs` | 상태별 작업 레코드와 `job_finished` 이벤트 | 60 s |
 | `/nodes` | 노드별 상태 파일과 board 소스 | 60 s |
+| `/status` | 최근 7일과 오늘(UTC)의 요약: 모든 노드의 큐 개수와 사용 중인 GPU, 대기 중인 승인, 요청된 GPU 시간, 날짜별 브리지 활동 한 줄, `share.*`가 파일을 지정하면 세션과 실행(§5), 소스별 경과 시간과 오류 코드 | 60 s |
 | `/healthz` | JSON `{"ok": true}`(생존 확인만, 키 불필요) | 없음 |
 | `/enter?key=KEY` | 일회용 키를 세션 쿠키로 교환한 뒤 `/`로 이동 | 없음 |
 
@@ -399,8 +399,6 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `rb board refresh [--node N] [--source queue\|gpu\|state\|events\|kanban]` | 아니요 | bridge를 통해 board 소스를 가져와 캐시에 넣는다. |
 | `rb board show [--json]` | 아니요 | 캐시에서 board를 출력한다. 연결을 열지 않는다. |
 | `rb git-status [--node N]` | 아니요 | 노드의 git 상태(연구 트리와 설치된 코드)를 JSON으로 출력한다. |
-| `rb share build [--days N] [--tier shared\|owner]` | 아니요 | 로컬 캐시에서 `share/snapshot.json`과 `index.html`을 쓴다. withheld 재검사가 항목을 버렸으면 종료 코드 1. |
-| `rb share serve [--port 8766] [--bind 127.0.0.1]` | 아니요 | `share/` 디렉터리를 읽기 전용으로 제공한다. |
 | `rb config path` | 아니요 | `host.json`과 `private/local.json`이 있는 위치를 출력한다. |
 | `rb config init [--data-root D] [--force]` | 아니요 | `host.json`을 만든다(모드 600). |
 | `rb config add-node NAME [--alias A] [--harness-alias A] [--force]` | 아니요 | 노드를 등록한다(기본 별칭 `rb-NAME`, `rb-NAME-harness`). |
@@ -428,8 +426,8 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `data_root` | 허브가 모든 것을 저장하는 곳(§3). | `RB_HOST_ROOT`, 없으면 `~/.local/share/research-bridge` | `rb config set data_root V`, `rb config init --data-root` |
 | `withheld_patterns_file` | 허브 withheld 패턴 파일(§3.1). | `<data_root>/withheld_patterns.json` | `rb config set withheld_patterns_file V` |
 | `board.portfolio`, `board.priorities` | 논문 kanban과 priorities board용 노트북 파일. | 없음 | `rb config set board.portfolio V` |
-| `share.calendar_sessions`, `.calendar_status`, `.runs` | `rb share`의 입력 파일. | 없음 | `rb config set share.calendar_sessions V` |
-| `share.labels` | `rb share`에서 허용되는 프로젝트와 트랙 레이블의 목록. | 없음 (모두 `other`) | 직접 편집 |
+| `share.calendar_sessions`, `.calendar_status`, `.runs` | `/status`의 세션, 실행, 비용 입력 파일(§14). | 없음 | `rb config set share.calendar_sessions V` |
+| `share.labels` | `/status`에서 허용되는 프로젝트와 트랙 레이블의 목록. | 없음 (레이블을 그대로 표시) | 직접 편집 |
 
 ### 16.2 Environment variables and other files
 

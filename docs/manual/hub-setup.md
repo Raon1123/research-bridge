@@ -44,7 +44,6 @@ The data root holds everything the hub stores. It is outside the repository and 
 | `fetched/<node>/` | files from `fetch_file` | `fetch_file` |
 | `sync/<node>.json` | status of the last sync pass (§13.2); mode 600 | `rb sync` |
 | `board/` | unified board cache | `rb board refresh`, `rb sync` |
-| `share/` | shared status page snapshot | `rb share build` |
 | `harness-staging/<stamp>/` | harness pulls (§8) | `rb harness pull` |
 | `web/access.json` | hashes of the access keys and sessions of the hub page (§14); directory mode 700, file mode 600 | `rb web key`, the hub page on `/enter` |
 | `withheld_patterns.json` | hub copy of the withheld patterns (§3.1) | you copy it |
@@ -185,7 +184,7 @@ The `authorized_keys` lines on the node are written by `scripts/node-install.sh`
 Only the aliases in this file are used: the hub never connects to a host name given in a tool argument. All keys are in §16.1. Optional parts:
 
 - **Unified board** (`rb board refresh|show`, and the board part of every sync pass). Node paths per node, relative to the node's research root and inside one of the node's `read_roots`: `nodes.node1.board.state|events|kanban` (`rb config set nodes.node1.board.state PATH`). A path left out is recorded as `no_path`. A `.jsonl` file is refused by the node (`deny_unscannable`), so the events source needs a `.json` export. Sources on the laptop (`board.portfolio`, `board.priorities`) point at local copies of laptop files; without them those two board rows show as missing on this hub.
-- **Shared status page** (`rb share`): `share.calendar_sessions|calendar_status|runs` set by `rb config set`; `share.labels` (a list of allowed project and track labels) has no command and is added to `host.json` by hand; without it every label shows as `other`.
+- **Sessions, runs and cost on the status route** (`/status` of the hub page, §14): `share.calendar_sessions|calendar_status|runs` set by `rb config set`; without them the route says that no source is configured. `share.labels` (a list of allowed project and track labels) has no command and is added to `host.json` by hand; with it, a label outside the list shows as `other`; without it, labels are shown as they are (cleaned, at most 60 characters).
 
 Without a usable `host.json`, every `rb` command that needs it prints one line, `error: no usable host.json at <path>; run: rb setup --node NAME --host HOST --user USER`, and exits 1.
 
@@ -349,7 +348,7 @@ No unit holds `SSH_AUTH_SOCK`, a key path or a passphrase. The unit finds the ag
 
 ## 14. Hub page
 
-`rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767) serves a read-only page: conversations, job records, pending approvals and the sync state. A request reads files only; the page opens no node connection, starts no process and writes nothing except the access file `web/access.json` when a key is used (below). `--bind` accepts only `127.0.0.1`; any other value is refused with a message that names the SSH forward below. It is normally started by `rb-web.service` (§13.3). It changes no data, but starting it is not session-safe: a session needs the user's go-ahead (`AGENTS.md`).
+`rb web serve [--port PORT] [--bind 127.0.0.1]` (default port 8767) serves a read-only page: conversations, job records, pending approvals, the sync state and a status summary. A request reads files only; the page opens no node connection, starts no process and writes nothing except the access file `web/access.json` when a key is used (below). `--bind` accepts only `127.0.0.1`; any other value is refused with a message that names the SSH forward below. It is normally started by `rb-web.service` (§13.3). It changes no data, but starting it is not session-safe: a session needs the user's go-ahead (`AGENTS.md`).
 
 | Route | Content | Refresh |
 |---|---|---|
@@ -358,6 +357,7 @@ No unit holds `SSH_AUTH_SOCK`, a key path or a passphrase. The unit finds the ag
 | `/thread/<id>` | one conversation: every record with time, direction, status, body, attachments | 60 s |
 | `/jobs` | job records by status, with `job_finished` events | 60 s |
 | `/nodes` | status file and board sources per node | 60 s |
+| `/status` | summary of the last 7 days and today (UTC): queue counts and GPUs in use of all nodes, pending approvals, GPU-hours requested, one row per day of bridge activity, sessions and runs when `share.*` names their files (§5), the sources with age and error code | 60 s |
 | `/healthz` | JSON `{"ok": true}` (liveness only; needs no key) | none |
 | `/enter?key=KEY` | exchanges a one-time key for a session cookie, then redirects to `/` | none |
 
@@ -397,8 +397,6 @@ then open `http://127.0.0.1:8767/`. The browser's `Host` header carries the lapt
 | `rb board refresh [--node N] [--source queue\|gpu\|state\|events\|kanban]` | no | Fetch board sources through the bridge into the cache. |
 | `rb board show [--json]` | no | Print the board from the cache; opens no connection. |
 | `rb git-status [--node N]` | no | Print the node's git state (research tree and installed code) as JSON. |
-| `rb share build [--days N] [--tier shared\|owner]` | no | Write `share/snapshot.json` and `index.html` from local caches; exit 1 if the withheld re-check dropped items. |
-| `rb share serve [--port 8766] [--bind 127.0.0.1]` | no | Serve the `share/` directory read-only. |
 | `rb config path` | no | Print where `host.json` and `private/local.json` are. |
 | `rb config init [--data-root D] [--force]` | no | Create `host.json` (mode 600). |
 | `rb config add-node NAME [--alias A] [--harness-alias A] [--force]` | no | Register a node (default aliases `rb-NAME`, `rb-NAME-harness`). |
@@ -426,8 +424,8 @@ Unknown top-level keys are ignored.
 | `data_root` | Where the hub stores everything (§3). | `RB_HOST_ROOT`, else `~/.local/share/research-bridge` | `rb config set data_root V`, `rb config init --data-root` |
 | `withheld_patterns_file` | Hub withheld pattern file (§3.1). | `<data_root>/withheld_patterns.json` | `rb config set withheld_patterns_file V` |
 | `board.portfolio`, `board.priorities` | Laptop files for the paper kanban and the priorities board. | none | `rb config set board.portfolio V` |
-| `share.calendar_sessions`, `.calendar_status`, `.runs` | Input files for `rb share`. | none | `rb config set share.calendar_sessions V` |
-| `share.labels` | List of allowed project and track labels for `rb share`. | none (all `other`) | by hand |
+| `share.calendar_sessions`, `.calendar_status`, `.runs` | Input files for the sessions, runs and cost on `/status` (§14). | none | `rb config set share.calendar_sessions V` |
+| `share.labels` | List of allowed project and track labels for `/status`. | none (labels shown as they are) | by hand |
 
 ### 16.2 Environment variables and other files
 
