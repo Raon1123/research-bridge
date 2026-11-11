@@ -456,3 +456,10 @@ def test_run_job_after_an_option_is_a_usage_error(capsys):
     assert cli.main(["-x", "run-job"]) == 2
     err = capsys.readouterr().err
     assert "run-job must be the first argument" in err and "not implemented" not in err
+
+
+def test_verdict_counts_failures_and_warnings_apart():
+    assert doctor.verdict(0, 0) == "ok"
+    assert doctor.verdict(2, 0) == "2 to fix"
+    assert doctor.verdict(0, 3) == "all ok, 3 warning(s)"
+    assert doctor.verdict(1, 1) == "1 to fix, 1 warning(s)"

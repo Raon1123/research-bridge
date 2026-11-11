@@ -177,20 +177,20 @@ def _withheld_check(cfg: NodeConfig) -> Check:
         return Check("withheld", "warn", "no pattern file: five fallback patterns only", fix)
     src = Path(cfg.withheld_source)
     w = Withheld.load(src)
-    if w.source_error == "unreadable":
+    problem = w.problem()
+    if problem is None:
+        return _ok("withheld", "%d pattern(s) loaded besides the fallback" % w.extra_count)
+    if problem == "unreadable":
         msg = ("withheld pattern file not found" if not src.exists()
                else "withheld pattern file is unreadable")
-        return Check("withheld", "fail", msg, fix)
-    if w.source_error:
-        return Check("withheld", "fail", "withheld pattern file is not valid JSON", fix)
-    if w.rejected_count:
-        idx = ", ".join(str(i) for i in w.rejected_indexes)
-        return Check("withheld", "fail",
-                     "%d pattern(s) do not compile (positions in the flattened string list: %s)"
-                     % (w.rejected_count, idx), fix)
-    if w.extra_count == 0:
-        return Check("withheld", "fail", "withheld pattern file has no pattern", fix)
-    return _ok("withheld", "%d pattern(s) loaded besides the fallback" % w.extra_count)
+    elif problem == "unparseable":
+        msg = "withheld pattern file is not valid JSON"
+    elif problem == "rejected":
+        msg = ("%d pattern(s) do not compile (positions in the flattened string list: %s)"
+               % (w.rejected_count, ", ".join(str(i) for i in w.rejected_indexes)))
+    else:
+        msg = "withheld pattern file has no pattern"
+    return Check("withheld", "fail", msg, fix)
 
 
 def _approval_checks(cfg: NodeConfig) -> List[Check]:
@@ -494,16 +494,20 @@ def render(checks: List[Check], only_problems: bool) -> str:
             continue
         lines.append("[%s] %s: %s" % (c.level, c.id, c.message))
         lines.append("      next: %s" % c.fix)
-    fails = len([c for c in checks if c.level == "fail"])
-    warns = len([c for c in checks if c.level == "warn"])
-    if not fails and not warns:
-        lines.append("ok")
-    else:
-        parts = ["%d to fix" % fails] if fails else ["all ok"]
-        if warns:
-            parts.append("%d warning(s)" % warns)
-        lines.append(", ".join(parts))
+    lines.append(verdict(len([c for c in checks if c.level == "fail"]),
+                         len([c for c in checks if c.level == "warn"])))
     return "\n".join(lines)
+
+
+def verdict(fails: int, warns: int) -> str:
+    """Closing line of a doctor report: `ok`, `N to fix`, `all ok, M warning(s)` or
+    `N to fix, M warning(s)` (failures and warnings counted apart)."""
+    if not fails and not warns:
+        return "ok"
+    parts = ["%d to fix" % fails] if fails else ["all ok"]
+    if warns:
+        parts.append("%d warning(s)" % warns)
+    return ", ".join(parts)
 
 
 def exit_code(checks: List[Check]) -> int:
