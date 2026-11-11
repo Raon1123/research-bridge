@@ -1,10 +1,11 @@
 # Sessions on the nodes, collected on the hub — design
 
-Date: 2026-11-11 · Status: draft, not user-approved; built: steps 1–5 of §9 (node operation `sessions`, `rb-node sessions`, the doctor check, the `rb sync` step and hub store, the `/status` lines, documents) on branch `claude/node-sessions`, not merged; steps 6 and 7 are the user's · Author: research-bridge audit session (2026-11-11) · Code: `rb_node/sessions.py` (new), `rb_node/remote.py`, `rb_node/config.py`, `rb_node/doctor.py`, `rb_node/cli.py`, `rb_host/sessions.py` (new), `rb_host/sync.py`, `rb_host/share.py`, `rb_host/web.py`, tests · Data: node `<node data dir>/sessions-cache.json`; hub `<data_root>/sessions/<node>.json`
+Date: 2026-11-11 · Status: draft, not user-approved; built: steps 1–5 of §9 (node operation `sessions`, `rb-node sessions`, the doctor check, the `rb sync` step and hub store, the `/status` lines, documents) merged in PR 59, merge commit 1efd9c6; steps 6 and 7 are the user's · Author: research-bridge audit session (2026-11-11) · Code: `rb_node/sessions.py` (new), `rb_node/remote.py`, `rb_node/config.py`, `rb_node/doctor.py`, `rb_node/cli.py`, `rb_host/sessions.py` (new), `rb_host/sync.py`, `rb_host/share.py`, `rb_host/web.py`, tests · Data: node `<node data dir>/sessions-cache.json`; hub `<data_root>/sessions/<node>.json`
 
 Status history:
 - 2026-11-11 draft. The user gave the direction (§11) and had said to start without questions, so the design and the build go into one change.
 - 2026-11-11 built on branch `claude/node-sessions` (on top of `claude/hub-status-page`): steps 1–5 of §9. The two live rows of §10 are not verified: no real record was read. Rulings in §13.
+- 2026-11-11 merged in PR 59 (merge commit 1efd9c6). The hub runs the merged code since 10:36 UTC; node1 still runs rb_node 0.2.0, so the hub records `sessions: unsupported` until the user's steps of §9 step 6. The two live rows of §10 stay not verified.
 
 Fills the "Sessions" section of [the status page on the hub](2026-11-11-hub-status-page.md), whose open question 1 asked where the session half comes from.
 
