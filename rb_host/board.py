@@ -6,11 +6,9 @@ never writes a source file. No MCP tool is added.
 """
 from __future__ import annotations
 
-import calendar
 import hashlib
 import json
 import os
-import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,7 +17,8 @@ from rb_node.withheld import Withheld
 
 from . import server
 from .config import HostConfig
-from .jobs import ledger_for, now
+from .jobs import clean, ledger_for, now
+from .util import age_s
 
 NODE_SOURCES = ("queue", "gpu", "state", "events", "kanban")
 CADENCE_S = {"queue": 600, "gpu": 600, "state": 3600, "events": 1800, "kanban": 3600}
@@ -163,7 +162,7 @@ def reduce_kanban(text: str, wh: Withheld) -> List[dict]:
     return [{"column": k, "count": n} for k, n in sorted(counts.items())]
 
 
-def reduce_queue(res: dict, wh: Withheld) -> List[dict]:
+def reduce_queue(res: dict) -> List[dict]:
     counts = Counter(e.get("state") for e in res.get("entries", []) if isinstance(e, dict))
     return [{"state": s, "count": n} for s, n in sorted(counts.items()) if isinstance(s, str)]
 
@@ -190,7 +189,7 @@ def _fetch(cfg: HostConfig, node: str, name: str, wh: Withheld) -> Dict[str, Any
         if name == "queue":
             if "error" in res:
                 return {"error": str(res["error"]), "payload": payload}
-            return {"items": reduce_queue(res, wh), "payload": payload}
+            return {"items": reduce_queue(res), "payload": payload}
         items = reduce_gpu(res)
         if res.get("error"):
             return {"error": str(res["error"]), "items": items, "payload": payload}
@@ -253,13 +252,6 @@ def refresh(cfg: HostConfig, node: Optional[str] = None,
 
 
 # -- load (no connection, no write) -------------------------------------------------------
-def _age_s(ts: Any) -> Optional[float]:
-    try:
-        return time.time() - calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError:
-        return None
-
-
 def _node_source(cfg: HostConfig, sid: str, name: str) -> dict:
     p = _cache_path(cfg, sid)
     try:
@@ -267,7 +259,7 @@ def _node_source(cfg: HostConfig, sid: str, name: str) -> dict:
     except (OSError, ValueError):
         rec = {"source": sid, "fetched_at": None, "ok": False, "error": "never_fetched",
                "cadence_s": CADENCE_S[name], "items": []}
-    age = _age_s(rec.get("fetched_at"))
+    age = age_s(rec.get("fetched_at"))
     rec["stale"] = age is None or age > rec.get("cadence_s", CADENCE_S[name])
     return rec
 
@@ -287,28 +279,31 @@ def _read_json(path: str) -> Any:
 
 
 def _ledger_source(cfg: HostConfig, waiting: List[dict]) -> dict:
-    latest = list(ledger_for(cfg)._latest().values())
+    latest = ledger_for(cfg).records()
     answered = {r.get("reply_to") for r in latest
                 if r.get("kind") == "message" and r.get("direction") == "out"}
     jobs_by = Counter()  # type: Counter
     msgs = Counter()  # type: Counter
+    def c(v: Any) -> str:  # SEC-03: ledger text is shown stripped of control and bidi characters
+        return clean(v, 80)
+
     for r in latest:
         if r.get("kind") == "job":
-            jobs_by[str(r.get("status"))] += 1
+            jobs_by[c(r.get("status"))] += 1
             if r.get("status") == "pending_approval":
                 what = ("approve %s job on %s (%s, %s GPU-h) at /rb/pending"
-                        % (r.get("op", "submit"), r.get("node"),
-                           r.get("config_name") or r.get("target_job_id"), r.get("gpu_hours")))
-                waiting.append({"source": "rb:ledger", "ref": r.get("id"), "what": what,
+                        % (c(r.get("op", "submit")), c(r.get("node")),
+                           c(r.get("config_name") or r.get("target_job_id")), c(r.get("gpu_hours"))))
+                waiting.append({"source": "rb:ledger", "ref": c(r.get("id")), "what": what,
                                 "order": 0})
         elif r.get("kind") == "message":
-            kind = "event" if r.get("msg_kind") == "event" else str(r.get("direction"))
+            kind = "event" if r.get("msg_kind") == "event" else c(r.get("direction"))
             msgs[kind] += 1
             if (r.get("direction") == "in" and r.get("msg_kind") != "event"
                     and r.get("id") not in answered):
-                waiting.append({"source": "rb:ledger", "ref": r.get("id"),
-                                "what": "unanswered %s from %s" % (r.get("msg_kind", "message"),
-                                                                    r.get("node")),
+                waiting.append({"source": "rb:ledger", "ref": c(r.get("id")),
+                                "what": "unanswered %s from %s" % (c(r.get("msg_kind", "message")),
+                                                                    c(r.get("node"))),
                                 "order": 1})
     items = [{"kind": "job", "status": s, "count": n} for s, n in sorted(jobs_by.items())]
     items += [{"kind": "message", "direction": d, "count": n} for d, n in sorted(msgs.items())]

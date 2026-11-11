@@ -5,7 +5,6 @@ or `rb_host.sync`, so that the hub page can use it without loading the MCP serve
 """
 from __future__ import annotations
 
-import calendar
 import json
 import os
 import re
@@ -19,6 +18,7 @@ from rb_node.withheld import Withheld
 
 from .jobs import clean, ledger_for
 from .store import _within, valid_msg_id
+from .util import age_s
 
 STALE_AFTER_S = 900  # three default timer intervals
 MAX_BODY = 20000
@@ -64,33 +64,37 @@ def read_status(cfg: Any, node: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def _age_s(ts: Any) -> Optional[float]:
-    try:
-        return max(0.0, time.time() - calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ")))
-    except ValueError:
-        return None
+def undelivered_counts(cfg: Any) -> Dict[str, int]:
+    """Stored inbound records that no poll has returned yet, per node, in one ledger pass."""
+    out = {}  # type: Dict[str, int]
+    for r in ledger_for(cfg).records():
+        if (r.get("kind") == "message" and r.get("direction") == "in"
+                and r.get("delivered") is False and isinstance(r.get("node"), str)):
+            out[r["node"]] = out.get(r["node"], 0) + 1
+    return out
 
 
-def _undelivered(cfg: Any, node: str) -> int:
-    from .jobs import ledger_for
-    return sum(1 for r in ledger_for(cfg)._latest().values()
-               if r.get("kind") == "message" and r.get("direction") == "in"
-               and r.get("node") == node and r.get("delivered") is False)
+_READ = object()  # summary(): read the status file
 
 
-def summary(cfg: Any, node: str) -> dict:
-    """The `nodes` tool's view of one node (design 6.8). `stale` depends on `last_ok_at` only."""
-    st = read_status(cfg, node)
+def summary(cfg: Any, node: str, st: Any = _READ,
+            undelivered: Optional[Dict[str, int]] = None) -> dict:
+    """The `nodes` tool's view of one node (design 6.8). `stale` depends on `last_ok_at` only.
+    A caller that shows several nodes passes the status already read (`st`, None when missing)
+    and the result of `undelivered_counts`, so that a request reads each file once."""
+    if st is _READ:
+        st = read_status(cfg, node)
     keys = ("ok", "error", "stage", "last_attempt_at", "last_ok_at", "node_seen_at",
             "node_version", "protocol", "withheld_extra", "hub_withheld_extra",
             "hub_withheld_rejected")
     out = {"synced": st is not None}  # type: dict
     for k in keys:
         out[k] = st.get(k) if st else None
-    age = _age_s(out["last_ok_at"]) if st else None
+    age = age_s(out["last_ok_at"]) if st else None
     out["age_s"] = None if age is None else round(age)
     out["stale"] = age is None or age > STALE_AFTER_S
-    out["undelivered"] = _undelivered(cfg, node)
+    counts = undelivered_counts(cfg) if undelivered is None else undelivered
+    out["undelivered"] = counts.get(node, 0)
     return out
 
 
@@ -230,7 +234,7 @@ def _root(recs: List[dict]) -> dict:
     return recs[0]
 
 
-def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
+def _build(cfg: Any, latest: List[dict]) -> dict:
     msgs = [r for r in latest if r.get("kind") == "message" and isinstance(r.get("id"), str)]
     job_recs = [r for r in latest if r.get("kind") == "job"]
     job_ids = {j.get("id") for j in job_recs}
@@ -298,7 +302,7 @@ def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
     for lst in by_node.values():
         lst.sort(key=_sort_key)
     return {"threads": thread_list, "jobs": list(jobs_out.values()), "orphan_events": orphans,
-            "events_by_node": by_node, "by_msg": by_msg, "ledger_mtime_ns": mtime}
+            "events_by_node": by_node, "by_msg": by_msg}
 
 
 def load(cfg: Any) -> dict:
@@ -315,7 +319,7 @@ def load(cfg: Any) -> dict:
         hit = _CACHE.get(key)
         if hit is not None and sig is not None and hit[0] == sig:
             return hit[1]
-        out = _build(cfg, list(led._latest().values()), sig[1] if sig else None)
+        out = _build(cfg, led.records())
         if sig is not None:
             _CACHE[key] = (sig, out)
         else:

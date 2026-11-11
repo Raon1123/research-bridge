@@ -26,6 +26,13 @@ def default_root() -> str:
     return (Path.home() / ".local" / "share" / "research-bridge").as_posix()
 
 
+def host_json_path() -> Path:
+    """host.json: RB_HOST_CONFIG when set (and not empty), else <data root>/host.json. The one
+    place of this rule; `jobs.load_cfg`, `configure.host_path` and `rb sync` use it."""
+    p = os.environ.get("RB_HOST_CONFIG")
+    return Path(p) if p else Path(default_root()) / "host.json"
+
+
 def default_withheld() -> str:
     """Withheld-pattern JSON. On Windows it is the session-calendar export in the vault;
     elsewhere a copy the user places in the data root."""

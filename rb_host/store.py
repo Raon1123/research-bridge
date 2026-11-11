@@ -15,6 +15,7 @@ from rb_node.withheld import Withheld
 
 from .client import RemoteError
 from .config import HostConfig
+from .util import now, sha256_file
 
 
 # Names a hub Claude session may load as instructions (SEC-02). Node-supplied files with
@@ -78,14 +79,6 @@ def _safe_name(name: str) -> str:
     return untrusted_name(_remote_name(name))
 
 
-def _sha(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(str(path), "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def mask_body(wh: Withheld, text: str, kind: Any) -> Any:
     """(masked text, blanked line count). An event whose body was blanked entirely becomes a
     `withheld` event, as on the node, so it stays an event (hard rule 7)."""
@@ -101,10 +94,16 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     provenance.json (in the inbox dir) never contains the name of a quarantined file,
     only its index; the real name exists only inside quarantine/.
     """
-    wh = Withheld.load(Path(cfg.withheld_patterns_file))
-    msg_id = str(item["id"])
-    if not valid_msg_id(msg_id):
+    # the shape is checked before anything is written, so a malformed item leaves nothing behind
+    msg_id = item.get("id") if isinstance(item, dict) else None
+    if not isinstance(msg_id, str) or not valid_msg_id(msg_id):
         raise ValueError("unsafe message id")
+    atts = item.get("attachments", [])
+    if not isinstance(atts, list) or not all(
+            isinstance(a, dict) and isinstance(a.get("name", ""), str)
+            and isinstance(a.get("original", ""), (str, type(None))) for a in atts):
+        raise ValueError("malformed attachment list")
+    wh = Withheld.load(Path(cfg.withheld_patterns_file))
     root = Path(cfg.data_root)
     inbox = root / "inbox" / node / msg_id
     quar = root / "quarantine" / node / msg_id
@@ -115,7 +114,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
     _atomic_write(inbox / "body.txt", body)
     files = []  # type: list
     used = set()  # type: set
-    for idx, att in enumerate(item.get("attachments", [])):
+    for idx, att in enumerate(atts):
         remote = _remote_name(att.get("name", ""))
         name = untrusted_name(remote)
         entry = {"index": idx, "name": name, "status": "ok"}  # type: Dict[str, Any]
@@ -154,7 +153,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             dest = quar / name
             entry.update(status="quarantined", reason=verdict)
         shutil.move(str(stage), str(dest))
-        entry["sha256"] = _sha(dest)
+        entry["sha256"] = sha256_file(dest)
         entry["bytes"] = dest.stat().st_size
         files.append(entry)
     shutil.rmtree(str(stage_dir), ignore_errors=True)
@@ -169,7 +168,7 @@ def store_incoming(cfg: HostConfig, node: str, item: dict, client: Any) -> dict:
             pf.pop("name", None)  # the name itself may be the withheld content
         prov_files.append(pf)
     prov = {"node": node, "msg_id": msg_id,
-            "received_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "received_at": now(),
             "body_withheld_lines": body_hits, "files": prov_files}
     _atomic_write(inbox / "provenance.json", json.dumps(prov, ensure_ascii=False, indent=2))
     return {"msg_id": msg_id, "node": node, "kind": item.get("kind"),
@@ -277,7 +276,7 @@ def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
     atts = []  # type: List[Dict[str, Any]]
     for idx, f in enumerate(files):
         atts.append({"index": idx, "name": "(withheld)" if wh.name_hit(f.name) else f.name,
-                     "bytes": f.stat().st_size, "sha256": _sha(f)})
+                     "bytes": f.stat().st_size, "sha256": sha256_file(f)})
     body_file = d / "body.txt"
     body_sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
     prov_file = d / "provenance.json"
@@ -299,7 +298,7 @@ def store_outgoing(cfg: HostConfig, node: str, msg_id: str, body: str,
         _atomic_write(body_file, masked)
     if not prov_file.is_file():
         prov = {"node": node, "msg_id": msg_id,
-                "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "created": now(),
                 "body_chars": len(body), "body_sha256": body_sha, "body_withheld_lines": hits, "attachments": atts}
         _atomic_write(prov_file, json.dumps(prov, ensure_ascii=False, indent=2))
     return {"dir": str(d), "body_withheld_lines": hits, "attachments": atts}

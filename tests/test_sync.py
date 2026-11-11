@@ -59,6 +59,9 @@ class Rec:
         self.env["log"].append((self.n, "get_file"))
         return self.inner.get_file(kind, ref, dest)
 
+    def put_files(self, *a, **kw):  # the upload's ops go through call() above
+        return NodeClient.put_files(self, *a, **kw)
+
 
 def _fake_smi(d, code=0):
     d.mkdir(parents=True, exist_ok=True)

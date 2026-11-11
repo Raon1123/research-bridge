@@ -19,6 +19,7 @@ from rb_node.withheld import FALLBACK_PATTERNS, Withheld
 from . import configure, service, sshenv, threads
 from .client import NodeClient, RemoteError, TransportError, normalize_hello
 from .config import HostConfig, WrongTypes, load_host_config
+from .util import age_s
 
 Result = namedtuple("Result", "id level message next node")
 
@@ -159,7 +160,7 @@ def _sync_status(cfg: HostConfig, name: str) -> Optional[Result]:
     s = threads.summary(cfg, name)
     err = s["error"] if isinstance(s.get("error"), str) and s["error"] else None
     if s.get("stage") == "running":
-        att = threads._age_s(s.get("last_attempt_at"))
+        att = age_s(s.get("last_attempt_at"))
         if att is None or att > STALE_SECONDS:
             return _bad("sync_status", "warn",
                         "a sync pass started at an unknown time and never finished" if att is None
@@ -230,8 +231,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
         for a in (alias, harness):
             if a and a not in sshcfg:
                 sshcfg[a] = sshenv.ssh_config(a)
-                host = sshcfg[a].get("hostname")
-                defined[a] = bool(host) and host[0].lower() != a.lower()
+                defined[a] = sshenv.defined(sshcfg[a], a)
 
     for n in names:
         a = state[n]["alias"]

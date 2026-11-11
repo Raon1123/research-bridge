@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import hubfake
-from rb_host import cli, service, sshenv
+from rb_host import cli, service, setup, sshenv
 
 DESIGN = Path(__file__).resolve().parents[1] / "docs" / "design" / "2026-11-10-sync-and-hub-page.md"
 RB = Path("/opt/rb/.venv/bin/rb")
@@ -88,6 +88,21 @@ def test_install_writes_after_yes_with_backup(hub, monkeypatch, tmp_path):
     baks = list(d.glob("rb-sync.timer.bak.*"))
     assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == "old timer\n"
     assert len(hub.asks) == 3
+
+
+def test_install_backup_in_the_same_second_keeps_the_earlier_one(hub, monkeypatch):
+    # D14: a second backup made in the same second must not overwrite the first
+    _host_json(hub)
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr(setup, "_stamp", lambda: "20260101000000")
+    d = hub.home / ".config" / "systemd" / "user"
+    d.mkdir(parents=True)
+    (d / "rb-sync.timer").write_text("old timer\n", encoding="utf-8")
+    (d / "rb-sync.timer.bak.20260101000000").write_text("earlier backup\n", encoding="utf-8")
+    assert cli.main(["service", "install"]) == 0
+    assert (d / "rb-sync.timer.bak.20260101000000").read_text(encoding="utf-8") == "earlier backup\n"
+    assert (d / "rb-sync.timer.bak.20260101000000.1").read_text(encoding="utf-8") == "old timer\n"
+    assert stat.S_IMODE((d / "rb-sync.timer").stat().st_mode) == 0o644
 
 
 def test_install_declined_writes_nothing(hub, monkeypatch):
