@@ -24,7 +24,7 @@ Design: `docs/superpowers/specs/2026-10-27-research-bridge-design.md` (later des
 | `tests/` | pytest. Node and host tests run against a local subprocess node, never against node1. |
 | `deploy/` | `node.json.example`, `authorized_keys.example` (placeholders only; the lines are the ones `scripts/node-install.sh` produces). |
 | `vault-export/` | Snapshot and patches of the files this project edited in the vault. See `vault-export/README.md`. |
-| `docs/99_Archive/` | Finished or superseded material, kept for provenance; a file that is no longer needed is moved here, not deleted. `README.md` (index: what, from where, why), `sdd-2026-10-27/` (controller ledger, task briefs and implementer reports from the first build), `plans/` (finished plans). |
+| `docs/99_Archive/` | Finished or superseded material, kept for provenance; a file that is no longer needed is moved here, not deleted. `README.md` (index: what, from where, why), `sdd-2026-10-27/` (controller ledger, task briefs and implementer reports from the first build), `plans/` (finished plans), `manual-appendix-a/` (the Windows and laptop-hub appendices of the manuals). |
 | `docs/design/` | Design documents: `README.md` (when to write one, status lifecycle, index), `TEMPLATE.md`. |
 | `docs/projects/` | One sheet per research project a node serves: `TEMPLATE.md`, and `trm.md` (the current test project; its queue, document and withheld-file facts, moved from `docs/server-facts.md`). |
 | `docs/issues/` | Issue triage: open work and its order (`docs/issues/2026-11-10-triage.md`), and what the 2026-11-11 audit found and left open (`docs/issues/2026-11-11-audit.md`). |
