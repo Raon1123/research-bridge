@@ -230,8 +230,7 @@ def offline(node: Optional[str] = None) -> List[Result]:
         for a in (alias, harness):
             if a and a not in sshcfg:
                 sshcfg[a] = sshenv.ssh_config(a)
-                host = sshcfg[a].get("hostname")
-                defined[a] = bool(host) and host[0].lower() != a.lower()
+                defined[a] = sshenv.defined(sshcfg[a], a)
 
     for n in names:
         a = state[n]["alias"]

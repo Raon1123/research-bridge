@@ -172,9 +172,11 @@ def known_hosts_files(cfg: Dict[str, List[str]]) -> List[Path]:
     return [f for f in files if f is not None]
 
 
-def alias_defined(alias: str) -> bool:
-    hostname = ssh_config(alias).get("hostname") or [alias]
-    return hostname[0].lower() != alias.lower()
+def defined(cfg: Dict[str, List[str]], alias: str) -> bool:
+    """True when `cfg` (the `ssh -G` output for `alias`) comes from a Host block: without one,
+    ssh uses the alias itself as the host name."""
+    host = cfg.get("hostname")
+    return bool(host) and host[0].lower() != alias.lower()
 
 
 def key_names(node: str) -> List[str]:
