@@ -3,7 +3,6 @@ approve and reject are called only by the rb CLI and the 8765 page."""
 from __future__ import annotations
 
 import math
-import os
 import time
 import unicodedata
 import uuid
@@ -14,7 +13,7 @@ from rb_node import approval
 from rb_node.jobs import MAX_GPU_HOURS
 
 from .client import NodeClient, RemoteError
-from .config import HostConfig, load_host_config
+from .config import HostConfig, host_json_path, load_host_config
 from .ledger import Ledger
 from .util import now, sha256_file  # noqa: F401  (jobs.now is used by server, sync, board)
 
@@ -50,8 +49,7 @@ def origin_allowed(origin: object) -> bool:
 
 
 def load_cfg() -> HostConfig:
-    p = os.environ.get("RB_HOST_CONFIG")
-    return load_host_config(Path(p) if p else None)
+    return load_host_config(host_json_path())
 
 
 def ledger_for(cfg: HostConfig) -> Ledger:

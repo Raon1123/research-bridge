@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 from rb_node.configure import ConfigError, git_exposure, read_json
 
 from . import configure, doctor, jobs, sshenv
-from .config import HostConfig, default_root, load_host_config
+from .config import HostConfig, default_root, load_host_config, wrong_types
 
 STEP_TITLES = ("data root and host.json", "node entry", "keys", "ssh config blocks", "host key",
                "agent and keys", "node command", "MCP registration", "doctor")
@@ -583,7 +583,7 @@ def _resolve(a: Args) -> int:
             data = read_json(path)
         except ConfigError:
             data = None  # step 1 reports an unreadable file
-        bad = configure.wrong_types(data) if data is not None else []
+        bad = wrong_types(data) if data is not None else []
         if bad:
             print("error: host.json has wrong types: %s; fix %s, then run rb setup"
                   % ("; ".join(bad), path))

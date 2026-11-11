@@ -18,7 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, TextIO
 
 from . import board, configure, jobs, server, store
 from .client import RemoteError, TransportError, normalize_hello
-from .config import default_root
+from .config import host_json_path
 from .util import age_s
 from .threads import read_status, status_path  # noqa: F401  (re-exported readers)
 from rb_node.withheld import Withheld
@@ -215,7 +215,7 @@ def _line(st: dict) -> str:
 
 
 def _hostjson_path() -> str:
-    return os.environ.get("RB_HOST_CONFIG") or str(Path(default_root()) / "host.json")
+    return str(host_json_path())
 
 
 def run(node: Optional[str], watch: int, out: Optional[TextIO] = None,

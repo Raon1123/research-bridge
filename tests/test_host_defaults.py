@@ -64,3 +64,22 @@ def test_mcp_entry_carries_root_env(monkeypatch, tmp_path):
     monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path))
     env = hc.mcp_entry()["research-bridge"]["env"]
     assert env["RB_HOST_ROOT"] == str(tmp_path) and "RB_HOST_CONFIG" in env
+
+
+def test_one_host_json_rule_for_every_reader(monkeypatch, tmp_path):
+    # R3: jobs.load_cfg, configure.host_path and rb sync's message use config.host_json_path
+    from rb_host import jobs, sync
+    monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
+    cases = ((None, tmp_path / "root" / "host.json"), ("", tmp_path / "root" / "host.json"),
+             (str(tmp_path / "elsewhere.json"), tmp_path / "elsewhere.json"))
+    for i, (env, want) in enumerate(cases):
+        with monkeypatch.context() as m:
+            if env is None:
+                m.delenv("RB_HOST_CONFIG", raising=False)
+            else:
+                m.setenv("RB_HOST_CONFIG", env)
+            assert hcfg.host_json_path() == want
+            assert hc.host_path() == want and sync._hostjson_path() == str(want)
+            want.parent.mkdir(parents=True, exist_ok=True)
+            want.write_text(json.dumps({"nodes": {"n%d" % i: {"alias": "a"}}}), encoding="utf-8")
+            assert list(jobs.load_cfg().nodes) == ["n%d" % i]
