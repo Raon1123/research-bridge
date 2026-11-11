@@ -6,7 +6,6 @@ import os
 import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -427,7 +426,11 @@ def test_script_update_swap_is_symlink(sh_env):
     for _ in range(4):
         assert sh(env, "--research-root", str(tree)).returncode == 0
         targets.append(os.readlink(str(share / "rb_node")))
-        time.sleep(1.1)  # release names carry second-resolution stamps; pruning orders by mtime
+        # names are unique by the pid suffix; pruning orders by mtime, so push every existing
+        # release into the past (same shift for all) and the next run's release is the newest
+        for d in (share / "releases").iterdir():
+            t = d.stat().st_mtime - 10
+            os.utime(str(d), (t, t))
     assert len(set(targets)) == 4
     kept = sorted(d.name for d in (share / "releases").iterdir() if d.is_dir() and d.name != "legacy")
     assert len(kept) == 2 and targets[-1].split("/")[1] in kept
