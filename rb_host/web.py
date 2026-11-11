@@ -437,9 +437,10 @@ def _status_sources(wh: Withheld, snap: dict) -> str:
     rows = []
     for s in snap["sources"]:
         age = share.age_s(s.get("fetched_at"))
-        unset = s.get("error") == "not_configured"
+        unset = s.get("error") in ("not_configured", "no_path")
         rows.append([_t(wh, s.get("id"), 80),
-                     "ok" if s.get("ok") else "not configured" if unset
+                     "ok" if s.get("ok") else "no path configured" if s.get("error") == "no_path"
+                     else "not configured" if unset
                      else "error: %s" % _t(wh, s.get("error"), 40),
                      _t(wh, s.get("fetched_at") or "", 40), _age(age) if age is not None else "",
                      Raw('<span class="stale">stale</span>') if s.get("stale") and not unset

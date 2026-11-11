@@ -264,6 +264,15 @@ def _node_cache(cfg: HostConfig, sid: str) -> dict:
     return rec
 
 
+def _board_states(cfg: HostConfig, node: str) -> dict:
+    """The `board` map of the node's sync status file: it says why a cache file is missing
+    (`no_path`: the node has no path configured for that source)."""
+    from . import threads  # lazy: threads imports jobs, which imports the node client
+    st = threads.read_status(cfg, node)
+    b = st.get("board") if isinstance(st, dict) else None
+    return b if isinstance(b, dict) else {}
+
+
 def reduce_jobs(job_recs: list, start: date, end: date) -> Tuple[int, float]:
     """(pending_approvals, gpu_hours requested in the period) from job records."""
     pending, hours = 0, 0.0
@@ -424,6 +433,7 @@ def snapshot(cfg: HostConfig, days: int = 7, today: Optional[date] = None) -> di
     queue = dict.fromkeys(QUEUE_COUNTS, 0)
     in_use, total, tracks = 0, 0, []  # type: int, int, list
     for node in nodes:
+        bmap = _board_states(cfg, node)
         for name in NODE_SOURCES:
             sid = "%s:%s" % (node, name)
             rec = _node_cache(cfg, sid)
@@ -444,7 +454,10 @@ def snapshot(cfg: HostConfig, days: int = 7, today: Optional[date] = None) -> di
                     dropped += n
             except Exception:
                 ok, rec = False, dict(rec, error="unparseable")
-            source(sid, _iso(fa) if fa else None, ok, rec.get("error"),
+            err = rec.get("error")
+            if not ok and err == "never_fetched" and bmap.get(name) == "no_path":
+                err = "no_path"  # as /nodes: the node has no path for this source
+            source(sid, _iso(fa) if fa else None, ok, err,
                    cad if isinstance(cad, int) and not isinstance(cad, bool) else 600)
 
     try:

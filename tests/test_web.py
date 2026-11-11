@@ -1171,6 +1171,22 @@ def test_status_broken_board_files_show_error_codes(cfg):
     assert "error: unparseable" in src and "error: never_fetched" in src
 
 
+def test_status_source_without_a_path_on_the_node_says_so(cfg):
+    # the sync status file knows why a board cache is missing: the node has no path for it.
+    # /nodes says "no path configured" for that source; /status must not call it never fetched.
+    sp = Path(cfg.data_root) / "sync" / "n1.json"
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    sp.write_text(json.dumps({"schema": 1, "node": "n1", "ok": True,
+                              "board": {"events": "no_path", "queue": "ok"}}), encoding="utf-8")
+    (Path(cfg.data_root) / "board" / "n1_events.json").unlink(missing_ok=True)
+    (Path(cfg.data_root) / "board" / "n1_gpu.json").unlink(missing_ok=True)
+    src = _section(_status(cfg), "Sources")
+    row = [r for r in src.split("<tr>") if "n1:events" in r][0]
+    assert "no path configured" in row and "never_fetched" not in row and "stale" not in row
+    gpu = [r for r in src.split("<tr>") if "n1:gpu" in r][0]
+    assert "error: never_fetched" in gpu  # no reason recorded: still an error
+
+
 def test_status_escapes_and_masks(cfg, tmp_path):
     # anti-goals: HTML-special, bidi and escape characters and withheld text in a label, a
     # board error and an event status never reach the page raw

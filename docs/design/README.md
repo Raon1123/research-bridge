@@ -38,7 +38,7 @@ A design built before the user approved it carries both parts: `draft, not user-
 | 2026-11-10 | [Project profiles](2026-11-10-project-profiles.md) | draft (design only) |
 | 2026-11-10 | [Experiment requests and result records](2026-11-10-experiment-records.md) | draft (design only) |
 | 2026-11-10 | [Node GPU allowlist and worker-assigned GPU](2026-11-10-allowed-gpus.md) | draft, not user-approved; built: merged from branch `claude/node-allowed-gpus` in PR 47 (merge commit e95be9c) |
-| 2026-11-11 | [Status page on the hub](2026-11-11-hub-status-page.md) | draft, not user-approved; built on branch `claude/hub-status-page` (not merged): `share.snapshot`, route `/status`, `rb share` archived |
+| 2026-11-11 | [Status page on the hub](2026-11-11-hub-status-page.md) | draft, not user-approved; built on branch `claude/hub-status-page` (PR 58, not merged): `share.snapshot`, route `/status`, `rb share` archived |
 
 The first design stays at `docs/superpowers/specs/` because `AGENTS.md` and other documents refer to that path; its plan is in `docs/99_Archive/plans/`. New designs go in this directory.
 

@@ -1,11 +1,11 @@
 # Status page on the hub (sessions and experiment progress in one place) — design
 
-Date: 2026-11-11 · Status: draft, not user-approved; built: `share.snapshot`, route `/status`, `rb share build|serve` and `share_serve.py` archived (branch `claude/hub-status-page`, not merged) · Author: research-bridge audit session (2026-11-11) · Code: `rb_host/share.py`, `rb_host/web.py`, `rb_host/cli.py`, `tests/test_share.py`, `tests/test_web.py`; archived: `rb_host/share_serve.py` · Data: none written (the page reads `board/`, `ledger.jsonl`, `inbox/` and the optional files named in `host.json` `share.*`)
+Date: 2026-11-11 · Status: draft, not user-approved; built: `share.snapshot`, route `/status`, `rb share build|serve` and `share_serve.py` archived (branch `claude/hub-status-page`, PR 58, not merged) · Author: research-bridge audit session (2026-11-11) · Code: `rb_host/share.py`, `rb_host/web.py`, `rb_host/cli.py`, `tests/test_share.py`, `tests/test_web.py`; archived: `rb_host/share_serve.py` · Data: none written (the page reads `board/`, `ledger.jsonl`, `inbox/` and the optional files named in `host.json` `share.*`)
 
 Status history:
 - 2026-11-11 draft. The user asked for the direction (§11) and said to start without questions, so the design and the build go into one change.
 - 2026-11-11 built on branch `claude/hub-status-page`: steps 1–3, 5 and 6 of §9. Step 4 (the read-only check against the real data root) was not run: the building session was not allowed to read the hub data root. Rulings in §13.
-- 2026-11-11 step 4 run by the coordinating session: the page renders from the real data root (five sections, no error line), the queue and GPU numbers agree with the board cache, the per-day table has 8 rows, nothing was written.
+- 2026-11-11 step 4 run by the coordinating session: the page renders from the real data root (five sections, no error line), the queue and GPU numbers agree with the board cache, the per-day table has 8 rows, nothing was written. The same check found one difference from `/nodes` (ruling 12 in §13), fixed with a test.
 
 Replaces the serving half of [the shared status page design of 2026-11-06](2026-11-06-shared-status-page.md): its snapshot reducers stay, its separate server and its files do not.
 
@@ -184,6 +184,7 @@ Relation to the experiment-records draft: when its run records exist on the hub,
 | 9 | Until the removal commit, `share.build` was a wrapper over `snapshot`, so that every commit passes the suite and the removal can be reverted alone. The archived tests are the versions of that commit. | None. | git history |
 | 10 | When no session file is configured but `share.calendar_status` gives a cost, the page shows the cost alone, not a totals line of zeros. | None. | `web._status_sessions`, `test_status_shows_cost_when_its_file_is_configured` |
 | 11 | Step 4 of §9 (render against the real data root) was not run by the building session; it is left to the user or the coordinating session. | A difference from `/nodes` on real data is found later. | this table, §10 |
+| 12 | A board source whose cache file is missing is reported as `no_path` ("no path configured", no stale mark) when the node's sync status file gives that reason, as `/nodes` does; otherwise it stays `never_fetched`. Found by the live check: the events source of the real node has no path. | A source with no path is read as a fetch that failed. | `tests/test_web.py` `test_status_source_without_a_path_on_the_node_says_so`; coordinating session |
 
 ## 14. Left to the builder
 

@@ -13,7 +13,7 @@ A session read the whole repository (code, tests, documents) on 2026-11-11 and c
 
 What was fixed, and what is left for the user to decide: `docs/issues/2026-11-11-audit.md`.
 
-A third change, on branch `claude/hub-status-page` (on top of PR 57), answers audit row U3 as the user decided on 2026-11-11: the hub page gets the route `/status` (queue counts, GPUs in use, pending approvals, GPU-hours requested, one row per day of bridge activity, sessions and runs when `host.json` `share.*` names their files), and `rb share build|serve` with `rb_host/share_serve.py` moved to `docs/99_Archive/shared-status-page/` (`docs/design/2026-11-11-hub-status-page.md`). The route is visible only after the post-merge step below (restart of `rb-web.service`). Step 4 of that design, a read-only render against the real data root, passed on 2026-11-11 (numbers agree with the board cache, nothing written). On this hub the Sessions and Runs sections say that no source is configured; where the session half comes from is open question 1 of the design.
+A third change, PR 58 (branch `claude/hub-status-page`, on top of PR 57), answers audit row U3 as the user decided on 2026-11-11: the hub page gets the route `/status` (queue counts, GPUs in use, pending approvals, GPU-hours requested, one row per day of bridge activity, sessions and runs when `host.json` `share.*` names their files), and `rb share build|serve` with `rb_host/share_serve.py` moved to `docs/99_Archive/shared-status-page/` (`docs/design/2026-11-11-hub-status-page.md`). The route is visible only after the post-merge step below (restart of `rb-web.service`). Step 4 of that design, a read-only render against the real data root, passed on 2026-11-11 (numbers agree with the board cache, nothing written). On this hub the Sessions and Runs sections say that no source is configured; where the session half comes from is open question 1 of the design.
 
 What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (the 16:17 pass and the last pass before PR 57 was opened both ended with `Result=success` in `rb service status`). PR 57 has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
 
@@ -83,7 +83,7 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 
 - Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
-- After PRs 56 and 57 are merged (56 first, each with a merge commit: 57 is stacked on 56): the systemd units of the hub run the code of the main checkout, which was left on branch `claude/audit-2026-11-11`. In that checkout: `git switch main && git pull --ff-only`, `uv sync --extra host --python '>=3.10'`, then `systemctl --user restart rb-web.service` (the sync timer picks the code up by itself). The MCP server of a Claude session is also started from the main checkout (`uv run --directory <main checkout> ... python -m rb_host.server`) and keeps the code it loaded: a session that was open before the update serves the old `rb_host` until it is restarted or its MCP server is reconnected.
+- After PRs 56, 57 and 58 are merged (in that order, each with a merge commit: 57 is stacked on 56 and 58 on 57): the systemd units of the hub run the code of the main checkout, which was left on branch `claude/audit-2026-11-11`. In that checkout: `git switch main && git pull --ff-only`, `uv sync --extra host --python '>=3.10'`, then `systemctl --user restart rb-web.service` (the sync timer picks the code up by itself). The MCP server of a Claude session is also started from the main checkout (`uv run --directory <main checkout> ... python -m rb_host.server`) and keeps the code it loaded: a session that was open before the update serves the old `rb_host` until it is restarted or its MCP server is reconnected.
 - Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).
 
 ## Pending decisions
@@ -109,7 +109,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 978 passed on 2026-11-11 (branch claude/hub-status-page; 975 on claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
+    rtk proxy uv run --extra host pytest -q        # 979 passed on 2026-11-11 (PR 58, branch claude/hub-status-page; 975 on claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.
