@@ -602,7 +602,7 @@ def test_doctor_sessions_check(env, ncfg, tmp_path):
     assert "sessions" in {x.id for x in doctor.system_checks(ncfg)}
 
 
-LAYOUT = "<sessions_dir>/<project directory>/<session id>.jsonl"
+LAYOUT = "<project directory>/<session id>.jsonl"
 
 
 def _doctor(ncfg):

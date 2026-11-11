@@ -437,7 +437,7 @@ def _sessions_check(cfg: NodeConfig) -> Check:
     """The `sessions` operation as the hub would get it, without writing its cache
     (docs/design/2026-11-11-node-sessions.md). Unset is a note, not a warning."""
     fix = ("rb-node config set sessions_dir DIR, where DIR holds "
-           "<sessions_dir>/<project directory>/<session id>.jsonl: usually the projects "
+           "<project directory>/<session id>.jsonl files: usually the projects "
            "directory inside the Claude configuration directory of this account, "
            "~/.claude/projects")
     if not cfg.sessions_dir:
