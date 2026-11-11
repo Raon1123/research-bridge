@@ -244,10 +244,7 @@ def _mcp_config(tmp_dir: str) -> str:
 
 
 def _status(mb: Mailbox, msg_id: str) -> Optional[str]:
-    for rec in mb.inbox():
-        if rec.get("id") == msg_id:
-            return rec.get("status")
-    return None
+    return mb.status(msg_id)
 
 
 LOG_KEEP_DAYS = 14

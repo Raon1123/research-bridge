@@ -179,6 +179,14 @@ class Mailbox:
                 items.append(rec)
         return items
 
+    def status(self, msg_id: str) -> Optional[str]:
+        """Status of one inbox message (reads only its message.json); None if unknown or bad."""
+        try:
+            rec = _read_json(self._item_dir("in", msg_id) / "message.json")
+        except (OSError, ValueError, ProtocolError):
+            return None
+        return rec.get("status") if isinstance(rec, dict) else None
+
     def set_status(self, msg_id: str, status: str) -> None:
         if status not in STATUSES:
             raise ProtocolError("bad_status", "unknown status %s" % status)
