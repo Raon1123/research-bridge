@@ -74,3 +74,6 @@ Only loopback (`127.0.0.1`) and documentation placeholders should match.
 - State and next action: `docs/HANDOFF.md`.
 - Project sheets (what a node serves): `docs/projects/` (`TEMPLATE.md`, `trm.md`).
 - Issue triage: `docs/issues/`.
+- Setup manuals for the hub and the node (English is the reference, Korean files beside them): `docs/manual/`.
+- Security checks and the first live run (B2, B3) with their results: `docs/provisioning.md`.
+- Finished or superseded material, kept for provenance: `docs/99_Archive/` (index in its `README.md`).
