@@ -145,7 +145,6 @@ def test_cache_invalidated_on_ledger_change(cfg):
     add(cfg, "m1", "out")
     first = threads.load(cfg)
     assert threads.load(cfg) is first
-    assert first["ledger_mtime_ns"] is not None
     add(cfg, "m2", "out")
     second = threads.load(cfg)
     assert {t["id"] for t in second["threads"]} == {"m1", "m2"}
@@ -153,7 +152,7 @@ def test_cache_invalidated_on_ledger_change(cfg):
 
 def test_load_without_ledger(cfg):
     got = threads.load(cfg)
-    assert got["threads"] == [] and got["jobs"] == [] and got["ledger_mtime_ns"] is None
+    assert got["threads"] == [] and got["jobs"] == []
 
 
 def test_missing_body_placeholder(cfg):

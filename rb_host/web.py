@@ -232,15 +232,38 @@ def _threads_page(cfg: Any, wh: Withheld) -> bytes:
     return _page("Conversations", body, 30)
 
 
-def _event_facts(cfg: Any, wh: Withheld, ev: dict) -> Tuple[str, str, str]:
+def _event_info(cfg: Any, wh: Withheld, ev: dict) -> dict:
     text = threads.read_body(cfg, ev, wh, limit=4000)["text"]
     try:
         info = json.loads(text)
     except ValueError:
         info = {}
-    info = info if isinstance(info, dict) else {}
+    return info if isinstance(info, dict) else {}
+
+
+def _event_facts(cfg: Any, wh: Withheld, ev: dict,
+                 info: Optional[dict] = None) -> Tuple[str, str, str]:
+    """(time, status, git_head (12)) of an event record: the event cells of /jobs."""
+    info = _event_info(cfg, wh, ev) if info is None else info
     return (threads.node_time(ev), _t(wh, info.get("status"), 40),
             _t(wh, info.get("git_head"), 100)[:12])
+
+
+def _loose_events_section(cfg: Any, wh: Withheld, by_node: Dict[str, List[dict]]) -> str:
+    """Events with no reply_to and no job link, one table per node (design 6.7 rule 3)."""
+    parts = []
+    for node in sorted(by_node):
+        rows = []
+        for ev in by_node[node]:
+            info = _event_info(cfg, wh, ev)
+            when, status, head = _event_facts(cfg, wh, ev, info)
+            rows.append([when, _t(wh, ev.get("id"), 128), _t(wh, info.get("event"), 60),
+                         status, head])
+        parts.append("<h3>%s</h3>\n%s" % (_e(_t(wh, node, 60)), _table(
+            ["time", "event id", "event", "status", "git_head"], rows)))
+    if not parts:
+        return ""
+    return "<h2>Events without a thread</h2>\n" + "".join(parts)
 
 
 def _jobs_page(cfg: Any, wh: Withheld) -> bytes:
@@ -271,6 +294,7 @@ def _jobs_page(cfg: Any, wh: Withheld) -> bytes:
             rows.append([when, _t(wh, ev.get("node"), 60), status, head])
         parts.append("<h2>Events whose job is not in the ledger</h2>\n"
                      + _table(["time", "node", "status", "git_head"], rows))
+    parts.append(_loose_events_section(cfg, wh, data["events_by_node"]))
     return _page("Jobs", "".join(parts), 60)
 
 

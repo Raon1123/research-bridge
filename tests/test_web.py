@@ -243,6 +243,43 @@ def test_all_routes_render(srv):
     assert "no path configured" in nodes_page and "queued" in nodes_page
 
 
+def test_events_without_a_thread_listed_per_node_on_jobs(cfg):
+    # D9 (sync design §6.7 rule 3): events with no reply_to and no job link are listed per node
+    led = Ledger(Path(cfg.data_root) / "ledger.jsonl")
+    evs = [
+        ({"kind": "message", "id": "ev-loose", "direction": "in", "node": "n1",
+          "msg_kind": "event", "status": "received", "created": "2026-11-10T00:00:08Z"},
+         json.dumps({"event": "disk<b>‮low", "status": "warn\x1b[1m",
+                     "git_head": "abcdef0123456789"})),
+        ({"kind": "message", "id": "ev-masked", "direction": "in", "node": "n1",
+          "msg_kind": "event", "status": "received", "created": "2026-11-10T00:00:09Z"},
+         json.dumps({"event": "unrelatedfam_run", "status": "unrelatedfam_x"})),
+        ({"kind": "message", "id": "ev-nobody", "direction": "in", "node": "n1",
+          "msg_kind": "event", "status": "received", "created": "2026-11-10T00:00:10Z"},
+         None),
+    ]
+    for rec, body in evs:
+        led.append(rec)
+        if body is not None:
+            put(cfg, rec, body)
+    page = web.render(cfg, "jobs", None)[2].decode("utf-8")
+    assert "Events without a thread" in page
+    sec = page.split("Events without a thread", 1)[1]
+    assert "<h3>n1</h3>" in sec
+    for eid in ("ev-loose", "ev-masked", "ev-nobody"):
+        assert eid in sec
+    assert "disk&lt;b&gt;low" in sec and "warn[1m" in sec and "abcdef012345" in sec
+    assert "abcdef0123456" not in sec
+    assert "unrelatedfam_" not in page  # the body line is blanked: no event facts shown
+    assert "‮" not in page and "\x1b" not in page and "<b>" not in page
+    # the job_finished event of a known job stays beside its job, not in this list
+    assert "ev-1" not in sec
+    # a ledger without loose events has no such section
+    assert "Events without a thread" not in web.render(
+        HostConfig(nodes=cfg.nodes, data_root=str(Path(cfg.data_root).parent / "empty"),
+                   withheld_patterns_file=cfg.withheld_patterns_file), "jobs", None)[2].decode()
+
+
 def test_unknown_source_without_path_shows_no_path(srv):
     _c, _h, nodes_page = req(srv, "/nodes")
     assert nodes_page.count("no path configured") == 3  # state, events, kanban

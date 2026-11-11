@@ -230,7 +230,7 @@ def _root(recs: List[dict]) -> dict:
     return recs[0]
 
 
-def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
+def _build(cfg: Any, latest: List[dict]) -> dict:
     msgs = [r for r in latest if r.get("kind") == "message" and isinstance(r.get("id"), str)]
     job_recs = [r for r in latest if r.get("kind") == "job"]
     job_ids = {j.get("id") for j in job_recs}
@@ -298,7 +298,7 @@ def _build(cfg: Any, latest: List[dict], mtime: Optional[int]) -> dict:
     for lst in by_node.values():
         lst.sort(key=_sort_key)
     return {"threads": thread_list, "jobs": list(jobs_out.values()), "orphan_events": orphans,
-            "events_by_node": by_node, "by_msg": by_msg, "ledger_mtime_ns": mtime}
+            "events_by_node": by_node, "by_msg": by_msg}
 
 
 def load(cfg: Any) -> dict:
@@ -315,7 +315,7 @@ def load(cfg: Any) -> dict:
         hit = _CACHE.get(key)
         if hit is not None and sig is not None and hit[0] == sig:
             return hit[1]
-        out = _build(cfg, list(led._latest().values()), sig[1] if sig else None)
+        out = _build(cfg, list(led._latest().values()))
         if sig is not None:
             _CACHE[key] = (sig, out)
         else:
