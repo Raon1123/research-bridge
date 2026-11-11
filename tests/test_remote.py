@@ -194,6 +194,33 @@ def test_get_file_doc_masked_with_sha(cfg):
     assert r["sha256"] == hashlib.sha256(data).hexdigest()
 
 
+def test_get_file_masks_a_text_file_once_per_transfer(cfg, monkeypatch):
+    # node-06: chunks of one file reuse the masked bytes; a changed file is masked again
+    from rb_node.remote import Node
+    from rb_node.withheld import Withheld
+    calls = []
+    real = Withheld.mask_text
+    monkeypatch.setattr(Withheld, "mask_text", lambda self, t: calls.append(1) or real(self, t))
+    doc = Path(cfg.trm_root) / "lab" / "reports" / "long.md"
+    doc.write_text(("line\n" * (CHUNK // 5)) + "result pp_ltf_x here\n" + "tail\n" * 300000,
+                   encoding="utf-8")
+    node = Node(cfg)
+    args = {"kind": "doc", "ref": "lab/reports/long.md"}
+    got, seq = [], 0
+    while True:
+        res = node.get_file(dict(args, seq=seq))
+        got.append(base64.b64decode(res["data_b64"]))
+        if res["eof"]:
+            break
+        seq += 1
+    data = b"".join(got)
+    assert seq >= 2 and len(calls) == 1 and b"pp_ltf_x" not in data
+    assert res["sha256"] == hashlib.sha256(data).hexdigest()
+    doc.write_text("short\n", encoding="utf-8")
+    res = node.get_file(dict(args, seq=0))
+    assert len(calls) == 2 and base64.b64decode(res["data_b64"]) == b"short\n" and res["eof"]
+
+
 def test_get_file_out_chunks(cfg):
     from rb_node.mailbox import Mailbox
     big = Path(cfg.trm_root).parent / "o.png"
