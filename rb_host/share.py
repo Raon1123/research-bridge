@@ -31,8 +31,10 @@ LOCAL_CADENCE_S = 3600
 NODE_SOURCES = ("queue", "gpu", "events")
 STAGE = re.compile(r"^S[0-8]$")
 FAILED = ("failed", "error", "crashed")
-QUEUE_KEYS = {"queued": "queued", "pending": "queued", "running": "running", "done": "done",
-              "finished": "done", "failed": "failed", "error": "failed"}
+QUEUE_KEYS = {"jobs": "queued", "queued": "queued", "pending": "queued", "processing": "running",
+              "running": "running", "done": "done", "finished": "done", "failed": "failed",
+              "error": "failed"}  # node state names: rb_node/remote.py QUEUE_STATES
+QUEUE_COUNTS = ("queued", "running", "done", "failed", "other")
 
 
 def share_dir(cfg: HostConfig) -> Path:
@@ -159,13 +161,14 @@ def reduce_runs(recs: list, start: date, end: date, wh: Withheld,
 
 
 def reduce_queue(items: list) -> dict:
-    out = {"queued": 0, "running": 0, "done": 0, "failed": 0}
+    """Counts per kind of state; a state name not in QUEUE_KEYS adds to `other`."""
+    out = dict.fromkeys(QUEUE_COUNTS, 0)
     for it in items:
         if not isinstance(it, dict) or not isinstance(it.get("state"), str):
             continue
-        key = QUEUE_KEYS.get(it["state"].lower())
+        key = QUEUE_KEYS.get(it["state"].lower(), "other")
         n = it.get("count")
-        if key and isinstance(n, int) and not isinstance(n, bool) and n >= 0:
+        if isinstance(n, int) and not isinstance(n, bool) and n >= 0:
             out[key] += n
     return out
 
@@ -305,7 +308,7 @@ def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
         runs_per_day, n = reduce_runs(recs, start, end, wh, labels)
         dropped += n
 
-    queue = {"queued": 0, "running": 0, "done": 0, "failed": 0}
+    queue = dict.fromkeys(QUEUE_COUNTS, 0)
     in_use, total, tracks = 0, 0, []  # type: int, int, list
     for node in sorted(cfg.nodes):
         if not isinstance(node, str) or not NODE_NAME.match(node) or wh._hit(node):

@@ -165,7 +165,7 @@ def test_all_sections_present(env):
     assert {"sessions", "routines", "active_h"} <= set(snap["sessions"]["totals"])
     exp = snap["experiments"]
     assert set(exp) == {"queue", "gpu", "runs_per_day", "tracks"}
-    assert set(exp["queue"]) == {"queued", "running", "done", "failed", "pending_approvals"}
+    assert set(exp["queue"]) == {"queued", "running", "done", "failed", "other", "pending_approvals"}
     assert {"in_use", "total", "gpu_hours_period"} <= set(exp["gpu"])
     assert set(_src(snap)) == {"calendar:sessions", "calendar:status", "runs", "n1:queue",
                                "n1:gpu", "n1:events", "rb:ledger",
@@ -512,6 +512,16 @@ def test_tracks_order_independent(env):
     for order in (evs, evs[::-1]):
         t, _ = share.reduce_tracks(order, wh, {"ARG"})
         assert t[0]["stage"] == "S5"
+
+
+def test_queue_states_of_the_node_are_counted():
+    # G5 (design 2026-11-11 §8): the node reports jobs, processing, done, failed
+    q = share.reduce_queue([{"state": "jobs", "count": 3}, {"state": "processing", "count": 1},
+                            {"state": "done", "count": 5}, {"state": "failed", "count": 2},
+                            {"state": "Queued", "count": 1}, {"state": "paused", "count": 4},
+                            {"state": "jobs", "count": -1}, {"state": "jobs", "count": True},
+                            {"state": 3, "count": 1}, "x"])
+    assert q == {"queued": 4, "running": 1, "done": 5, "failed": 2, "other": 4}
 
 
 def test_cli_negative_days_rejected(env, capsys):
