@@ -501,6 +501,25 @@ def test_script_refuses_hub_data_directory(sh_env):
     assert not (share / "releases").exists()
 
 
+@pytest.mark.parametrize("var,name", [("RB_HOST_ROOT", "host.json"),
+                                      ("RB_HOST_ROOT", "ledger.jsonl"),
+                                      ("RB_HOST_CONFIG", "host.json")])
+def test_script_refuses_hub_data_root_from_environment(sh_env, tmp_path, var, name):
+    # D5: a hub whose data root is set by RB_HOST_ROOT or RB_HOST_CONFIG is detected too
+    env, home, tree, _ = sh_env
+    hub = tmp_path / "hubdata"
+    hub.mkdir()
+    (hub / name).write_text("{}", encoding="utf-8")
+    value = str(hub / name) if var == "RB_HOST_CONFIG" else str(hub)
+    r = sh(dict(env, **{var: value}), "--research-root", str(tree))
+    assert r.returncode == 1 and "hub" in r.stderr
+    assert not (home / ".local").exists() and not (home / ".research-bridge").exists()
+    # an empty variable or one naming nothing does not count
+    r = sh(dict(env, RB_HOST_ROOT="", RB_HOST_CONFIG=str(tmp_path / "none.json")),
+           "--research-root", str(tree))
+    assert r.returncode == 0, r.stderr
+
+
 def test_script_refuses_python_path_with_space(sh_env, tmp_path):
     env, home, tree, _ = sh_env
     spaced = tmp_path / "a b"
