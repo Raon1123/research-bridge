@@ -7,7 +7,7 @@ import pytest
 
 import hubfake
 import rb_node
-from rb_host import cli, client, configure, doctor, service, sshenv
+from rb_host import cli, client, configure, doctor, service
 from rb_host.client import RemoteError, TransportError
 
 
@@ -328,6 +328,8 @@ def test_offline_wrong_types_report_not_raise(hub, tmp_path, body):
     hp.write_text(json.dumps(body), encoding="utf-8")
     res = doctor.offline()
     assert any(r.level == "fail" for r in res)
+    msgs = [r.message for r in res if r.id == "host_json"]
+    assert msgs and all("wrong types" in m and "not valid JSON" not in m for m in msgs)  # the file parses
     assert configure.check()  # rb config check does not raise either
     assert doctor.main(None, offline_only=False) == 1
 

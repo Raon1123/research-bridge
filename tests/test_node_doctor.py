@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 import pytest
 
@@ -402,3 +401,17 @@ def test_subcommand_help_is_its_own(sub, capsys):
     assert cli.main([sub, "--help"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("usage: rb-node %s" % sub)
+
+
+def test_subcommand_help_after_a_further_argument(capsys):
+    from rb_node import cli
+    assert cli.main(["config", "check", "--help"]) == 0
+    assert capsys.readouterr().out.startswith("usage: rb-node config")
+
+
+def test_ak_harness_next_command_keeps_the_hub_key():
+    # node-install.sh skips the authorized_keys step without --hub-key, so the harness hint needs both
+    from rb_node import doctor
+    fix = {c.id: c.fix for c in doctor._ak_checks()}["ak_harness"]
+    assert "--hub-key" in fix and "--harness-key" in fix
+

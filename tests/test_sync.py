@@ -2,7 +2,6 @@
 Local subprocess node only; jobs.connect is never the real one."""
 from __future__ import annotations
 
-import io
 import json
 import os
 import stat

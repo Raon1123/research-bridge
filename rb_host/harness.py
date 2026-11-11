@@ -1,4 +1,4 @@
-"""Manual harness channel, laptop side: push / pull / diff. There is deliberately no apply step.
+"""Manual harness channel, hub side: push / pull / diff. There is deliberately no apply step.
 
 Portablization is VENDORED from 60_Tools/sync/portablize_harness.py (path mapping, line
 classifier, markdown table insertion) because the vault must not be a runtime dependency.
@@ -268,7 +268,7 @@ def staging_root(cfg: HostConfig) -> Path:
 def pull(cfg: HostConfig, node: str) -> Tuple[Path, int]:
     argv, env = transport(cfg, node, "harness-send")
     tar = _run(argv, env, b"")
-    # staging sits under the laptop data root, so CLAUDE.md is stored as CLAUDE.md.untrusted (SEC-02)
+    # staging sits under the hub data root, so CLAUDE.md is stored as CLAUDE.md.untrusted (SEC-02)
     return extract_tar(tar, staging_root(cfg), utc_stamp(), rename=untrusted_name)
 
 

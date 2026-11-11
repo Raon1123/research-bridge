@@ -1,4 +1,5 @@
-"""Job records (ledger only) and the approval step. Called by the rb CLI, never by an MCP tool."""
+"""Job records and the approval step. The MCP tools call create_submit and create_cancel (ledger only);
+approve and reject are called only by the rb CLI and the 8765 page."""
 from __future__ import annotations
 
 import hashlib
@@ -107,7 +108,7 @@ _WS = "\n\r\t"
 
 
 def clean(v: object, limit: int = 300) -> str:
-    """Text from the ledger is written by a laptop session, so it is shown to the approver
+    """Text from the ledger is written by a hub session, so it is shown to the approver
     stripped of control, format (bidi) and other non-printable characters (SEC-03)."""
     out = []
     for ch in "" if v is None else str(v):

@@ -15,14 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from rb_host import cli, jobs, threads, web, webaccess
+from rb_host import cli, jobs, web, webaccess
 from rb_host.client import NodeClient
 from rb_host.config import HostConfig
 from rb_host.ledger import Ledger
 
 REPO = Path(__file__).resolve().parents[1]
 ROUTES = ["/", "/threads", "/thread/msgid-7f3a", "/jobs", "/nodes", "/healthz"]
-NOW = "2026-11-10T00:00:00Z"
 Q_BODY = "question first line\nsecond line"
 
 
@@ -112,7 +111,7 @@ def cfg(tmp_path):
 @pytest.fixture
 def srv(cfg):
     s = web.make_server(cfg, "127.0.0.1", 0)
-    t = threading.Thread(target=s.serve_forever, daemon=True)
+    t = threading.Thread(target=s.serve_forever, args=(0.01,), daemon=True)
     t.start()
     # sign in with a real key, as a browser does; req() then sends the cookie
     token, _secs = webaccess.redeem(cfg, webaccess.issue_key(cfg, 10, 12))
@@ -574,7 +573,7 @@ def test_require_key_false_is_not_reachable_from_cli():
 
 def test_require_key_false_serves_without_session(cfg):
     s = web.make_server(cfg, "127.0.0.1", 0, require_key=False)
-    t = threading.Thread(target=s.serve_forever, daemon=True)
+    t = threading.Thread(target=s.serve_forever, args=(0.01,), daemon=True)
     t.start()
     try:
         assert req(s, "/")[0] == 200
@@ -661,7 +660,7 @@ def test_failed_enter_changes_nothing(cfg, srv):
 
 def test_failed_enter_creates_no_web_directory(cfg):
     s = web.make_server(cfg, "127.0.0.1", 0)
-    t = threading.Thread(target=s.serve_forever, daemon=True)
+    t = threading.Thread(target=s.serve_forever, args=(0.01,), daemon=True)
     t.start()
     try:
         before = _tree(cfg)

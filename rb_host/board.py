@@ -1,7 +1,7 @@
-"""Unified board: a laptop-side cache of node and laptop sources (docs/design/2026-11-02-unified-board.md).
+"""Unified board: a hub-side cache of node sources and of local copies of laptop files (docs/design/2026-11-02-unified-board.md).
 
 Node data comes only through the bridge tools (read_doc, fetch_file, queue_status, gpu_status) and is
-re-checked and reduced on the laptop before it is cached. `load` never opens a connection and
+re-checked and reduced on the hub before it is cached. `load` never opens a connection and
 never writes a source file. No MCP tool is added.
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ def _audit(cfg: HostConfig, source: str, payload: bytes, result: str) -> None:
         fh.write((json.dumps(rec) + "\n").encode("utf-8"))
 
 
-# -- reducers (laptop re-check + keep only listed fields) ------------------------------
+# -- reducers (hub re-check + keep only listed fields) ------------------------------
 def _clean(v: Any, wh: Withheld) -> Optional[Any]:
     """A scalar value that may be cached, or None if it must be dropped."""
     if isinstance(v, bool) or v is None:
@@ -209,7 +209,7 @@ def _fetch(cfg: HostConfig, node: str, name: str, wh: Withheld) -> Dict[str, Any
         return {"error": str(res["error"]), "payload": b""}
     fetched = Path(res["path"])
     data = fetched.read_bytes()
-    fetched.unlink()  # only the reduced fields stay on the laptop (design §4)
+    fetched.unlink()  # only the reduced fields stay on the hub (design §4)
     text = data.decode("utf-8", "replace")
     try:
         items = reduce_events(text, wh) if name == "events" else reduce_kanban(text, wh)

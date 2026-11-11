@@ -215,7 +215,7 @@ def _get(srv, method, path):
 class _Running:
     def __init__(self, root: Path) -> None:
         self.srv = share_serve.make_server(root, "127.0.0.1", 0)
-        self.t = threading.Thread(target=self.srv.serve_forever, daemon=True)
+        self.t = threading.Thread(target=self.srv.serve_forever, args=(0.01,), daemon=True)
 
     def __enter__(self):
         self.t.start()

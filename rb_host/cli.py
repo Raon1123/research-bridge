@@ -142,7 +142,6 @@ def _harness(args: argparse.Namespace) -> int:
 def _board(args: argparse.Namespace) -> int:
     import json
     from . import board
-    from .config import HostConfig
     try:
         cfg = jobs.load_cfg()
     except FileNotFoundError as exc:

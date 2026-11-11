@@ -5,11 +5,9 @@ online() opens one connection and sends `hello`. Output never carries key materi
 """
 from __future__ import annotations
 
-import json
 import os
 import shlex
 import stat
-import time
 from collections import namedtuple
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,7 +18,7 @@ from rb_node.withheld import FALLBACK_PATTERNS, Withheld
 
 from . import configure, service, sshenv, threads
 from .client import NodeClient, RemoteError, TransportError, normalize_hello
-from .config import HostConfig, load_host_config
+from .config import HostConfig, WrongTypes, load_host_config
 
 Result = namedtuple("Result", "id level message next node")
 
@@ -184,6 +182,8 @@ def offline(node: Optional[str] = None) -> List[Result]:
             read_json(hp)
             cfg = _load_cfg()
             res.append(_ok("host_json", str(hp)))
+        except WrongTypes as exc:  # the file parses; say which value has the wrong type
+            res.append(_bad("host_json", "fail", "host.json has %s" % exc, "fix %s, then rb doctor" % hp))
         except (ConfigError, ValueError, TypeError, OSError) as exc:
             msg = str(exc)
             if "not valid JSON" not in msg:
@@ -198,18 +198,6 @@ def offline(node: Optional[str] = None) -> List[Result]:
     else:
         res.append(_ok("host_json_git", "config files are not tracked by git"))
     if cfg is None:
-        return res
-    if cfg.nodes is None:
-        cfg.nodes = {}
-    bad = []
-    if not isinstance(cfg.nodes, dict) or not all(isinstance(v, dict) for v in cfg.nodes.values()):
-        bad.append("nodes must be an object whose values are objects")
-    for key in ("data_root", "withheld_patterns_file"):
-        if not isinstance(getattr(cfg, key), str):
-            bad.append("%s must be a string" % key)
-    if bad:
-        res.append(_bad("host_json", "fail", "host.json has wrong types: " + "; ".join(bad),
-                        "fix %s, then rb doctor" % hp))
         return res
 
     if Path(cfg.data_root).is_dir():

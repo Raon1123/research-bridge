@@ -17,10 +17,10 @@ import calendar
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TextIO
 
-from . import board, configure, jobs, server, store, threads
+from . import board, configure, jobs, server, store
 from .client import RemoteError, TransportError, normalize_hello
 from .config import default_root
-from .threads import read_status, status_path, summary  # noqa: F401  (re-exported readers)
+from .threads import read_status, status_path  # noqa: F401  (re-exported readers)
 from rb_node.withheld import Withheld
 
 SCHEMA = 1
@@ -54,13 +54,6 @@ def board_code(err: str) -> str:
     if err in GPU_TEXT:
         return "gpu_status_unavailable"
     return "source_error"
-
-
-def _age_s(ts: Any) -> Optional[float]:
-    try:
-        return time.time() - calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError:
-        return None
 
 
 def due_sources(cfg: Any, node: str, now_s: Optional[float] = None) -> List[str]:

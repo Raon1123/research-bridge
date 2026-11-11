@@ -16,14 +16,14 @@ NODE=""; SHARED=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --shared-alias) SHARED="${2:?--shared-alias needs a value}"; shift 2 ;;
-    -h|--help) sed -n '3,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '3,12p' "$0"; exit 0 ;;
     *) NODE="$1"; shift ;;
   esac
 done
 
 cd "$(dirname "$0")/.." || exit 2
 RB="${RB:-uv run --extra host rb}"
-eval "$(uv run --extra host python - "$NODE" <<'PY'
+VARS=$(uv run --extra host python - "$NODE" <<'PY'
 import os, shlex, sys
 from rb_host.config import load_host_config
 nodes = load_host_config(os.environ.get("RB_HOST_CONFIG") or None).nodes
@@ -34,7 +34,8 @@ n = nodes[name]
 print("NODE=%s ALIAS=%s HALIAS=%s" % tuple(shlex.quote(v) for v in (
     name, n.get("alias", "rb-" + name), n.get("harness_alias", "rb-" + name + "-harness"))))
 PY
-)" || exit 2
+) || exit 2  # a failed lookup stops here; inside eval "$(...)" its status was lost
+eval "$VARS"
 
 FAILS=0
 pass() { echo "PASS row $1: $2"; }

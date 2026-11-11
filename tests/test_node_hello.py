@@ -8,7 +8,6 @@ import pytest
 
 import rb_node
 from rb_node import approval, cli
-from rb_node.config import NodeConfig
 from rb_node.protocol import encode
 from rb_node.remote import Node
 from test_remote import call, cfg  # noqa: F401  (cfg is a fixture)

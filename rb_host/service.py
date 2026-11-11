@@ -30,16 +30,6 @@ def rb_path() -> Path:
     return Path(sys.executable).with_name("rb")
 
 
-def installed_interval() -> Optional[int]:
-    """OnUnitInactiveSec of the installed rb-sync.timer, or None."""
-    try:
-        text = (unit_dir() / "rb-sync.timer").read_text(encoding="utf-8")
-    except OSError:
-        return None
-    m = re.search(r"^OnUnitInactiveSec=(\d+)\s*$", text, re.M)
-    return int(m.group(1)) if m else None
-
-
 def units(rb: Path, host_json: Path, interval: int, port: int,
           rb_host_root: Optional[str]) -> Dict[str, str]:
     env = ["Environment=RB_HOST_CONFIG=%s" % host_json]

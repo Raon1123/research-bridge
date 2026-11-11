@@ -175,8 +175,7 @@ class Ledger:
 
     def thread(self, msg_id: str) -> List[dict]:
         return [r for r in self._latest().values()
-                if r.get("id") == msg_id or r.get("reply_to") == msg_id
-                or r.get("msg_id") == msg_id]
+                if r.get("id") == msg_id or r.get("reply_to") == msg_id]
 
     def pending_jobs(self) -> List[dict]:
         return [r for r in self._latest().values()
