@@ -617,6 +617,43 @@ def test_real_node_refusal_after_approval_returns_job_to_pending(env, change, co
     assert jobs.reject(env["ledger"], jid)["status"] == "rejected"
 
 
+def test_retry_after_lost_submit_reply_is_queued_not_refused(env, monkeypatch):
+    # the node queued the job but its reply was lost: the record stays approved, and the retry
+    # (upload again, then the node's idempotent replay) must end queued, not back in pending
+    real = jobs.connect
+    lost = {"done": False}
+
+    class LosesReply:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self.inner.__exit__(*a)
+
+        def put_file(self, *a, **k):
+            return self.inner.put_file(*a, **k)
+
+        def call(self, op, **k):
+            out = self.inner.call(op, **k)
+            if op == "job_submit" and not lost["done"]:
+                lost["done"] = True
+                raise TransportError("ssh_failed")
+            return out
+
+    monkeypatch.setattr(jobs, "connect", lambda *a: LosesReply(real(*a)))
+    jid = _submit(env)
+    with pytest.raises(TransportError):
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert env["ledger"].get(jid)["status"] == "approved"
+    assert len(list(_jobs_dir(env).glob("*.job"))) == 1
+    assert jobs.approve(env["ledger"], server.load_cfg(), jid, PW)["status"] == "queued"
+    assert len(list(_jobs_dir(env).glob("*.job"))) == 1
+
+
 def test_poll_reply_body_readable_from_disk(env):
     oid = Mailbox(env["mb"]).post_out("reply", "the answer", [], "m0")
     server.poll("n1")
