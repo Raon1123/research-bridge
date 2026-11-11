@@ -436,7 +436,10 @@ def _wrapper_check() -> Check:
 def _sessions_check(cfg: NodeConfig) -> Check:
     """The `sessions` operation as the hub would get it, without writing its cache
     (docs/design/2026-11-11-node-sessions.md). Unset is a note, not a warning."""
-    fix = "rb-node config set sessions_dir DIR (the Claude projects directory of this account)"
+    fix = ("rb-node config set sessions_dir DIR, where DIR holds "
+           "<sessions_dir>/<project directory>/<session id>.jsonl: usually the projects "
+           "directory inside the Claude configuration directory of this account, "
+           "~/.claude/projects")
     if not cfg.sessions_dir:
         return _ok("sessions", "sessions_dir is not set: the sessions operation is off "
                                "(it answers not_configured and reads nothing)")
@@ -448,16 +451,40 @@ def _sessions_check(cfg: NodeConfig) -> Check:
         r = node_sessions.run(cfg, Withheld.load(src), write_cache=False)
     except (ProtocolError, OSError):
         return Check("sessions", "warn", "sessions directory cannot be read", fix)
-    if r["files"] and r["unparsed"] == r["files"]:
+    days, ignored = r["days"], r.get("ignored", 0)
+    deeper, shallower = r.get("deeper", 0), r.get("shallower", 0)
+    counts = _ok("sessions", "%d session(s) in the last %d days from %d record file(s); "
+                             "%d unparsed, %d outside the research tree%s%s"
+                 % (len(r["sessions"]), days, r["files"], r["unparsed"], r["outside"],
+                    "; %d ignored (not named like a session record)" % ignored if ignored else "",
+                    "; truncated by the per-call bounds" if r["truncated"] else ""))
+    if r["sessions"] or r["outside"]:
+        return counts
+    # Nothing listed: say which case it is. Id-named files at the expected depth show that the
+    # level is right, so the format warning comes before the level warnings.
+    if r["unparsed"]:
+        more = "".join("; %d more session record file(s) one level %s" % (n, where)
+                       for n, where in ((deeper, "deeper"), (shallower, "shallower")) if n)
         return Check("sessions", "warn",
-                     "%d record file(s) in the last %d days, none could be read as a session: "
-                     "the assumed record format may be wrong" % (r["files"], r["days"]),
+                     "%d record file(s) named like a session in the last %d days, none could be "
+                     "read as a session: the assumed record format may be wrong%s"
+                     % (r["unparsed"], days, more),
                      "rb-node sessions; compare a record file with "
                      "docs/design/2026-11-11-node-sessions.md section 8")
-    return _ok("sessions", "%d session(s) in the last %d days from %d record file(s); "
-                           "%d unparsed, %d outside the research tree%s"
-               % (len(r["sessions"]), r["days"], r["files"], r["unparsed"], r["outside"],
-                  "; truncated by the per-call bounds" if r["truncated"] else ""))
+    if deeper:
+        return Check("sessions", "warn", "sessions_dir looks one level too high: %d session "
+                     "record file(s) are one level deeper" % deeper, fix)
+    if shallower:
+        return Check("sessions", "warn", "sessions_dir looks one level too low: %d session "
+                     "record file(s) are one level shallower" % shallower, fix)
+    if ignored:
+        return Check("sessions", "warn", "%d .jsonl file(s) were found but none is named like a "
+                     "session record: sessions_dir is probably not the Claude projects "
+                     "directory" % ignored, fix)
+    if not r["files"]:
+        return _ok("sessions", "no record file in the last %d days%s"
+                   % (days, "; truncated by the per-call bounds" if r["truncated"] else ""))
+    return counts
 
 
 def system_checks(cfg: NodeConfig) -> List[Check]:
