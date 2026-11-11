@@ -163,7 +163,7 @@ def reduce_kanban(text: str, wh: Withheld) -> List[dict]:
     return [{"column": k, "count": n} for k, n in sorted(counts.items())]
 
 
-def reduce_queue(res: dict, wh: Withheld) -> List[dict]:
+def reduce_queue(res: dict) -> List[dict]:
     counts = Counter(e.get("state") for e in res.get("entries", []) if isinstance(e, dict))
     return [{"state": s, "count": n} for s, n in sorted(counts.items()) if isinstance(s, str)]
 
@@ -190,7 +190,7 @@ def _fetch(cfg: HostConfig, node: str, name: str, wh: Withheld) -> Dict[str, Any
         if name == "queue":
             if "error" in res:
                 return {"error": str(res["error"]), "payload": payload}
-            return {"items": reduce_queue(res, wh), "payload": payload}
+            return {"items": reduce_queue(res), "payload": payload}
         items = reduce_gpu(res)
         if res.get("error"):
             return {"error": str(res["error"]), "items": items, "payload": payload}
