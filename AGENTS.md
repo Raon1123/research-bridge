@@ -91,7 +91,7 @@ A session may tell the user which command to type and what its last output line 
 - Keep node code stdlib only. Do not add a PyYAML dependency; YAML withheld sources are treated as unparseable (fallback patterns only).
 - Fix-first-then-claim: a change is "fixed" only after the same reproduction passes.
 - Tests do not call `monkeypatch.undo()`: it also removes the `HOME` isolation of `tests/conftest.py`, and the suite then writes to the real account (`docs/postmortems/2026-11-10-test-suite-overwrote-claude-json.md`). A patch that must end inside a test goes in `with monkeypatch.context() as m:`. The one exception is `test_real_home_is_out_of_reach_even_after_undo` in `tests/test_sshenv.py`, which calls it on purpose to pin the isolation of `tests/conftest.py`.
-- Do not write withheld content into reports, commits or logs.
+- Do not write withheld content into reports, commits or logs. Research family identifiers alone are not withheld content (user, 2026-11-11; `docs/issues/2026-11-11-audit.md` U7), but a new document, commit or issue names one only when the text needs it.
 
 ## Open items
 
