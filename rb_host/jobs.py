@@ -17,8 +17,18 @@ from .config import HostConfig, load_host_config
 from .ledger import Ledger
 
 DONE = {"submit": "queued", "cancel": "cancelled_requested"}
-REFUSED = ("not_authorized", "approval_wait", "no_verifier",  # node refused the approval
-           "gpu_status_unavailable", "no_gpus")  # node refused the job: it is not queued, ask again later
+# Node codes after which nothing was queued or cancelled: the record goes back to
+# pending_approval, so it is listed again and can be approved again or rejected. Not here:
+# "internal" and transport errors, after which the job may have been queued.
+REFUSED = (
+    # the node refused the approval
+    "not_authorized", "approval_wait", "no_verifier", "approval_path_unsafe",
+    # the node refused the job after the approval check (rb_node/jobs.py)
+    "gpu_status_unavailable", "no_gpus", "invalid", "no_job_template", "no_allowed_gpus",
+    "bad_args", "bad_id", "conflict", "not_found",
+    # the config upload or its check failed (rb_node/remote.py, mailbox.py, jobs.py)
+    "no_message", "no_attachment", "no_part", "incomplete", "checksum", "too_large",
+    "bad_b64", "bad_seq")
 CLAIM_TTL_S = 300.0  # an approve call that died mid-way blocks a retry for this long
 
 

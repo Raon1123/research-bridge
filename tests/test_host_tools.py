@@ -539,7 +539,8 @@ def test_nested_lock_across_ledger_objects(tmp_path):
     assert a.get("n")["x"] == 1 and not (tmp_path / "l.jsonl.lock").exists()
 
 
-@pytest.mark.parametrize("code", ["gpu_status_unavailable", "no_gpus"])
+@pytest.mark.parametrize("code", ["gpu_status_unavailable", "no_gpus", "invalid", "no_job_template",
+                                  "no_allowed_gpus", "conflict", "checksum"])
 def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeypatch, capsys, code):
     from rb_host.client import RemoteError
     real = jobs.connect
@@ -583,6 +584,37 @@ def test_node_refusing_the_job_returns_it_to_pending_and_shows_code(env, monkeyp
                                       "t", "approve", "127.0.0.1:8765")
     assert st == 403 and code in body and PW not in body
     assert env["ledger"].get(jid)["status"] == "pending_approval"
+
+
+def _rewrite_node(env, **changes):
+    p = env["tmp"] / "node.json"
+    conf = json.loads(p.read_text(encoding="utf-8"))
+    for k, v in changes.items():
+        if v is None:
+            conf.pop(k, None)
+        else:
+            conf[k] = v
+    p.write_text(json.dumps(conf), encoding="utf-8")
+
+
+@pytest.mark.parametrize("change,code", [
+    ({"job_template": None}, "no_job_template"),
+    ({"allowed_gpus": []}, "no_allowed_gpus"),
+    ({"allowed_gpus": [1]}, "invalid"),
+])
+def test_real_node_refusal_after_approval_returns_job_to_pending(env, change, code):
+    # D1: the node accepted the approval key and then refused the job; nothing was queued, so
+    # the record must be listed again and rejectable
+    jid = _submit(env)
+    _rewrite_node(env, **change)
+    with pytest.raises(jobs.RemoteError) as e:
+        jobs.approve(env["ledger"], server.load_cfg(), jid, PW)
+    assert e.value.code == code
+    assert not list(_jobs_dir(env).glob("*.job"))
+    rec = env["ledger"].get(jid)
+    assert rec["status"] == "pending_approval" and not rec.get("approving")
+    assert [r["id"] for r in env["ledger"].pending_jobs()] == [jid]
+    assert jobs.reject(env["ledger"], jid)["status"] == "rejected"
 
 
 def test_poll_reply_body_readable_from_disk(env):
