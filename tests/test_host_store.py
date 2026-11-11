@@ -1,4 +1,4 @@
-"""Laptop storage of node-supplied data: names, bodies, size cap (PM-06, PM-09, PM-10)."""
+"""Hub storage of node-supplied data: names, bodies, size cap (PM-06, PM-09, PM-10)."""
 from __future__ import annotations
 
 import json

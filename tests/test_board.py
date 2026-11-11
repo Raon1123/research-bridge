@@ -232,7 +232,7 @@ def test_withheld_event_dropped(env):
     ev = s["n1:events"]["items"]
     assert ev == [{"ts": "2026-11-02T09:00:00Z", "stage": "S5", "kind": "monitor", "track": "ARG"}]
     st = s["n1:state"]["items"][0]
-    assert "note" not in st  # STATE.md line hit by a fallback pattern: blanked on node and laptop
+    assert "note" not in st  # STATE.md line hit by a fallback pattern: blanked on node and hub
     for f in env["root"].rglob("*"):  # the whole data root, fetched/ included
         if not f.is_file():
             continue

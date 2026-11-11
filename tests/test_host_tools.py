@@ -41,7 +41,7 @@ def env(tmp_path, monkeypatch):
         "allowed_gpus": [0],
         "approval_path": str(tmp_path / "rb" / "approve.json"),
     }
-    # a fast KDF for tests; the laptop's lower bound is lowered to match
+    # a fast KDF for tests; the hub's lower bound is lowered to match
     approval.write_record(Path(conf["approval_path"]), approval.make_record(PW, iterations=1000)[0])
     monkeypatch.setattr(approval, "MIN_ITERATIONS", 1)
     monkeypatch.setattr("getpass.getpass", lambda prompt="": PW)
@@ -212,7 +212,7 @@ def test_weak_node_params_refused(env, monkeypatch):
 
 
 def test_bridge_key_alone_cannot_queue(env):
-    # SEC-01: a laptop process that talks to the node directly, skipping the ledger
+    # SEC-01: a hub process that talks to the node directly, skipping the ledger
     import hashlib
     cfgf = env["tmp"] / "x.yaml"
     cfgf.write_text("a: 1\n", encoding="utf-8")
