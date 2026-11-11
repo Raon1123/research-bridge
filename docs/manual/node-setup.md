@@ -11,7 +11,7 @@ Placeholders: `node1` and the names in angle brackets (`<NODE_HOST>`, `<HUB_ADDR
 - The Claude Code CLI, if the node should answer messages with a server Claude session (§6). Non-interactive SSH often lacks it on `PATH`; the installer sets `claude_bin` to the first `claude` it finds on `PATH` when the current value is not an executable file, and `rb-node doctor` check `claude_bin` tells you if that is not enough.
 - The research tree whose documents are shared (the "research root", `trm_root` in `node.json`; on `node1` the project described in [../projects/trm.md](../projects/trm.md)) and its job queue directory with `jobs/`, `processing/`, `done/`, `failed/`.
 - A checkout of this repository on the node: `git clone <REPO_URL>` there, or a copy of the hub's checkout that includes `.git` (copy from the hub to the node; the node never opens a connection to the hub).
-- The node must not be the hub: the installer refuses to run where `~/.local/share/research-bridge` holds `host.json` or `ledger.jsonl`.
+- The node must not be the hub: the installer refuses to run where `~/.local/share/research-bridge` or `$RB_HOST_ROOT` holds `host.json` or `ledger.jsonl`, or where `$RB_HOST_CONFIG` names an existing file.
 
 ## 2. Install: `scripts/node-install.sh`
 
@@ -165,13 +165,14 @@ Read-only: it creates no directory and writes no audit record. Output is `[ok|wa
 |---|---|---|---|
 | `config` | fail | `node.json` is missing, not valid JSON or not an object; nothing else is checked. | `rb-node config init` or rerun `scripts/node-install.sh` |
 | `config_keys` | warn | An unknown key or a value of the wrong type is ignored. | `rb-node config show` |
+| `max_file` | fail | `max_file` in `node.json` is above 52428800 (hard rule 5); 52428800 applies. | `rb-node config set max_file 52428800` |
 | `research_root` | fail | `trm_root` is not a directory. | `rb-node config set trm_root DIR` |
 | `read_roots` | warn | A read root does not exist. | `mkdir -p DIR` or `rb-node config set read_roots '[...]'` |
 | `doc_paths` | warn | `experiments_dir` or `hypotheses_path` is outside every read root, so `read_doc` by id is denied. | `rb-node config set KEY PATH` |
 | `queue_dir` | warn | `queue_dir/jobs` is missing or not writable: jobs would go where no runner watches. | `mkdir -p DIR/jobs` or set `queue_dir` |
 | `withheld` | fail if the file is missing, unreadable, not valid JSON, empty, or has patterns that do not compile; warn if `withheld_source` is unset | Only the five fallback patterns apply (or the file is broken). | `scripts/node-install.sh --withheld-file FILE` or `rb-node config set withheld_source PATH` |
 | `approval` | fail | The verifier is missing or unreadable: every `job_submit` and `job_cancel` is refused. | `rb-node approve-key set` |
-| `approval_path` | fail | `approval_path` is inside a read or write root, where the hub could reach it. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
+| `approval_path` | fail | `approval_path` is inside a read, write or mailbox root (symbolic links resolved), where the hub could reach it. This is the rule `job_submit` uses. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
 | `job_template` | warn if empty, fail if it has none of `{config}`, `{config_dir}`, `{config_stem}` | Jobs are refused (`no_job_template`) or cannot receive their config file. | `rb-node config set job_template '[...,"{config}"]'` |
 | `allowed_gpus` | warn if empty | `allowed_gpus` is empty or malformed: every `job_submit` is refused (`no_allowed_gpus`). | `rb-node config set allowed_gpus '[4, 5, 6, 7]'` (your own GPU indices) |
 | `claude_bin` | warn | The responder cannot start; messages wait for a live session. | `rb-node config set claude_bin PATH` |

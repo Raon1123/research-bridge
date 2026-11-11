@@ -13,7 +13,7 @@
 - 노드가 서버 Claude 세션으로 메시지에 답하게 하려면 Claude Code CLI가 필요하다(§6). 비대화형 SSH에서는 `PATH`에 없는 경우가 많다. 설치 프로그램은 `claude_bin`의 현재 값이 실행 파일이 아니면 `PATH`에서 처음 찾은 `claude`로 설정한다. 그래도 부족하면 `rb-node doctor`의 `claude_bin` 검사가 알려 준다.
 - 문서를 공유하는 연구 트리("research root", `node.json`의 `trm_root`. `node1`에서는 [../projects/trm.md](../projects/trm.md)에 설명된 프로젝트)와, `jobs/`, `processing/`, `done/`, `failed/`가 있는 작업 큐 디렉터리.
 - 노드에 있는 이 저장소의 체크아웃. 노드에서 `git clone <REPO_URL>`을 하거나, `.git`을 포함한 허브 체크아웃의 사본을 쓴다(허브에서 노드로 복사한다. 노드는 허브로 연결을 열지 않는다).
-- 노드는 허브이면 안 된다. `~/.local/share/research-bridge`에 `host.json`이나 `ledger.jsonl`이 있으면 설치 프로그램이 실행을 거부한다.
+- 노드는 허브이면 안 된다. `~/.local/share/research-bridge`나 `$RB_HOST_ROOT`에 `host.json`이나 `ledger.jsonl`이 있거나, `$RB_HOST_CONFIG`가 존재하는 파일을 가리키면 설치 프로그램이 실행을 거부한다.
 
 ## 2. Install: `scripts/node-install.sh`
 
@@ -167,13 +167,14 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 |---|---|---|---|
 | `config` | fail | `node.json`이 없거나, 유효한 JSON이 아니거나, 객체가 아니다. 다른 것은 검사하지 않는다. | `rb-node config init` 또는 `scripts/node-install.sh`를 다시 실행 |
 | `config_keys` | warn | 알 수 없는 키나 타입이 틀린 값은 무시된다. | `rb-node config show` |
+| `max_file` | fail | `node.json`의 `max_file`이 52428800보다 크다(hard rule 5). 52428800이 적용된다. | `rb-node config set max_file 52428800` |
 | `research_root` | fail | `trm_root`가 디렉터리가 아니다. | `rb-node config set trm_root DIR` |
 | `read_roots` | warn | 읽기 루트가 존재하지 않는다. | `mkdir -p DIR` 또는 `rb-node config set read_roots '[...]'` |
 | `doc_paths` | warn | `experiments_dir` 또는 `hypotheses_path`가 모든 읽기 루트 밖에 있어서 id로 하는 `read_doc`이 거부된다. | `rb-node config set KEY PATH` |
 | `queue_dir` | warn | `queue_dir/jobs`가 없거나 쓸 수 없다. 작업이 어떤 runner도 보지 않는 곳으로 가게 된다. | `mkdir -p DIR/jobs` 또는 `queue_dir` 설정 |
 | `withheld` | 파일이 없거나, 읽을 수 없거나, 유효한 JSON이 아니거나, 비어 있거나, 컴파일되지 않는 패턴이 있으면 fail. `withheld_source`가 설정되지 않았으면 warn | fallback 패턴 다섯 개만 적용된다(또는 파일이 손상됐다). | `scripts/node-install.sh --withheld-file FILE` 또는 `rb-node config set withheld_source PATH` |
 | `approval` | fail | verifier가 없거나 읽을 수 없다. 모든 `job_submit`과 `job_cancel`이 거부된다. | `rb-node approve-key set` |
-| `approval_path` | fail | `approval_path`가 읽기 또는 쓰기 루트 안에 있어서 허브가 닿을 수 있다. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
+| `approval_path` | fail | `approval_path`가 읽기, 쓰기 또는 메일함 루트 안에 있어서(심볼릭 링크는 따라가서 판단한다) 허브가 닿을 수 있다. `job_submit`이 쓰는 규칙과 같다. | `rb-node config set approval_path ~/.research-bridge/approve.json` |
 | `job_template` | 비어 있으면 warn, `{config}`, `{config_dir}`, `{config_stem}` 중 어느 것도 없으면 fail | 작업이 거부되거나(`no_job_template`) config 파일을 받을 수 없다. | `rb-node config set job_template '[...,"{config}"]'` |
 | `allowed_gpus` | 비어 있으면 warn | `allowed_gpus`가 비었거나 형식이 틀렸다. 모든 `job_submit`이 `no_allowed_gpus`로 거부된다. | `rb-node config set allowed_gpus '[4, 5, 6, 7]'`(본인 GPU 인덱스) |
 | `claude_bin` | warn | responder를 시작할 수 없다. 메시지는 살아 있는 세션을 기다린다. | `rb-node config set claude_bin PATH` |
