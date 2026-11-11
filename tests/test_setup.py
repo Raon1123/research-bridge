@@ -157,6 +157,21 @@ def test_ssh_block_overridden_by_earlier_host_star_warns(hub, capsys):
     assert "stricthostkeychecking" in out and "overridden" in out
 
 
+def test_backup_in_the_same_second_keeps_the_earlier_one(tmp_path, monkeypatch):
+    # D14: as rb_node/install.py does, a name that exists gets a counter
+    monkeypatch.setattr(setup, "_stamp", lambda: "20260101000000")
+    p = tmp_path / "config"
+    p.write_text("one\n", encoding="utf-8")
+    b1 = setup._backup(p)
+    p.write_text("two\n", encoding="utf-8")
+    b2 = setup._backup(p)
+    p.write_text("three\n", encoding="utf-8")
+    b3 = setup._backup(p)
+    assert [b.name for b in (b1, b2, b3)] == [
+        "config.bak.20260101000000", "config.bak.20260101000000.1", "config.bak.20260101000000.2"]
+    assert [b.read_text(encoding="utf-8") for b in (b1, b2, b3)] == ["one\n", "two\n", "three\n"]
+
+
 def test_ssh_config_backup_kept(hub):
     _keys(hub)
     old = "Host other\n    HostName x.example\n"

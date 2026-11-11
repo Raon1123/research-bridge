@@ -14,7 +14,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from rb_node.configure import ConfigError, git_exposure, read_json
@@ -87,12 +87,19 @@ def _unsafe_target(path: Path) -> Optional[str]:
     return None
 
 
-def _backup(path: Path) -> Optional[Path]:
+def _backup(path: Path, say: Callable[[str], None] = _say) -> Optional[Path]:
+    """Copy `path` to `<name>.bak.<stamp>`; a name taken already (a backup in the same second)
+    gets `.1`, `.2`, ... as in rb_node/install.py. None when `path` is not a file."""
     if not path.is_file():
         return None
-    bak = path.with_name("%s.bak.%s" % (path.name, _stamp()))
+    stamp = _stamp()
+    bak = path.with_name("%s.bak.%s" % (path.name, stamp))
+    n = 0
+    while bak.exists() or os.path.islink(str(bak)):
+        n += 1
+        bak = path.with_name("%s.bak.%s.%d" % (path.name, stamp, n))
     shutil.copy2(str(path), str(bak))
-    _say("backup: %s" % bak)
+    say("backup: %s" % bak)
     return bak
 
 
