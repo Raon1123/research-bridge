@@ -1,25 +1,17 @@
 # Hub setup
 
-The hub runs `rb_host`: the MCP server (Model Context Protocol, the interface Claude sessions use to call tools), the `rb` command, the ledger and the stored messages. Since 2026-11-05 the hub is a Linux server (user decision, §12). The laptop is no longer the hub; the vault and its 8765 dashboard exist only on the laptop. Everything in this manual runs on the hub unless a step says otherwise. Windows and laptop-hub instructions are collected in Appendix A and are not maintained. For the node side see [node-setup.md](node-setup.md); for the roles see [README.md](README.md).
+The hub runs `rb_host`: the MCP server (Model Context Protocol, the interface Claude sessions use to call tools), the `rb` command, the ledger and the stored messages. Since 2026-11-05 the hub is a Linux server (user decision, §12). The laptop is no longer the hub; the vault and its 8765 dashboard exist only on the laptop. Everything in this manual runs on the hub unless a step says otherwise. The Windows and laptop-hub instructions (not maintained since 2026-11-05) are archived in `docs/99_Archive/manual-appendix-a/hub-setup.md`. For the node side see [node-setup.md](node-setup.md); for the roles see [README.md](README.md).
 
 ## How to read this manual
 
 - **Who runs a command.** "Hub terminal" means a terminal the user has open on the hub. Commands that ask a question (`y/N`, a passphrase) refuse to run without a terminal (stdin and stdout must both be a terminal), so a Claude session cannot run them. A session may run the forms marked "session-safe": `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config path`, `rb config show`, `rb config check`, `rb config mcp`, `rb board show`. The other `rb config` forms (`init`, `add-node`, `remove-node`, `set`, `local`) write `host.json` or `private/local.json` without asking, and `rb web serve` starts a process, so a session needs your go-ahead for them (`AGENTS.md`, "Ask the user before"); `rb doctor` without `--offline`, `rb sync`, `rb git-status`, `rb board refresh`, `rb harness push` and `rb harness pull` contact the node and need it too.
 - **How `rb` is run.** The runtime is managed by uv. In this manual `rb ...` stands for `uv run --extra host rb ...` run in the main checkout (or `.venv/bin/rb ...`). A session prefixes shell commands with `rtk`; people type the plain command.
-- **Placeholders.** `node1` is the node name used in examples. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>` are the node's address, SSH port and login name. `<HUB_ADDR>` is the hub's address as the node sees it; `<HUB_SUBNET>` is the hub's network range; `<HUB_HOST>` is a name by which you log in to the hub from the laptop. The full list is in `docs/manual/README.md`. Real values go only in files that git ignores.
+- **Placeholders.** `node1` and the names in angle brackets (`<NODE_HOST>`, `<HUB_ADDR>`, ...) stand for private values; the one list is in [README.md](README.md), Conventions. Real values go only in files that git ignores.
 - **Abbreviations.** SSH = Secure Shell. MCP = Model Context Protocol. TOFU = trust on first use (accepting a host key the first time it is seen). systemd = the Linux service manager; "user units" run under your account.
 
 ### Order of a first setup
 
-| Step | Where | What | Section |
-|---|---|---|---|
-| 1 | hub | Install, run the tests | §1, §2 |
-| 2 | hub | `rb setup --node node1 --host <NODE_HOST> --port <NODE_PORT> --user <NODE_USER>`: config, keys, SSH blocks, agent; it prints the node command and the MCP command | §4 |
-| 3 | node console | Run the printed `scripts/node-install.sh ...`, then `rb-node approve-key set` | [node-setup.md](node-setup.md) §2, §4 |
-| 4 | hub | `rb setup --node node1` again: host key comparison | §4 |
-| 5 | hub | Run the printed `claude mcp add-json ...`, start a new Claude session | §6 |
-| 6 | hub | `rb doctor` | §10 |
-| 7 | hub | `rb service install`, then the printed `systemctl` commands | §13, §14 |
+The steps of a first setup, hub and node together, are in one table: [README.md](README.md), "Order of setup for a new node".
 
 ## 1. Requirements
 
@@ -165,12 +157,13 @@ Host rb-node1-harness
 
 Host key (trust on first use done safely): scan, print the fingerprint, compare it with the one printed on the node console, and only then append:
 
-    ssh-keyscan -t ed25519 -p <NODE_PORT> <NODE_HOST> > /tmp/node1.hostkey
-    ssh-keygen -lf /tmp/node1.hostkey
+    f=$(mktemp)
+    ssh-keyscan -t ed25519 -p <NODE_PORT> <NODE_HOST> > "$f"
+    ssh-keygen -lf "$f"
     # compare with: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub  (on the node console)
-    cat /tmp/node1.hostkey >> ~/.ssh/known_hosts
+    cat "$f" >> ~/.ssh/known_hosts; rm "$f"
 
-If `HashKnownHosts yes` is set, add `-H` to `ssh-keyscan`.
+`mktemp` makes a new file that only you can read and write, so no other account can replace the scan between the comparison and the append. If the fingerprints differ, run only `rm "$f"`. If `HashKnownHosts yes` is set, add `-H` to `ssh-keyscan`.
 
 Agent:
 
@@ -220,7 +213,7 @@ Approval happens only outside Claude, in a hub terminal:
     rb approve <job_id>        # shows the job, asks y/N and the approval passphrase, then uploads and submits
     rb reject <job_id>         # marks it rejected; no node call
 
-The passphrase is the one set on the node with `rb-node approve-key set` (node manual §4.2). It is typed each time: `rb approve` and `rb reject` need a terminal (an SSH login with a terminal counts), there is no `--yes` and no flag, file or environment variable for the passphrase, so a Claude session cannot approve. A wrong passphrase leaves the job `pending_approval`; approving twice is a no-op. After five wrong keys the node makes you wait 30 s, doubling up to 1 h (`approval_wait`). Residual risks: `docs/design/2026-11-03-node-side-approval.md` §7. The hub page (§14) lists pending jobs with the two commands to type; it cannot approve anything. The 8765 approval route exists only on the laptop (Appendix A).
+The passphrase is the one set on the node with `rb-node approve-key set` (node manual §4.2). It is typed each time: `rb approve` and `rb reject` need a terminal (an SSH login with a terminal counts), there is no `--yes` and no flag, file or environment variable for the passphrase, so a Claude session cannot approve. A wrong passphrase leaves the job `pending_approval`; approving twice is a no-op. After five wrong keys the node makes you wait 30 s, doubling up to 1 h (`approval_wait`). Residual risks: `docs/design/2026-11-03-node-side-approval.md` §7. The hub page (§14) lists pending jobs with the two commands to type; it cannot approve anything. The 8765 approval route exists only on the laptop (`docs/session-dashboard.md`).
 
 ## 8. Harness channel (manual, optional)
 
@@ -320,7 +313,7 @@ From 2026-11-05 this Linux server is the hub (user decision). Platform facts:
 - **`from=` on the node:** the hub's own address or subnet (`<HUB_ADDR>`, `<HUB_SUBNET>`), never the laptop's.
 - **Approval:** `rb approve` and `rb reject` in a hub terminal. The 8765 dashboard and its `/rb/approve` route are vault-side and are not installed here.
 - **Not available here:** the `rb board` laptop sources (portfolio, priorities) unless `board.portfolio` and `board.priorities` point at local copies; the harness path mapping assumes laptop paths (§8).
-- **Removed scripts:** `scripts/hub-connect.sh`, `scripts/hub-agent.sh` and `scripts/trm-link.sh` no longer exist. `rb setup` and `rb agent` replace the first two; `rb-node link` (node manual §10) replaces the third. A hub that was linked with the old scripts needs no re-linking: `rb setup --node NAME` finds the keys, blocks and known-hosts entry and only reports differences.
+- **Earlier link:** a hub linked with the earlier scripts needs no re-linking: `rb setup --node NAME` finds the keys, blocks and known-hosts entry and only reports differences.
 
 ## 13. Unattended sync and the timer
 
@@ -465,14 +458,6 @@ Errors that come back from the node, as codes in tool results and in `rb approve
 | `no usable host.json at ...` | `host.json` missing or invalid. | `rb setup --node NAME --host HOST --user USER`. |
 | `LEAK RISK ...` | A config file would be tracked by git. | Add it to `.gitignore` or move it. |
 
-## Appendix A. Windows or laptop hub (not maintained since 2026-11-05)
+## Appendix A
 
-This appendix keeps the instructions of the first hub, the Windows laptop. They were last checked on 2026-11-05 and are not kept in step with the code. `rb setup`, `rb agent`, `rb doctor`, `rb service` and the timer were written for Linux and were not tried on Windows. Paths are examples.
-
-- **Requirements:** Python 3.14 (tests ran there), the OpenSSH client and the "OpenSSH Authentication Agent" service set to start automatically, the repository at `D:/raw/Codes/research-bridge` (the 8765 dashboard imports `rb_host` from `RB_REPO` in `vault-export/dashboard/rb_pending.py`).
-- **Data directory:** `D:/raw/research-bridge/` is the default on Windows when `RB_HOST_ROOT` is not set; keep it outside the vault and any cloud-synced folder. The default withheld pattern file is the session-calendar export `D:/raw/session-calendar/server/withheld_patterns.json`.
-- **Keys:** `ssh-keygen -t ed25519 -f C:/keys/research-bridge/node1_ed25519 -C research-bridge-hub` and the same for the harness key; `ssh-add` both; the passphrase is entered once per logon. Use the `C:/keys/...` paths as `IdentityFile` in the blocks of §4.5. `from=` on the node is the laptop's subnet.
-- **MCP entry** in `~/.claude.json` under `mcpServers`: `"research-bridge": {"type": "stdio", "command": "uv", "args": ["run", "--directory", "D:/raw/Codes/research-bridge", "--extra", "host", "python", "-m", "rb_host.server"]}`.
-- **Approval** in PowerShell or Windows Terminal (redirected input and Git Bash's mintty are refused), or on `http://127.0.0.1:8765/rb/pending` (loopback only, per-process CSRF token, passphrase field). Install the dashboard route from `vault-export/` (see `vault-export/README.md`) and restart the 8765 dashboard; both need the user's go-ahead.
-- **Checks:** `curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending` should print 200 and the same URL on the laptop's LAN address 403.
-- **Tests:** `tests/test_rb_pending.py` and `tests/test_bridge_edges.py` use the repository's `vault-export/` copies; the vault is not needed.
+The Windows and laptop-hub notes (not maintained since 2026-11-05) moved to `docs/99_Archive/manual-appendix-a/hub-setup.md` on 2026-11-11.

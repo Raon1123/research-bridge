@@ -1,8 +1,8 @@
 # Node setup
 
-A node runs `rb_node` (standard library only, Python 3.8 or later) and is reached from the hub over SSH (Secure Shell) with forced commands: the SSH key lets the hub run one fixed program and nothing else. The first node is `node1`. `scripts/node-install.sh` is the single entry point on the node: it installs the code, writes the wrapper and `node.json`, and prints or applies the two `authorized_keys` lines. Every command in this manual runs on the node console, by the user; a session needs the user's go-ahead for each command on the node (`AGENTS.md`). For the hub side see [hub-setup.md](hub-setup.md); the Windows-hub notes for the node are in Appendix A.
+A node runs `rb_node` (standard library only, Python 3.8 or later) and is reached from the hub over SSH (Secure Shell) with forced commands: the SSH key lets the hub run one fixed program and nothing else. The first node is `node1`. `scripts/node-install.sh` is the single entry point on the node: it installs the code, writes the wrapper and `node.json`, and prints or applies the two `authorized_keys` lines. Every command in this manual runs on the node console, by the user; a session needs the user's go-ahead for each command on the node (`AGENTS.md`). For the hub side see [hub-setup.md](hub-setup.md). The Windows-hub notes for the node (not maintained since 2026-11-05) are archived in `docs/99_Archive/manual-appendix-a/node-setup.md`.
 
-Placeholders: `node1` (node name), `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>` (the node's address, SSH port and login name), `<HUB_ADDR>` (the hub's address as the node sees it), `<HUB_SUBNET>` (the hub's network range). Abbreviations: MCP = Model Context Protocol; GPU = graphics processing unit.
+Placeholders: `node1` and the names in angle brackets (`<NODE_HOST>`, `<HUB_ADDR>`, ...) stand for private values; the one list is in [README.md](README.md), Conventions. Abbreviations: MCP = Model Context Protocol; GPU = graphics processing unit.
 
 ## 1. Requirements
 
@@ -84,7 +84,7 @@ Edit it on the node console only, with `rb-node config` (no bridge operation rea
 | `claude_bin` | path | `~/.local/bin/claude` | Absolute path of the Claude CLI for the responder. |
 | `job_template` | list of strings | `[]` | argv with a config placeholder (`{config}`, `{config_dir}` or `{config_stem}`, §4.1.1), for example `["uv", "run", "pretrain.py", "--config", "{config}"]`. Empty means `job_submit` is refused (`no_job_template`). Set by the node's owner. |
 | `allowed_gpus` | list of integers | `[]` | GPU indices a bridge job may use: the node owner's GPUs, for example `[4, 5, 6, 7]`. Empty means `job_submit` is refused (`no_allowed_gpus`) and `run-job` starts nothing. A GPU outside the list, or more than one GPU, is refused with `invalid`. Set by the node's owner. |
-| `max_file` | positive integer | 52428800 (50 MB) | Attachment cap in bytes. |
+| `max_file` | positive integer | 52428800 (50 MB) | Size cap in bytes for attachments, fetched files, documents and harness files; at most 52428800 (hard rule 5); `config set` refuses a larger value. |
 | `mailbox_root` | path | `~/.research-bridge/mailbox` | Mailbox (`in/`, `out/`, `state/`). |
 | `audit_path` | path | `~/.research-bridge/audit.jsonl` | Audit log (no message bodies). |
 | `approval_path` | path | `~/.research-bridge/approve.json` | Job approval verifier (§4.2). Keep it outside every read and write root. |
@@ -153,18 +153,7 @@ Each run appends facts to `~/.research-bridge/mailbox/state/respond-<msg_id>.log
 
 ### 7.1 Security checks from the hub (provisioning step B2)
 
-Run after hub manual §4 to §6. The results go in `docs/provisioning.md` §Results with placeholders.
-
-| Command on the hub | Expected |
-|---|---|
-| `ssh rb-node1` (send nothing) | No shell prompt. |
-| `ssh rb-node1 cat /etc/passwd` | No passwd contents. |
-| `ssh rb-node1-harness <anything except harness-push / harness-send>` | Exit 1. |
-| `read_doc("node1", "../../.ssh/authorized_keys")` from a Claude session | `denied` |
-| `send_message("node1", "test", [<small pdf>])`, then `poll` | Reply stored under `<data root>/inbox/node1/<msg_id>/` with `provenance.json` |
-| `submit_job` with `gpu_hours=0.01`, then `rb approve` | `job_finished` event with status `done` or `budget_exceeded` |
-
-Send and read checks are meaningful only after the node loaded a withheld pattern file (§4.3).
+Run after hub manual §4 to §6: `scripts/b2-hub.sh [NODE]` in a hub terminal and `sh scripts/b2-node.sh` on the node console. The rows, row 9 (the session's `read_doc` check) and the first live run are in `docs/provisioning.md` §B2 and §B3; results go in its §Results, with placeholders. Send and read checks are meaningful only after the node loaded a withheld pattern file (§4.3).
 
 ### 7.2 `rb-node doctor` (on the node console)
 
@@ -266,15 +255,6 @@ Recorded here so a reader is not surprised:
 
 - The git operation sends its tree under the key `trm`; the hub accepts `tree` first and falls back to `trm`.
 
-### 12.2 Removed scripts
+## Appendix A
 
-`scripts/hub-connect.sh`, `scripts/hub-agent.sh` and `scripts/trm-link.sh` no longer exist. Their work is done by `rb setup`, `rb agent` (hub manual §4) and `rb-node link` (§10).
-
-## Appendix A. Windows hub notes (not maintained since 2026-11-05)
-
-Last checked on 2026-11-05 with the laptop as hub; not kept in step with the code.
-
-- Copy the code with LF line endings. On a Windows hub, check out with `core.autocrlf=input` or convert first; CRLF breaks the wrapper script. The installer today runs from a checkout on the node, so this matters only if the checkout is made on Windows and copied.
-- The hub-side checks of §7.1 name the laptop paths in the old manual: replies were stored under `D:/raw/research-bridge/inbox/node1/<msg_id>/`.
-- `from=` in `authorized_keys` was the laptop's subnet (`research-bridge-laptop` in the old comment). The installer now writes the comment `research-bridge-hub` and the hub's address.
-- The by-hand install of the first node was: `ssh node1 "mkdir -p ~/.local/share/research-bridge ~/.local/bin ~/.research-bridge && chmod 700 ~/.research-bridge"` then `scp -r rb_node node1:~/.local/share/research-bridge/` (with `node1` the ordinary login alias, not the restricted `rb-node1`) and the three-line wrapper of §3 with `python3` instead of an absolute path. `scripts/node-install.sh` replaces it.
+The Windows and laptop-hub notes (not maintained since 2026-11-05) moved to `docs/99_Archive/manual-appendix-a/node-setup.md` on 2026-11-11.

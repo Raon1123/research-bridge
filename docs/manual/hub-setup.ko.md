@@ -2,26 +2,18 @@
 
 # Hub setup
 
-허브는 `rb_host`를 실행한다. MCP 서버(Model Context Protocol, Claude 세션이 도구를 호출할 때 쓰는 인터페이스), `rb` 명령, 원장(ledger), 저장된 메시지가 여기에 속한다. 2026-11-05부터 허브는 Linux 서버다(사용자 결정, §12). 노트북은 더 이상 허브가 아니며, vault와 그 8765 대시보드는 노트북에만 있다. 이 매뉴얼의 모든 내용은 단계에서 달리 말하지 않는 한 허브에서 실행한다. Windows와 노트북 허브 설명은 부록 A에 모아 두었으며 유지하지 않는다. 노드 쪽은 [node-setup.md](node-setup.md)를, 역할은 [README.md](README.md)를 본다.
+허브는 `rb_host`를 실행한다. MCP 서버(Model Context Protocol, Claude 세션이 도구를 호출할 때 쓰는 인터페이스), `rb` 명령, 원장(ledger), 저장된 메시지가 여기에 속한다. 2026-11-05부터 허브는 Linux 서버다(사용자 결정, §12). 노트북은 더 이상 허브가 아니며, vault와 그 8765 대시보드는 노트북에만 있다. 이 매뉴얼의 모든 내용은 단계에서 달리 말하지 않는 한 허브에서 실행한다. Windows와 노트북 허브 설명(2026-11-05부터 유지하지 않음)은 `docs/99_Archive/manual-appendix-a/hub-setup.ko.md`에 보관했다. 노드 쪽은 [node-setup.md](node-setup.md)를, 역할은 [README.md](README.md)를 본다.
 
 ## How to read this manual
 
 - **명령을 누가 실행하는가.** "허브 터미널"은 사용자가 허브에서 열어 둔 터미널을 뜻한다. 질문(`y/N`, passphrase)을 하는 명령은 터미널 없이는 실행을 거부하므로(stdin과 stdout이 모두 터미널이어야 한다) Claude 세션이 실행할 수 없다. 세션은 "session-safe"로 표시된 형태를 실행할 수 있다. `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config path`, `rb config show`, `rb config check`, `rb config mcp`, `rb board show`다. 그 밖의 `rb config` 형태(`init`, `add-node`, `remove-node`, `set`, `local`)는 묻지 않고 `host.json`이나 `private/local.json`을 쓰고, `rb web serve`는 프로세스를 시작하므로 세션은 사용자의 승인이 필요하다(`AGENTS.md`의 "Ask the user before"). 옵션 `--offline` 없는 `rb doctor`, `rb sync`, `rb git-status`, `rb board refresh`, `rb harness push`, `rb harness pull`은 노드에 연결하므로 이것도 승인이 필요하다.
 - **`rb`를 실행하는 방법.** 런타임은 uv가 관리한다. 이 매뉴얼에서 `rb ...`는 메인 체크아웃에서 실행하는 `uv run --extra host rb ...`(또는 `.venv/bin/rb ...`)를 뜻한다. 세션은 셸 명령 앞에 `rtk`를 붙이고, 사람은 평범한 명령을 입력한다.
-- **자리표시자.** `node1`은 예시에 쓰는 노드 이름이다. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`는 노드의 주소, SSH 포트, 로그인 이름이다. `<HUB_ADDR>`는 노드가 보는 허브의 주소이고, `<HUB_SUBNET>`은 허브의 네트워크 범위이며, `<HUB_HOST>`는 노트북에서 허브에 로그인할 때 쓰는 이름이다. 전체 목록은 `docs/manual/README.md`에 있다. 실제 값은 git이 무시하는 파일에만 둔다.
+- **자리표시자.** `node1`과 꺾쇠괄호 안의 이름(`<NODE_HOST>`, `<HUB_ADDR>` 등)은 비공개 값을 대신한다. 유일한 목록은 [README.md](README.md)의 표기 규칙에 있다. 실제 값은 git이 무시하는 파일에만 둔다.
 - **약어.** SSH = Secure Shell. MCP = Model Context Protocol. TOFU = trust on first use(호스트 키를 처음 볼 때 받아들이는 방식). systemd = Linux 서비스 관리자이며, "user unit"은 사용자 계정으로 실행된다.
 
 ### Order of a first setup
 
-| 단계 | 위치 | 내용 | 섹션 |
-|---|---|---|---|
-| 1 | 허브 | 설치, 테스트 실행 | §1, §2 |
-| 2 | 허브 | `rb setup --node node1 --host <NODE_HOST> --port <NODE_PORT> --user <NODE_USER>`: 설정, 키, SSH 블록, agent. 노드 명령과 MCP 명령을 출력한다 | §4 |
-| 3 | 노드 콘솔 | 출력된 `scripts/node-install.sh ...`를 실행하고, 이어서 `rb-node approve-key set` | [node-setup.md](node-setup.md) §2, §4 |
-| 4 | 허브 | `rb setup --node node1`을 다시 실행: 호스트 키 비교 | §4 |
-| 5 | 허브 | 출력된 `claude mcp add-json ...`을 실행하고 새 Claude 세션을 시작 | §6 |
-| 6 | 허브 | `rb doctor` | §10 |
-| 7 | 허브 | `rb service install`, 이어서 출력된 `systemctl` 명령 | §13, §14 |
+허브와 노드를 함께 다루는 첫 설치 단계는 표 하나에 있다. [README.md](README.md)의 "새 노드 설치 순서"를 본다.
 
 ## 1. Requirements
 
@@ -167,12 +159,13 @@ Host rb-node1-harness
 
 호스트 키(처음 본 키를 안전하게 신뢰하는 방법): 스캔하고, 지문을 출력하고, 노드 콘솔에 출력된 지문과 비교한 뒤에만 추가한다.
 
-    ssh-keyscan -t ed25519 -p <NODE_PORT> <NODE_HOST> > /tmp/node1.hostkey
-    ssh-keygen -lf /tmp/node1.hostkey
+    f=$(mktemp)
+    ssh-keyscan -t ed25519 -p <NODE_PORT> <NODE_HOST> > "$f"
+    ssh-keygen -lf "$f"
     # compare with: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub  (on the node console)
-    cat /tmp/node1.hostkey >> ~/.ssh/known_hosts
+    cat "$f" >> ~/.ssh/known_hosts; rm "$f"
 
-`HashKnownHosts yes`가 설정돼 있으면 `ssh-keyscan`에 `-H`를 추가한다.
+`mktemp`는 나만 읽고 쓸 수 있는 새 파일을 만든다. 그래서 비교와 추가 사이에 다른 계정이 스캔 결과를 바꿔 넣을 수 없다. 지문이 다르면 `rm "$f"`만 실행한다. `HashKnownHosts yes`가 설정돼 있으면 `ssh-keyscan`에 `-H`를 추가한다.
 
 Agent:
 
@@ -222,7 +215,7 @@ Agent:
     rb approve <job_id>        # shows the job, asks y/N and the approval passphrase, then uploads and submits
     rb reject <job_id>         # marks it rejected; no node call
 
-passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(노드 매뉴얼 §4.2). 매번 직접 입력한다. `rb approve`와 `rb reject`는 터미널이 필요하고(터미널이 있는 SSH 로그인도 해당한다), `--yes`가 없으며, passphrase를 위한 플래그, 파일, 환경 변수도 없으므로 Claude 세션은 승인할 수 없다. passphrase가 틀리면 작업은 `pending_approval`로 남고, 두 번 승인해도 아무 일도 일어나지 않는다. 잘못된 키를 다섯 번 입력하면 노드가 30초를 기다리게 하고, 그 시간은 최대 1시간까지 두 배씩 늘어난다(`approval_wait`). 남은 위험: `docs/design/2026-11-03-node-side-approval.md` §7. 허브 페이지(§14)는 대기 중인 작업을 입력할 명령 두 개와 함께 보여 주지만 아무것도 승인할 수 없다. 8765 승인 경로는 노트북에만 있다(부록 A).
+passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(노드 매뉴얼 §4.2). 매번 직접 입력한다. `rb approve`와 `rb reject`는 터미널이 필요하고(터미널이 있는 SSH 로그인도 해당한다), `--yes`가 없으며, passphrase를 위한 플래그, 파일, 환경 변수도 없으므로 Claude 세션은 승인할 수 없다. passphrase가 틀리면 작업은 `pending_approval`로 남고, 두 번 승인해도 아무 일도 일어나지 않는다. 잘못된 키를 다섯 번 입력하면 노드가 30초를 기다리게 하고, 그 시간은 최대 1시간까지 두 배씩 늘어난다(`approval_wait`). 남은 위험: `docs/design/2026-11-03-node-side-approval.md` §7. 허브 페이지(§14)는 대기 중인 작업을 입력할 명령 두 개와 함께 보여 주지만 아무것도 승인할 수 없다. 8765 승인 경로는 노트북에만 있다(`docs/session-dashboard.md`).
 
 ## 8. Harness channel (manual, optional)
 
@@ -322,7 +315,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 - **노드의 `from=`:** 허브 자신의 주소 또는 서브넷(`<HUB_ADDR>`, `<HUB_SUBNET>`)이며 노트북의 것이 아니다.
 - **승인:** 허브 터미널에서 `rb approve`와 `rb reject`. 8765 대시보드와 그 `/rb/approve` 경로는 vault 쪽에 있으며 여기에는 설치되지 않는다.
 - **여기서 쓸 수 없는 것:** `rb board`의 노트북 소스(portfolio, priorities)는 `board.portfolio`와 `board.priorities`가 로컬 사본을 가리키지 않으면 쓸 수 없다. harness 경로 매핑은 노트북 경로를 가정한다(§8).
-- **제거된 스크립트:** `scripts/hub-connect.sh`, `scripts/hub-agent.sh`, `scripts/trm-link.sh`는 더 이상 없다. 앞의 둘은 `rb setup`과 `rb agent`가 대체하고, 셋째는 `rb-node link`(노드 매뉴얼 §10)가 대체한다. 옛 스크립트로 연결한 허브는 다시 연결할 필요가 없다. `rb setup --node NAME`이 키, 블록, known-hosts 항목을 찾아 차이만 보고한다.
+- **이전 연결:** 이전 스크립트로 연결한 허브는 다시 연결할 필요가 없다. `rb setup --node NAME`이 키, 블록, known-hosts 항목을 찾아 차이만 보고한다.
 
 ## 13. Unattended sync and the timer
 
@@ -467,14 +460,6 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 | `no usable host.json at ...` | `host.json`이 없거나 유효하지 않다. | `rb setup --node NAME --host HOST --user USER`. |
 | `LEAK RISK ...` | 설정 파일이 git에 추적될 상태다. | `.gitignore`에 추가하거나 옮긴다. |
 
-## Appendix A. Windows or laptop hub (not maintained since 2026-11-05)
+## Appendix A
 
-이 부록은 첫 번째 허브인 Windows 노트북의 설명을 보관한다. 마지막으로 확인한 날은 2026-11-05이며 코드와 보조를 맞추지 않는다. `rb setup`, `rb agent`, `rb doctor`, `rb service`, 타이머는 Linux용으로 작성됐고 Windows에서는 시험하지 않았다. 경로는 예시다.
-
-- **요구 사항:** Python 3.14(테스트를 실행한 버전), OpenSSH 클라이언트와 자동으로 시작되도록 설정한 "OpenSSH Authentication Agent" 서비스, `D:/raw/Codes/research-bridge`의 저장소(8765 대시보드는 `vault-export/dashboard/rb_pending.py`의 `RB_REPO`에서 `rb_host`를 import한다).
-- **데이터 디렉터리:** `RB_HOST_ROOT`가 설정되지 않았을 때 Windows의 기본값은 `D:/raw/research-bridge/`이며, vault와 클라우드 동기화 폴더 밖에 둔다. 기본 withheld 패턴 파일은 session-calendar 내보내기 `D:/raw/session-calendar/server/withheld_patterns.json`이다.
-- **키:** `ssh-keygen -t ed25519 -f C:/keys/research-bridge/node1_ed25519 -C research-bridge-hub`와 harness 키에 대한 같은 명령. 둘 다 `ssh-add`한다. passphrase는 로그온마다 한 번 입력한다. §4.5 블록의 `IdentityFile`에는 `C:/keys/...` 경로를 쓴다. 노드의 `from=`은 노트북의 서브넷이다.
-- **MCP 항목**은 `~/.claude.json`의 `mcpServers` 아래에 둔다. `"research-bridge": {"type": "stdio", "command": "uv", "args": ["run", "--directory", "D:/raw/Codes/research-bridge", "--extra", "host", "python", "-m", "rb_host.server"]}`.
-- **승인**은 PowerShell이나 Windows Terminal(리다이렉트된 입력과 Git Bash의 mintty는 거부된다)에서 하거나, `http://127.0.0.1:8765/rb/pending`(루프백만, 프로세스별 CSRF 토큰, passphrase 입력란)에서 한다. `vault-export/`에서 대시보드 경로를 설치하고(`vault-export/README.md` 참조) 8765 대시보드를 다시 시작한다. 둘 다 사용자의 승인이 필요하다.
-- **검사:** `curl -s -o NUL -w "%{http_code}" http://127.0.0.1:8765/rb/pending`은 200을 출력해야 하고, 같은 URL을 노트북의 LAN 주소로 호출하면 403이어야 한다.
-- **테스트:** `tests/test_rb_pending.py`와 `tests/test_bridge_edges.py`는 저장소의 `vault-export/` 사본을 쓴다. vault는 필요 없다.
+Windows 허브와 노트북 허브 설명(2026-11-05부터 유지하지 않음)은 2026-11-11에 `docs/99_Archive/manual-appendix-a/hub-setup.ko.md`로 옮겼다.

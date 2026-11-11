@@ -35,13 +35,13 @@ Two scripted commands do the work that used to be spread over both manuals: `rb 
 | 5 | hub terminal | The printed `claude mcp add-json ...`; start a new Claude session | hub §6 |
 | 6 | hub | `rb doctor` | hub §10 |
 | 7 | hub terminal | `rb service install`, then the printed `systemctl` commands | hub §13, §14 |
-| 8 | hub | The security checks and one job | node §7.1 |
+| 8 | hub and node | The security checks and the first live run (`scripts/b2-hub.sh`, `scripts/b2-node.sh`, one job) | node §7.1; `docs/provisioning.md` §B2, §B3 |
 
 Daily use: `rb agent` after each reboot, `rb pending` / `rb approve`, the hub page, `rb doctor` when something fails.
 
 ## Section numbers
 
-Other documents cite manual sections by number, so the numbers are stable: hub §12 is the Linux hub, node §5 the `authorized_keys` lines, node §7 the checks. New material is added at the end, before the appendix. Windows and laptop-hub instructions are in Appendix A of each manual and are not maintained since 2026-11-05.
+Other documents cite manual sections by number, so the numbers are stable: hub §12 is the Linux hub, node §5 the `authorized_keys` lines, node §7 the checks. New material is added at the end. The Windows and laptop-hub instructions, not maintained since 2026-11-05, were Appendix A of each manual; they moved to `docs/99_Archive/manual-appendix-a/` on 2026-11-11.
 
 ## Conventions in these manuals
 
