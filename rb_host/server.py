@@ -1,8 +1,6 @@
 """FastMCP server `research-bridge` (stdio). Mutations only create pending_approval records."""
 from __future__ import annotations
 
-import base64
-import hashlib
 import os
 import re
 import uuid
@@ -11,7 +9,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from rb_node.protocol import CHUNK
 from rb_node.withheld import Withheld
 
 from . import jobs, store, threads
@@ -52,34 +49,6 @@ def nodes() -> dict:
     return {"nodes": names, "status": {n: threads.summary(cfg, n) for n in names}}
 
 
-def _upload(c: NodeClient, msg_id: str, body: str, files: List[Path],
-            from_session: Optional[str]) -> None:
-    metas = []
-    for f in files:
-        h = hashlib.sha256()
-        size = 0
-        with open(str(f), "rb") as fh:
-            for chunk in iter(lambda: fh.read(CHUNK), b""):
-                h.update(chunk)
-                size += len(chunk)
-        metas.append({"name": f.name, "bytes": size, "sha256": h.hexdigest()})
-    res = c.call("msg_begin", msg_id=msg_id, body=body, from_session=from_session,
-                 attachments=metas)
-    for f, stored in zip(files, res["names"]):
-        with open(str(f), "rb") as fh:
-            seq = 0
-            while True:
-                data = fh.read(CHUNK)
-                if not data and seq > 0:
-                    break
-                c.call("put_chunk", msg_id=msg_id, name=stored, seq=seq,
-                       data_b64=base64.b64encode(data).decode("ascii"))
-                seq += 1
-                if len(data) < CHUNK:
-                    break
-    c.call("msg_commit", msg_id=msg_id)
-
-
 def send_message(node: str, body: str, attachments: Optional[List[str]] = None,
                  reply_to: Optional[str] = None, from_session: str = "",
                  msg_id: Optional[str] = None) -> dict:
@@ -113,7 +82,7 @@ def send_message(node: str, body: str, attachments: Optional[List[str]] = None,
                     "reply_to": reply_to, "from_session": from_session,
                     "attachments": [f.name for f in files], "body_chars": len(body),
                     "status": "pending_send", "created": jobs.now()})
-    res = _run(node, lambda c: _upload(c, mid, body, files, from_session or None))
+    res = _run(node, lambda c: c.put_files(mid, files, body, from_session or None))
     if isinstance(res, dict) and "error" in res:
         return {"msg_id": mid, "status": "pending_send", "error": res["error"]}
     led.update(mid, status="sent")
