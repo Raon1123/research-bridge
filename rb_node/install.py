@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from . import configure, doctor
+# one copy of the terminal check and the y/N prompt; tests replace install._interactive / _ask
+from .cli import _ask, _interactive
 from .config import DEFAULT_RB, NodeConfig, config_path, load_config
 from .withheld import Withheld
 
@@ -35,23 +37,6 @@ def _run(argv: List[str], input: Optional[bytes] = None) -> Tuple[int, str, str]
     except (OSError, subprocess.SubprocessError) as exc:
         return 127, "", str(exc)
     return r.returncode, r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace")
-
-
-def _interactive() -> bool:
-    try:
-        return bool(sys.stdin.isatty() and sys.stdout.isatty())
-    except (AttributeError, ValueError, OSError):
-        return False
-
-
-def _ask(prompt: str) -> bool:
-    sys.stdout.write(prompt + " ")
-    sys.stdout.flush()
-    try:
-        line = sys.stdin.readline()
-    except (OSError, ValueError):
-        return False
-    return line.strip().lower() in ("y", "yes")
 
 
 def _stamp() -> str:
