@@ -280,6 +280,26 @@ def test_events_without_a_thread_listed_per_node_on_jobs(cfg):
                    withheld_patterns_file=cfg.withheld_patterns_file), "jobs", None)[2].decode()
 
 
+def test_overview_reads_each_status_file_once_and_the_ledger_twice_at_most(cfg, monkeypatch):
+    # hostdisplay-13: one status read per node and request, one ledger pass for all nodes
+    two = HostConfig(nodes={"n1": {"alias": "x"}, "n2": {"alias": "y"}}, data_root=cfg.data_root,
+                     withheld_patterns_file=cfg.withheld_patterns_file)
+    from rb_host import threads
+    reads, lines = [], []
+    real_status, real_lines = threads.read_status, Ledger._lines
+    with monkeypatch.context() as m:
+        m.setattr(threads, "read_status", lambda c, n: reads.append(n) or real_status(c, n))
+        m.setattr(Ledger, "_lines", lambda self: lines.append(1) or real_lines(self))
+        threads._CACHE.clear()
+        page = web.render(two, "index", None)[2].decode("utf-8")
+        assert sorted(reads) == ["n1", "n2"]
+        assert len(lines) <= 2  # threads.load and one pass for the undelivered counts
+        reads.clear()
+        web.render(two, "nodes", None)
+        assert sorted(reads) == ["n1", "n2"]
+    assert "never synced" in page and "9.9" in page  # n2 has no status file, n1 has one
+
+
 def test_unknown_source_without_path_shows_no_path(srv):
     _c, _h, nodes_page = req(srv, "/nodes")
     assert nodes_page.count("no path configured") == 3  # state, events, kanban

@@ -125,7 +125,12 @@ def _page(title: str, body: str, refresh: int) -> bytes:
             "%s</body></html>\n" % (refresh, _e(title), STYLE, _e(title), NAV, body)).encode("utf-8")
 
 
-def _banners(cfg: Any, wh: Withheld) -> str:
+def _statuses(cfg: Any) -> Dict[str, Optional[dict]]:
+    """Each node's sync status file, read once per request."""
+    return {n: threads.read_status(cfg, n) for n in sorted(cfg.nodes)}
+
+
+def _banners(cfg: Any, wh: Withheld, statuses: Dict[str, Optional[dict]]) -> str:
     out = []
     if wh.source_error:
         out.append("Withheld pattern file is %s: only the five built-in patterns are applied "
@@ -138,7 +143,7 @@ def _banners(cfg: Any, wh: Withheld) -> str:
         out.append("%d pattern(s) in the withheld pattern file do not compile and are ignored."
                    % wh.rejected_count)
     for n in sorted(cfg.nodes):
-        st = threads.read_status(cfg, n)
+        st = statuses.get(n)
         extra = st.get("withheld_extra") if st else None
         if isinstance(extra, int) and not isinstance(extra, bool) and extra == 0:
             out.append("Node %s reports withheld_extra 0: it loaded no pattern file and applies "
@@ -147,11 +152,12 @@ def _banners(cfg: Any, wh: Withheld) -> str:
 
 
 # -- sections ------------------------------------------------------------------------------
-def _nodes_table(cfg: Any, wh: Withheld) -> str:
+def _nodes_table(cfg: Any, wh: Withheld, statuses: Dict[str, Optional[dict]]) -> str:
     rows = []
+    counts = threads.undelivered_counts(cfg)
     for n in sorted(cfg.nodes):
-        s = threads.summary(cfg, n)
-        st = threads.read_status(cfg, n) or {}
+        s = threads.summary(cfg, n, statuses.get(n), counts)
+        st = statuses.get(n) or {}
         if not s["synced"]:
             state = Raw("never synced")
             last_ok = ""
@@ -215,7 +221,8 @@ def _threads_table(cfg: Any, wh: Withheld, tlist: List[dict]) -> str:
 
 def _index(cfg: Any, wh: Withheld) -> bytes:
     data = threads.load(cfg)
-    body = (_banners(cfg, wh) + "<h2>Nodes</h2>\n" + _nodes_table(cfg, wh)
+    statuses = _statuses(cfg)
+    body = (_banners(cfg, wh, statuses) + "<h2>Nodes</h2>\n" + _nodes_table(cfg, wh, statuses)
             + "<h2>Pending approvals</h2>\n" + _pending_section(data, wh)
             + "<h2>Latest conversations</h2>\n"
             + _threads_table(cfg, wh, data["threads"][:INDEX_THREADS]))
@@ -226,7 +233,7 @@ def _threads_page(cfg: Any, wh: Withheld) -> bytes:
     data = threads.load(cfg)
     shown = data["threads"][:MAX_THREAD_ROWS]
     more = len(data["threads"]) - len(shown)
-    body = _banners(cfg, wh) + _threads_table(cfg, wh, shown)
+    body = _banners(cfg, wh, _statuses(cfg)) + _threads_table(cfg, wh, shown)
     if more > 0:
         body += "<p>%d more not shown.</p>\n" % more
     return _page("Conversations", body, 30)
@@ -273,7 +280,7 @@ def _jobs_page(cfg: Any, wh: Withheld) -> bytes:
     for j in data["jobs"]:
         key = j.get("status") if j.get("status") in order else "other"
         groups.setdefault(str(key), []).append(j)
-    parts = [_banners(cfg, wh)]
+    parts = [_banners(cfg, wh, _statuses(cfg))]
     for key in order + ["other"]:
         js = groups.get(key)
         if not js:
@@ -322,7 +329,8 @@ def _status_dump(wh: Withheld, st: dict) -> str:
 
 
 def _nodes_page(cfg: Any, wh: Withheld) -> bytes:
-    parts = [_banners(cfg, wh)]
+    statuses = _statuses(cfg)
+    parts = [_banners(cfg, wh, statuses)]
     try:
         from . import board  # loads rb_host.server (and so mcp) on the first request only
         loaded = board.load(cfg)
@@ -332,7 +340,7 @@ def _nodes_page(cfg: Any, wh: Withheld) -> bytes:
         by_id, names = {}, ()
         parts.append('<p class="err">board cache unavailable</p>\n')
     for n in sorted(cfg.nodes):
-        st = threads.read_status(cfg, n) or {}
+        st = statuses.get(n) or {}
         parts.append("<h2>%s</h2>\n%s" % (_e(_t(wh, n, 60)), _status_dump(wh, st)))
         bmap = st.get("board") if isinstance(st.get("board"), dict) else {}
         for name in names:
@@ -373,7 +381,7 @@ def _thread_page(cfg: Any, wh: Withheld, anyid: str) -> Tuple[int, str, bytes]:
     if t is None:
         return 404, "text/plain; charset=utf-8", b"not found"
     in_thread = {r["id"] for r in t["records"]}
-    parts = [_banners(cfg, wh),
+    parts = [_banners(cfg, wh, _statuses(cfg)),
              "<p>thread %s · node %s · state <b>%s</b> · %d records</p>\n" % (
                  _e(_t(wh, t["id"], 128)), _e(_t(wh, t["node"], 60)), _e(t["state"]),
                  len(t["records"]))]

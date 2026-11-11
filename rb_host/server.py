@@ -46,7 +46,9 @@ def nodes() -> dict:
     """
     cfg = load_cfg()
     names = sorted(cfg.nodes)
-    return {"nodes": names, "status": {n: threads.summary(cfg, n) for n in names}}
+    counts = threads.undelivered_counts(cfg)
+    return {"nodes": names,
+            "status": {n: threads.summary(cfg, n, undelivered=counts) for n in names}}
 
 
 def send_message(node: str, body: str, attachments: Optional[List[str]] = None,

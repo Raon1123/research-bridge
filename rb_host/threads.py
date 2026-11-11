@@ -64,15 +64,26 @@ def read_status(cfg: Any, node: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def _undelivered(cfg: Any, node: str) -> int:
-    return sum(1 for r in ledger_for(cfg).records()
-               if r.get("kind") == "message" and r.get("direction") == "in"
-               and r.get("node") == node and r.get("delivered") is False)
+def undelivered_counts(cfg: Any) -> Dict[str, int]:
+    """Stored inbound records that no poll has returned yet, per node, in one ledger pass."""
+    out = {}  # type: Dict[str, int]
+    for r in ledger_for(cfg).records():
+        if (r.get("kind") == "message" and r.get("direction") == "in"
+                and r.get("delivered") is False and isinstance(r.get("node"), str)):
+            out[r["node"]] = out.get(r["node"], 0) + 1
+    return out
 
 
-def summary(cfg: Any, node: str) -> dict:
-    """The `nodes` tool's view of one node (design 6.8). `stale` depends on `last_ok_at` only."""
-    st = read_status(cfg, node)
+_READ = object()  # summary(): read the status file
+
+
+def summary(cfg: Any, node: str, st: Any = _READ,
+            undelivered: Optional[Dict[str, int]] = None) -> dict:
+    """The `nodes` tool's view of one node (design 6.8). `stale` depends on `last_ok_at` only.
+    A caller that shows several nodes passes the status already read (`st`, None when missing)
+    and the result of `undelivered_counts`, so that a request reads each file once."""
+    if st is _READ:
+        st = read_status(cfg, node)
     keys = ("ok", "error", "stage", "last_attempt_at", "last_ok_at", "node_seen_at",
             "node_version", "protocol", "withheld_extra", "hub_withheld_extra",
             "hub_withheld_rejected")
@@ -82,7 +93,8 @@ def summary(cfg: Any, node: str) -> dict:
     age = age_s(out["last_ok_at"]) if st else None
     out["age_s"] = None if age is None else round(age)
     out["stale"] = age is None or age > STALE_AFTER_S
-    out["undelivered"] = _undelivered(cfg, node)
+    counts = undelivered_counts(cfg) if undelivered is None else undelivered
+    out["undelivered"] = counts.get(node, 0)
     return out
 
 
