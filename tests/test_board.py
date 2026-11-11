@@ -137,6 +137,29 @@ def test_waiting_on_user_first(env):
     assert board.render_text(b).index("Waiting on you") < board.render_text(b).index("rb:ledger")
 
 
+def test_waiting_text_from_ledger_is_cleaned_sec03(env):
+    # D4: ledger text is written by a hub session; the board strips control and bidi characters
+    env["ledger"].append({"kind": "job", "op": "sub\x1b[2Jmit", "id": "j‮9", "node": "n\x071",
+                          "config_name": "evil‮\x1b[31m.yaml", "gpus": [0],
+                          "gpu_hours": "1\x1b]0;x\x07", "status": "pending_approval",
+                          "created": "t"})
+    env["ledger"].append({"kind": "job", "op": "cancel", "id": "j8", "node": "n1",
+                          "target_job_id": "t‮\x1bx", "status": "pending_approval",
+                          "created": "t"})
+    env["ledger"].append({"kind": "message", "id": "m‮2", "direction": "in",
+                          "node": "n\x1b1", "msg_kind": "rep‮ly", "status": "received",
+                          "created": "t"})
+    b = board.load(env["cfg"])
+    shown = json.dumps(b["waiting"], ensure_ascii=False) + board.render_text(b)
+    for bad in ("\x1b", "\x07", "‮"):
+        assert bad not in shown
+    whats = [w["what"] for w in b["waiting"]]
+    assert "approve sub[2Jmit job on n1 (evil[31m.yaml, 1]0;x GPU-h) at /rb/pending" in whats
+    assert "approve cancel job on n1 (tx,  GPU-h) at /rb/pending" in whats
+    assert "unanswered reply from n1" in whats
+    assert {"j9", "m2"} <= {w["ref"] for w in b["waiting"]}
+
+
 def test_node_sources_use_bridge_only(env, monkeypatch):
     real = socket.socket
 

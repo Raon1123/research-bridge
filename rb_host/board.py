@@ -19,7 +19,7 @@ from rb_node.withheld import Withheld
 
 from . import server
 from .config import HostConfig
-from .jobs import ledger_for, now
+from .jobs import clean, ledger_for, now
 
 NODE_SOURCES = ("queue", "gpu", "state", "events", "kanban")
 CADENCE_S = {"queue": 600, "gpu": 600, "state": 3600, "events": 1800, "kanban": 3600}
@@ -292,23 +292,26 @@ def _ledger_source(cfg: HostConfig, waiting: List[dict]) -> dict:
                 if r.get("kind") == "message" and r.get("direction") == "out"}
     jobs_by = Counter()  # type: Counter
     msgs = Counter()  # type: Counter
+    def c(v: Any) -> str:  # SEC-03: ledger text is shown stripped of control and bidi characters
+        return clean(v, 80)
+
     for r in latest:
         if r.get("kind") == "job":
-            jobs_by[str(r.get("status"))] += 1
+            jobs_by[c(r.get("status"))] += 1
             if r.get("status") == "pending_approval":
                 what = ("approve %s job on %s (%s, %s GPU-h) at /rb/pending"
-                        % (r.get("op", "submit"), r.get("node"),
-                           r.get("config_name") or r.get("target_job_id"), r.get("gpu_hours")))
-                waiting.append({"source": "rb:ledger", "ref": r.get("id"), "what": what,
+                        % (c(r.get("op", "submit")), c(r.get("node")),
+                           c(r.get("config_name") or r.get("target_job_id")), c(r.get("gpu_hours"))))
+                waiting.append({"source": "rb:ledger", "ref": c(r.get("id")), "what": what,
                                 "order": 0})
         elif r.get("kind") == "message":
-            kind = "event" if r.get("msg_kind") == "event" else str(r.get("direction"))
+            kind = "event" if r.get("msg_kind") == "event" else c(r.get("direction"))
             msgs[kind] += 1
             if (r.get("direction") == "in" and r.get("msg_kind") != "event"
                     and r.get("id") not in answered):
-                waiting.append({"source": "rb:ledger", "ref": r.get("id"),
-                                "what": "unanswered %s from %s" % (r.get("msg_kind", "message"),
-                                                                    r.get("node")),
+                waiting.append({"source": "rb:ledger", "ref": c(r.get("id")),
+                                "what": "unanswered %s from %s" % (c(r.get("msg_kind", "message")),
+                                                                    c(r.get("node"))),
                                 "order": 1})
     items = [{"kind": "job", "status": s, "count": n} for s, n in sorted(jobs_by.items())]
     items += [{"kind": "message", "direction": d, "count": n} for d, n in sorted(msgs.items())]
