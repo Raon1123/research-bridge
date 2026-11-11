@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple
 
 from . import PROTOCOL, __version__, approval, doctor, gitinfo, jobs, spawn
+from . import sessions as node_sessions
 from .audit import Audit
 from .config import NodeConfig
 from .mailbox import Mailbox, _check_id, _read_json
@@ -57,6 +58,7 @@ class Node:
             "queue_status": self.queue_status, "gpu_status": self.gpu_status,
             "job_submit": self.job_submit, "job_cancel": self.job_cancel,
             "approve_params": self.approve_params, "git_status": self.git_status,
+            "sessions": self.sessions,
         }  # type: Dict[str, Callable[[dict], Any]]
 
     # -- messages ----------------------------------------------------------
@@ -389,6 +391,13 @@ class Node:
         if inst and isinstance(inst.get("source"), dict):
             inst = dict(inst, source=gitinfo.mask_state(inst["source"], self.withheld))
         return {"trm": trm, "install": inst}
+
+    def sessions(self, args: dict) -> dict:
+        """Session record files under node.json sessions_dir reduced to ids, times, seconds per
+        day and labels (docs/design/2026-11-11-node-sessions.md §8). Reads the records; writes
+        only its cache."""
+        days = node_sessions.check_days(args.get("days", node_sessions.DAYS_DEFAULT))
+        return node_sessions.run(self.cfg, self.withheld, days)
 
     def approve_params(self, args: dict) -> dict:
         approval.require_safe_path(self.cfg)

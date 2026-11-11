@@ -29,5 +29,7 @@
   "experiments_dir": "lab/experiments",
   "hypotheses_path": "lab/registry/HYPOTHESES.md",
   "_harness_root_note": "The node's ~/.claude directory for the harness channel. Empty: harness push and pull are refused (no_harness_root).",
-  "harness_root": ""
+  "harness_root": "",
+  "_sessions_dir_note": "The Claude projects directory of this account (one subdirectory per project with <session id>.jsonl record files). Empty: the sessions operation answers not_configured and nothing is read. When set, only times and the working directory relative to trm_root leave the node; `rb-node sessions` prints what would be sent (docs/design/2026-11-11-node-sessions.md).",
+  "sessions_dir": ""
 }
