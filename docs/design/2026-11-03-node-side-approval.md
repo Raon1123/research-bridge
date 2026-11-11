@@ -5,6 +5,7 @@ Date: 2026-11-03 · Status: draft, not user-approved; built: merged from branch 
 Status history:
 - 2026-11-03 draft; implemented on branch `claude/sec-01-02-fixes` at the user's request ("fix both", for SEC-01 and SEC-02 in GitHub issue 26). The design itself has not been reviewed by the user.
 - 2026-11-10 status set to built (lifecycle in `docs/design/README.md`): merged to `main` on 2026-11-03 in PR 27 (merge commit 933edc3). The verifier on node1 is not confirmed (issue 8). The design is still not user-approved.
+- 2026-11-11 the verifier is set on node1 (`docs/HANDOFF.md`), and an approval with the right passphrase passed in the first live run on 2026-11-10 (`docs/provisioning.md` §Results, B3 row 6). A live check with a wrong passphrase is not recorded.
 
 ## 1. Intent
 
@@ -98,7 +99,7 @@ The MCP tool set is unchanged.
 | G5 | `test_wrong_passphrase_refused_and_ledger_back_to_pending` | unit test | passes |
 | Console enrolment | `test_cli_approve_key_set_and_clear` (short, mismatch, set, clear; no passphrase in the file) | unit test | passes |
 | Wait, not lock | `test_wrong_keys_start_a_wait_then_reset` | unit test | passes |
-| Live run on node1 | `approve-key set`, then one approve with a wrong and a right passphrase | live check | not run (needs node1, user) |
+| Live run on node1 | `approve-key set`, then one approve with a wrong and a right passphrase | live check | right passphrase: passed 2026-11-10 (`docs/provisioning.md` §Results, B3 row 6); wrong passphrase: not run |
 
 ## 11. Decided by the user
 

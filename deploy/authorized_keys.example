@@ -3,7 +3,7 @@
 # --harness-pubkey, --hub-from) and prints them; with --apply-authorized-keys it shows the change
 # and writes it after a y/N answer on a terminal (backup first). See docs/manual/node-setup.md.
 # <HUB_ADDR>: the address, or comma-separated addresses or CIDR ranges (<HUB_SUBNET>), from which
-#   the hub connects to the node. <PUBKEY>: the public key line of the hub's key.
+#   the hub connects to the node. <PUBKEY>: the base64 field of the hub's .pub file (the key type and the comment are already on the line).
 # The bridge key and the harness key must be different keys (AGENTS.md hard rule 9).
 restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node serve-remote" ssh-ed25519 <PUBKEY> research-bridge-hub
 restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness-receive" ssh-ed25519 <PUBKEY> research-bridge-harness

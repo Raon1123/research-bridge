@@ -127,7 +127,7 @@ The numbers above are layout examples, not data.
 | Stages | board cache `node1:events` (blocked, unified-board OQ6) | track, stage code, age |
 | Priorities (owner tier only) | `live.json` | as the unified board |
 
-The session-calendar and run-view file shapes in this table are assumed, not read from the laptop files; they are documented in the [plan, Global Constraints §A](../superpowers/plans/2026-11-06-shared-status-page.md) and must be verified against the real files (§9 step 2).
+The session-calendar and run-view file shapes in this table are assumed, not read from the laptop files; they are documented in the [plan, Global Constraints §A](../99_Archive/plans/2026-11-06-shared-status-page.md) and must be verified against the real files (§9 step 2).
 
 Weekly cost (`status.json` `cost_usd`) is owner tier only by default (Open question 5). No ledger record kinds change.
 

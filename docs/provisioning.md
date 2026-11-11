@@ -1,6 +1,6 @@
 # node1: security checks and first live run
 
-Rewritten 2026-11-10. This file keeps only what is still to do on the real link: the security checks (B2) and the first live run (B3), with an empty Results section. Linking a hub and a node (keys, ssh config blocks, host key, `authorized_keys` lines, node install) is now done by `rb setup` on the hub and `scripts/node-install.sh` on the node: see `README.md` and the manuals in `docs/manual/`. The earlier key and alias steps are in git history. Project facts for node1: `docs/projects/trm.md`. Open decisions: `docs/issues/2026-11-10-triage.md` §5. GitHub issue: #8.
+Rewritten 2026-11-10. This file keeps only what is still to do on the real link: the security checks (B2) and the first live run (B3), with the results of 2026-11-10 in §Results. Linking a hub and a node (keys, ssh config blocks, host key, `authorized_keys` lines, node install) is now done by `rb setup` on the hub and `scripts/node-install.sh` on the node: see `README.md` and the manuals in `docs/manual/`. The earlier key and alias steps are in git history. Project facts for node1: `docs/projects/trm.md`. Open decisions: `docs/issues/2026-11-10-triage.md` §5. GitHub issue: #8.
 
 Abbreviations: SSH = Secure Shell; MCP = Model Context Protocol (the tool interface of Claude sessions); GPU = graphics processing unit; PR = GitHub pull request.
 
@@ -8,7 +8,7 @@ Notation: `rb` means `uv run --extra host rb` in the hub's main checkout. `rb-no
 
 ## Before B2
 
-All of these must hold first (steps 1 to 6 of `docs/HANDOFF.md` §Next actions):
+All of these must hold first (node steps: `docs/manual/node-setup.md` §2 and §4.2; hub steps: `README.md`, Link a node). The boxes were not ticked for the run of 2026-11-10; what was observed then is in §Results:
 
 - [ ] The node runs rb_node 0.2.0, installed by `scripts/node-install.sh` with `--withheld-file`.
 - [ ] `rb-node approve-key set` was run on the node console.

@@ -35,7 +35,7 @@ The scale comes from the anti-goals in the research-bridge design §4.
 
 - No withheld content, no experiment results, no verdict prose (`AGENTS.md` hard rule 3 and Conventions). If such content entered a session, record only that it did, and where; never what it was.
 - No message bodies and no secrets (hard rule 6).
-- Placeholders only for server facts (`<NODE_HOST>`, `<NODE_USER>`, `<LAPTOP_ETH_SUBNET>`, `<SHARED_KEY>`). Real addresses go in the gitignored `private/` directory.
+- Placeholders only for private values, from the one list in `docs/manual/README.md` (Conventions). Real addresses go in the gitignored `private/` directory.
 
 ## Index
 

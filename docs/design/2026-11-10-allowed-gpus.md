@@ -1,13 +1,14 @@
 # Node GPU allowlist and worker-assigned GPU — design
 
-Date: 2026-11-10 · Status: draft; implemented on branch `claude/node-allowed-gpus` · Author: Claude session on node1 · Code: `rb_node/config.py`, `rb_node/configure.py`, `rb_node/jobs.py`, `rb_node/run_job.py`, `rb_node/cli.py` · Data: `node.json` (`allowed_gpus`), job records under `mailbox/state/jobs/`
+Date: 2026-11-10 · Status: draft, not user-approved; built: merged from branch `claude/node-allowed-gpus` in PR 47 (merge commit e95be9c) · Author: Claude session on node1 · Code: `rb_node/config.py`, `rb_node/configure.py`, `rb_node/jobs.py`, `rb_node/run_job.py`, `rb_node/cli.py` · Data: `node.json` (`allowed_gpus`), job records under `mailbox/state/jobs/`
 
 Status history:
 - 2026-11-10 draft, written after the change was built. The user set the value and gave the go-ahead (§11) but has not read this document.
+- 2026-11-11 status set to built (lifecycle in `docs/design/README.md`): merged to `main` on 2026-11-10 in PR 47 (merge commit e95be9c). The design is still not user-approved.
 
 ## 1. Intent
 
-node1 is shared. Its queue runner uses GPUs 4–7 with one worker per GPU and refuses other GPUs; GPUs 0–3 belong to other users (`docs/server-facts.md` §5). A job submitted through the bridge did not follow that rule: the node accepted any GPU index that `nvidia-smi` reports, and `run-job` replaced the worker's `CUDA_VISIBLE_DEVICES` with the requested indices. An approved job could therefore run on another user's GPU, or on a GPU that a second worker was already using. Postmortem: `docs/postmortems/2026-11-10-node-local-checks.md` PM-01.
+node1 is shared. Its queue runner uses GPUs 4–7 with one worker per GPU and refuses other GPUs; GPUs 0–3 belong to other users (`docs/projects/trm.md` §5; before 2026-11-10 `docs/server-facts.md` §5). A job submitted through the bridge did not follow that rule: the node accepted any GPU index that `nvidia-smi` reports, and `run-job` replaced the worker's `CUDA_VISIBLE_DEVICES` with the requested indices. An approved job could therefore run on another user's GPU, or on a GPU that a second worker was already using. Postmortem: `docs/postmortems/2026-11-10-node-local-checks.md` PM-01.
 
 ## 2. Goals
 

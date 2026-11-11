@@ -36,7 +36,7 @@
 5. **`node.json`:** 없으면 `rb-node config init`을 실행하고, 이어서 `rb-node config set trm_root <root>`를 실행한다(`queue_dir`와 `write_roots`의 큐 항목이 아직 기본값이면 이것들도 함께 옮긴다). 그다음 앞서 설명한 대로 `claude_bin`을 설정한다.
 6. **Withheld 파일**(`--withheld-file`): 검증하고, `~/.research-bridge/withheld-patterns.json`으로 복사하고, `withheld_source`를 설정한다(§4.3).
 7. **메일함:** `~/.research-bridge/mailbox/{in,out,state,state/acked}`를 모드 700으로 만들고, 설치 기록 `~/.research-bridge/install.json`(버전, 커밋, 체크아웃의 변경된 파일 수)을 쓴다.
-8. **`authorized_keys`:** 설치할 두 줄과 계획된 변경(추가, 같은 키의 줄 교체, 변경 없음. 줄을 제거하지는 않는다)을 출력한다. 터미널에서 `--apply-authorized-keys`를 쓰면 `authorized_keys.bak.<stamp>`를 저장하고, `Apply? [y/N]`을 묻고, 파일을 모드 600으로 쓴다. 터미널이 아니거나 파일이 심볼릭 링크이면 출력만 한다. 그때는 줄을 직접 적용한다(§5). `--hub-key`와 `--hub-from`이 없으면 무엇을 주어야 하는지 알려 준다.
+8. **`authorized_keys`:** 설치할 두 줄과 계획된 변경(추가, 같은 키의 줄 교체, 변경 없음. 줄을 제거하지는 않는다)을 출력한다. 터미널에서 `--apply-authorized-keys`를 쓰면 `Apply? [y/N]`을 묻고, 그다음 `authorized_keys.bak.<stamp>`를 저장하고 파일을 모드 600으로 쓴다. 터미널이 아니거나 파일이 심볼릭 링크이면 출력만 한다. 그때는 줄을 직접 적용한다(§5). `--hub-key`와 `--hub-from`이 없으면 무엇을 주어야 하는지 알려 준다.
 9. **호스트 키 지문:** 노드의 SSH 호스트 키 지문을 출력한다. 허브에서 `rb setup --node node1`이 보여 주는 값과 비교한다.
 10. **`rb-node doctor`**(§7.2), 이어서 안내 문구 `Next (you, on this console): rb-node approve-key set`.
 
@@ -72,7 +72,7 @@ python 경로는 설치 시점에 찾은 절대 경로이며(여기서는 예로
     rb-node config set KEY VALUE         # one key; lists and numbers as JSON, e.g. '["a", "b"]'
     rb-node config check                 # non-ok doctor lines for the config only; ends with "ok", "N to fix", "all ok, M warning(s)" or "N to fix, M warning(s)"
 
-`init`은 `--force` 없이는 기존 파일을 덮어쓰지 않으며, 터미널이 아닌 곳에서 `--force`는 사용자가 바꾼 `withheld_source`를 초기화하게 되면 거부한다. `set withheld_source`는 터미널이 필요하다(세션이 마스킹을 약화시킬 수 없게 하기 위해서다). `set`은 알려진 키와 올바른 타입만 받는다. `config check`는 검사 결과가 `fail`일 때만 종료 코드 1을 반환한다. 그런데 `--help` 문구는 "exit 1 if anything"이라고 적혀 있다(§12.1).
+`init`은 `--force` 없이는 기존 파일을 덮어쓰지 않으며, 터미널이 아닌 곳에서 `--force`는 사용자가 바꾼 `withheld_source`, `approval_path`, `read_roots`, `write_roots` 중 하나를 초기화하게 되면 거부한다. 이 네 키의 `set`은 터미널이 필요하다(세션이 마스킹을 약화시키거나 루트와 검증값 경로를 옮길 수 없게 하기 위해서다). `set`은 알려진 키와 올바른 타입만 받는다. `config check`는 검사 결과가 `fail`일 때만 종료 코드 1을 반환한다.
 
 ### 4.1 Keys
 
@@ -134,7 +134,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 - `restrict`는 pty, 포트, agent, X11 포워딩을 끈다.
 - `command=`는 클라이언트가 요청하는 명령을 무시한다. 메시지 키는 `serve-remote`만 실행할 수 있다. harness 키는 `harness-receive`만 실행할 수 있으며, 이 명령은 `harness-push`, `harness-send` 또는 인자 없음만 받고 그 밖의 것에는 종료 코드 1로 끝난다.
 - `from=`은 출발지 주소를 제한한다. 허브와 노드 사이에서 라우터가 주소를 변환하면 노드가 보는 주소를 쓴다.
-- 파일의 다른 키는 영향을 받지 않는다. 공유되고 제한 없는 키는 셸을 그대로 유지한다. "무단 읽기·쓰기 없음" 규칙은 그런 키를 제거하거나 제한한 뒤에야 완전히 성립한다(`docs/HANDOFF.md`의 결정 대기 항목).
+- 파일의 다른 키는 영향을 받지 않는다. 공유되고 제한 없는 키는 셸을 그대로 유지한다. "무단 읽기·쓰기 없음" 규칙은 그런 키를 제거하거나 제한한 뒤에야 완전히 성립한다(`docs/issues/2026-11-10-triage.md` §5의 결정 대기 항목 5).
 
 <details>
 <summary>By hand: editing authorized_keys without the installer</summary>
@@ -190,7 +190,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 | `claude_bin` | warn | responder를 시작할 수 없다. 메시지는 살아 있는 세션을 기다린다. | `rb-node config set claude_bin PATH` |
 | `pdftotext` | warn | pdf 파일이 거부된다. | `poppler-utils` 설치 |
 | `ak_bridge` | fail | `authorized_keys`에 `serve-remote` 줄이 없거나, `restrict` 또는 `from=`이 없거나, 명령 경로가 존재하는 실행 파일의 절대 경로가 아니다. 허브가 거부된다(`node_refused_key`). | `scripts/node-install.sh --hub-key '...' --hub-from ADDR --apply-authorized-keys` |
-| `ak_harness` | warn | `harness-receive` 줄에 대해 같은 문제다. harness 채널만 영향을 받는다. | `--harness-key`를 붙여 같은 명령 |
+| `ak_harness` | warn | `harness-receive` 줄에 대해 같은 문제다. harness 채널만 영향을 받는다. | 같은 명령에 `--harness-key '...'`를 덧붙인다(`--hub-key`는 그대로 둔다) |
 | `ak_duplicate` | fail | bridge 키가 강제 명령 없이, 또는 harness 키로서 다른 줄에도 나타난다(`AGENTS.md` 핵심 규칙 9). | `~/.ssh/authorized_keys`에서 그 줄을 제거 |
 | `mailbox` | warn | `mailbox/{in,out,state}`가 없거나 모드가 700이 아니다. | `scripts/node-install.sh`를 다시 실행 |
 | `responder_lock` | warn | 더 이상 실행되지 않는 프로세스가 남긴 responder 잠금이 있거나, timeout + 300 s보다 오래됐다. | `rm ~/.research-bridge/mailbox/state/responder.lock` |
@@ -208,9 +208,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 ## 9. Updating and removing
 
-**업데이트:** 노드의 체크아웃에서 `scripts/node-install.sh --update`를 실행한다(`--ff-only`로 pull하고, 새 릴리스를 복사하고, 심볼릭 링크를 바꾸고, 설치 기록을 다시 쓰고, doctor를 실행한다). `node.json`, 메일함, 승인 verifier는 유지된다. 세션이 실행하는 경우에는 사용자의 승인이 필요하다. 허브는 그 차이를 `rb doctor`의 `node_version`으로 보여 준다.
-
-**2026-11-10 현재 상태:** 등록된 노드는 아직 `rb_node` 0.1.0, 곧 `claude/node-allowed-gpus` 브랜치의 병합 전 코드(`main`의 PR 48 이전)를 실행하고 있다. 그 코드에는 `doctor`와 `link`가 없고, `hello`에 protocol 필드 없이 답한다. 허브는 이를 protocol 1로 보고 그 검사를 `unknown`으로 보고한다. `main` 체크아웃에서 `scripts/node-install.sh`를 처음 실행하면 갱신된다(옛 디렉터리를 한 번 옮기는 과정은 §2의 3단계에 설명돼 있다).
+**업데이트:** 노드의 체크아웃에서 `scripts/node-install.sh --update`를 실행한다(`--ff-only`로 pull하고, pull로 새 커밋이 들어왔으면 갱신된 스크립트를 같은 옵션으로 실행하고, 새 릴리스를 복사하고, 심볼릭 링크를 바꾸고, 설치 기록을 다시 쓰고, doctor를 실행한다). `node.json`, 메일함, 승인 verifier는 유지된다. 세션이 실행하는 경우에는 사용자의 승인이 필요하다. 허브는 그 차이를 `rb doctor`의 `node_version`으로 보여 준다.
 
 **제거:** `authorized_keys`의 두 줄을 삭제하고, 이어서 `~/.local/bin/rb-node`, `~/.local/share/research-bridge/`, 그리고 내용이 더 이상 필요 없을 때 `~/.research-bridge/`를 삭제한다.
 
@@ -268,9 +266,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 
 독자가 당황하지 않도록 여기에 기록한다.
 
-- `rb-node config check --help`와 `rb config check --help`는 "exit 1 if anything"이라고 하지만, 코드는 검사가 `fail`일 때만 종료 코드 1을 반환하며 `warn`에서는 반환하지 않는다.
 - git 연산은 트리를 `trm`이라는 키로 보낸다. 허브는 `tree`를 먼저 받아들이고 없으면 `trm`으로 대체한다.
-- `pyproject.toml`의 패키지 버전은 0.1.0이다. 노드가 보고하는 버전은 `rb_node.__version__`이며 0.2.0이다.
 
 ### 12.2 Removed scripts
 

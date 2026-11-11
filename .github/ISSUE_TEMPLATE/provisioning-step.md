@@ -7,7 +7,7 @@ labels: user-action
 
 <!-- Public repository. No real addresses, user names, home paths, key material, or command output that shows them. -->
 
-**Step** (reference in `docs/provisioning.md` or a design §9, e.g. A1, B2, board step 1)
+**Step** (reference in `docs/provisioning.md` or a design §9, e.g. B2 row 4, B3 row 7, board step 1)
 
 **Who runs it**: user / session after the user confirms
 

@@ -43,7 +43,7 @@ No job had been submitted through the bridge before these were found (the node a
 - Fix: `allowed_gpus` in `node.json`, checks in `job_submit` and `run-job`, worker's GPU used for one-GPU jobs (commit `1c72963`). Design: `docs/design/2026-11-10-allowed-gpus.md`.
 - Fix verified: recorded — unit tests (`tests/test_jobs.py`, eight new cases) and three console runs on node1 with a scratch config (`docs/provisioning.md` §Results). Not verified with a job claimed by the real queue runner.
 - Prevention: a node-side change that sets an environment variable or a resource for a job is checked against the node's own runner before it is called complete.
-- Evidence: `rb_node/run_job.py` at `c06162b` 「env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpus)」; `docs/server-facts.md` §5 「GPUs outside 4-7 are refused unless `FORCE_GPUS=1` (GPUs 0-3 belong to other users)」
+- Evidence: `rb_node/run_job.py` at `c06162b` 「env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpus)」; `docs/server-facts.md` §5 (moved to `docs/projects/trm.md` §5 on 2026-11-10) 「GPUs outside 4-7 are refused unless `FORCE_GPUS=1` (GPUs 0-3 belong to other users)」
 
 ### PM-02 — A by-name job template accepted `.yml` and `.json`
 
