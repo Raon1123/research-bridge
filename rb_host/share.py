@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from rb_node.withheld import Withheld
 
 from .config import HostConfig
-from .ledger import Ledger
+from .ledger import ledger_for
 from .util import age_s, now, parse_utc
 
 SCHEMA_VERSION = 1
@@ -228,7 +228,7 @@ def _node_cache(cfg: HostConfig, sid: str) -> dict:
 def _ledger(cfg: HostConfig, start: date, end: date) -> Tuple[int, float]:
     """(pending_approvals, gpu_hours_in_period) from job records."""
     pending, hours = 0, 0.0
-    for r in Ledger(Path(cfg.data_root) / "ledger.jsonl")._latest().values():
+    for r in ledger_for(cfg).records():
         if r.get("kind") != "job":
             continue
         if r.get("status") == "pending_approval":

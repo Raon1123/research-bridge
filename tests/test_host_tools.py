@@ -786,7 +786,7 @@ def test_send_message_rejects_unsafe_msg_id(env):
     with pytest.raises(ValueError, match="unsafe msg_id"):
         server.send_message("n1", "hi", msg_id="../../x")
     assert not (env["root"] / "outbox").exists()
-    assert not (env["root"] / "ledger.jsonl").exists() or "x" not in env["ledger"]._latest()
+    assert not (env["root"] / "ledger.jsonl").exists() or env["ledger"].get("x") is None
     assert env["calls"] == []
     assert not (env["tmp"] / "x").exists()
 
@@ -999,7 +999,7 @@ def test_malformed_node_items_are_rejected_and_the_rest_stored(env, delivered):
     assert [i["msg_id"] for i in r["items"]] == ["good1"] and "error" not in r
     assert r["rejected"] == len(bad)
     assert acked == ["good1"]
-    ids = {rec.get("id") for rec in env["ledger"]._latest().values()}
+    ids = {rec.get("id") for rec in env["ledger"].records()}
     assert ids == {"good1"}
     inbox = env["root"] / "inbox" / "n1"
     assert sorted(p.name for p in inbox.iterdir()) == ["good1"]

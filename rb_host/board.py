@@ -279,7 +279,7 @@ def _read_json(path: str) -> Any:
 
 
 def _ledger_source(cfg: HostConfig, waiting: List[dict]) -> dict:
-    latest = list(ledger_for(cfg)._latest().values())
+    latest = ledger_for(cfg).records()
     answered = {r.get("reply_to") for r in latest
                 if r.get("kind") == "message" and r.get("direction") == "out"}
     jobs_by = Counter()  # type: Counter

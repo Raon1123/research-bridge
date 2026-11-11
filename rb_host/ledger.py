@@ -9,7 +9,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 LOCK_STALE_S = 30.0    # a lock file older than this belongs to a crashed process
 LOCK_TIMEOUT_S = 10.0  # how long to wait for the lock before giving up
@@ -25,6 +25,11 @@ def _key(path: Path) -> str:
 def _thread_lock(path: Path) -> threading.RLock:
     with _THREAD_LOCKS_GUARD:
         return _THREAD_LOCKS.setdefault(_key(path), threading.RLock())
+
+
+def ledger_for(cfg: Any) -> "Ledger":
+    """The ledger of a host configuration: <data_root>/ledger.jsonl."""
+    return Ledger(Path(cfg.data_root) / "ledger.jsonl")
 
 
 class Ledger:
@@ -149,6 +154,11 @@ class Ledger:
             self._write(rec)
             return True
 
+    def records(self) -> List[dict]:
+        """The latest record of every id, in the order the ids first appear. One read of the
+        file; take it once and filter it rather than calling `get` in a loop."""
+        return list(self._latest().values())
+
     def get(self, id: str) -> Optional[dict]:
         return self._latest().get(id)
 
@@ -168,7 +178,7 @@ class Ledger:
         never receive the same record, because the second reads what the first wrote."""
         with self.locked():
             out = []  # type: List[dict]
-            for r in list(self._latest().values()):
+            for r in self.records():
                 if match(r):
                     new = dict(r, **fields)
                     self._write(new)
@@ -176,9 +186,9 @@ class Ledger:
             return out
 
     def thread(self, msg_id: str) -> List[dict]:
-        return [r for r in self._latest().values()
+        return [r for r in self.records()
                 if r.get("id") == msg_id or r.get("reply_to") == msg_id]
 
     def pending_jobs(self) -> List[dict]:
-        return [r for r in self._latest().values()
+        return [r for r in self.records()
                 if r.get("kind") == "job" and r.get("status") == "pending_approval"]

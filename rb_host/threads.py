@@ -65,8 +65,7 @@ def read_status(cfg: Any, node: str) -> Optional[dict]:
 
 
 def _undelivered(cfg: Any, node: str) -> int:
-    from .jobs import ledger_for
-    return sum(1 for r in ledger_for(cfg)._latest().values()
+    return sum(1 for r in ledger_for(cfg).records()
                if r.get("kind") == "message" and r.get("direction") == "in"
                and r.get("node") == node and r.get("delivered") is False)
 
@@ -308,7 +307,7 @@ def load(cfg: Any) -> dict:
         hit = _CACHE.get(key)
         if hit is not None and sig is not None and hit[0] == sig:
             return hit[1]
-        out = _build(cfg, list(led._latest().values()))
+        out = _build(cfg, led.records())
         if sig is not None:
             _CACHE[key] = (sig, out)
         else:

@@ -14,8 +14,9 @@ from rb_node.jobs import MAX_GPU_HOURS
 
 from .client import NodeClient, RemoteError
 from .config import HostConfig, host_json_path, load_host_config
+from . import ledger as _ledger
 from .ledger import Ledger
-from .util import now, sha256_file  # noqa: F401  (jobs.now is used by server, sync, board)
+from .util import now, sha256_file  # jobs.now is also called by server, sync and board
 
 DONE = {"submit": "queued", "cancel": "cancelled_requested"}
 # Node codes after which nothing was queued or cancelled: the record goes back to
@@ -52,8 +53,7 @@ def load_cfg() -> HostConfig:
     return load_host_config(host_json_path())
 
 
-def ledger_for(cfg: HostConfig) -> Ledger:
-    return Ledger(Path(cfg.data_root) / "ledger.jsonl")
+ledger_for = _ledger.ledger_for  # kept here too: server, sync, web and the 8765 page use it
 
 
 def connect(cfg: HostConfig, node: str) -> NodeClient:
@@ -62,7 +62,7 @@ def connect(cfg: HostConfig, node: str) -> NodeClient:
 
 
 def _existing(ledger: Ledger, op: str, key: str) -> Optional[dict]:
-    for r in ledger._latest().values():
+    for r in ledger.records():
         if r.get("kind") == "job" and r.get("op") == op and r.get("idempotency_key") == key:
             return r
     return None
