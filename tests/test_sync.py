@@ -642,19 +642,23 @@ def test_malformed_sessions_answer_is_checked_entry_by_entry(env):
            _sess(SID_B, start="2026-11-11T00:00:00Z", end="2026-11-10T00:00:00Z"),
            _sess(SID_B, days={"2026-11-10": -5}), _sess(SID_B, days={"2026-11-10": True}),
            _sess(SID_B, days={"2026-11-10": 90000}), _sess(SID_B, days={"x": 5}),
-           _sess(SID_B, days=[]), _sess(SID_B, label="<b>lab</b>"),
+           _sess(SID_B, days=[]),
            _sess(SID_B, label="lab\x1b[1m"), _sess(SID_B, label="unrelatedfam_run"),
            _sess(SID_B, label="x" * 121), _sess(SID_B, label=""), _sess(SID_B, label=5),
            "not an object", dict(good, id=7)]
-    env["hooks"]["sessions"] = lambda real: _answer([good] + bad, outside="many",
-                                                    tree="<script>", truncated="yes")
+    # a label with HTML-special characters is a legal directory name: kept as it is (the page
+    # escapes it), not dropped
+    html = _sess(SID_B, label="R&D/<b>lab's</b>")
+    env["hooks"]["sessions"] = lambda real: _answer([good, html] + bad, outside="many",
+                                                    tree="x\x1b[1m", truncated="yes")
     st = sync.run_pass(env["cfg"], "n1")
     assert st["ok"] is True and st["sessions"] == "ok"
     s = _store(env)
-    assert set(s["sessions"]) == {SID_A} and s["skipped"] == len(bad)
+    assert set(s["sessions"]) == {SID_A, SID_B} and s["skipped"] == len(bad)
+    assert s["sessions"][SID_B]["label"] == "R&D/<b>lab's</b>"
     assert s["outside"] == 0 and s["tree"] is None and s["truncated"] is False
     blob = json.dumps(s)
-    for raw in ("<b>", "<script>", "unrelatedfam_", "\\u001b"):
+    for raw in ("unrelatedfam_", "\\u001b"):
         assert raw not in blob, raw
 
 

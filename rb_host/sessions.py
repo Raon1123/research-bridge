@@ -29,7 +29,6 @@ NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 ID_RE = re.compile(r"^[0-9a-f-]{8,64}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LABEL_MAX = 120
-_HTML = set("<>&\"'`")
 
 
 class BadAnswer(ValueError):
@@ -65,13 +64,14 @@ def _count(v: Any) -> int:
 
 def label_ok(v: Any, wh: Withheld) -> Optional[str]:
     """The label when it is a plain relative-directory label as the node sends it: a string of
-    1 to 120 characters with no control, format or separator character, no HTML-special
-    character and no withheld pattern hit; None otherwise (the entry is dropped)."""
+    1 to 120 characters with no control, format or separator character and no withheld
+    pattern hit; None otherwise (the entry is dropped). HTML-special characters are legal in a
+    directory name and are kept: the page escapes every string."""
     if not isinstance(v, str) or not 0 < len(v) <= LABEL_MAX:
         return None
     for ch in v:
         cat = unicodedata.category(ch)
-        if cat[0] == "C" or cat in ("Zl", "Zp") or ch in _HTML:
+        if cat[0] == "C" or cat in ("Zl", "Zp"):
             return None
     if wh.name_hit(v):
         return None
