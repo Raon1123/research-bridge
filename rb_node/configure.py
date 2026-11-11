@@ -1,6 +1,6 @@
 """Write and check config files from the command line, without leaking them into git.
 
-Shared by `rb config` (laptop) and `rb-node config` (node console). Standard library only.
+Shared by `rb config` (hub) and `rb-node config` (node console). Standard library only.
 A config file holds real host names, paths and user names, so every write first asks git
 whether the target would be tracked: inside a work tree and not ignored -> refused.
 """
