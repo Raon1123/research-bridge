@@ -115,6 +115,9 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
     elif want is int:
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ConfigError("%s needs a positive integer" % key)
+        from .protocol import MAX_FILE
+        if key == "max_file" and value > MAX_FILE:
+            raise ConfigError("max_file can be at most %d (50 MB, AGENTS.md hard rule 5)" % MAX_FILE)
     elif not isinstance(value, str):
         value = str(value)
     from .config import NodeConfig, PATH_KEYS, PATH_LIST_KEYS, default_dependents

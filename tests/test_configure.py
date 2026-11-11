@@ -228,3 +228,21 @@ def test_node_name_message_states_the_real_rule():
 def test_node_check_reports_empty_allowed_gpus():
     assert any("allowed_gpus is empty" in p for p in nc.node_check({}))
     assert not any("allowed_gpus" in p for p in nc.node_check({"allowed_gpus": [4]}))
+
+
+def test_max_file_is_capped_at_the_protocol_limit(tmp_path):
+    # D8: hard rule 5 fixes 50 MB; config set refuses more, doctor fails on more, load clamps
+    from rb_node import doctor
+    from rb_node.config import load_config
+    from rb_node.protocol import MAX_FILE
+    assert nc.node_set({}, "max_file", MAX_FILE)["max_file"] == MAX_FILE
+    with pytest.raises(nc.ConfigError, match=str(MAX_FILE)):
+        nc.node_set({}, "max_file", MAX_FILE + 1)
+    c = {x.id: x for x in doctor.config_checks({"max_file": MAX_FILE + 1})}["max_file"]
+    assert c.level == "fail" and str(MAX_FILE) in c.message and "max_file" in c.fix
+    assert {x.id: x for x in doctor.config_checks({"max_file": 1024})}["max_file"].level == "ok"
+    p = tmp_path / "node.json"
+    p.write_text(json.dumps({"max_file": MAX_FILE * 2}), encoding="utf-8")
+    assert load_config(p).max_file == MAX_FILE
+    p.write_text(json.dumps({"max_file": 1024}), encoding="utf-8")
+    assert load_config(p).max_file == 1024

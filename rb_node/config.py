@@ -7,6 +7,8 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .protocol import MAX_FILE
+
 DEFAULT_RB = "~/.research-bridge"
 
 
@@ -44,7 +46,7 @@ class NodeConfig:
     # GPU indices a bridge job may run on (the node owner's GPUs). Empty -> job_submit refused
     # (no_allowed_gpus) and run-job launches nothing. Set from the node console only.
     allowed_gpus: List[int] = field(default_factory=list)
-    max_file: int = 50 * 1024 * 1024
+    max_file: int = MAX_FILE  # size cap for attachments, fetched files, documents, harness files
     mailbox_root: str = field(default_factory=lambda: _rb("/mailbox"))
     audit_path: str = field(default_factory=lambda: _rb("/audit.jsonl"))
     # job approval verifier, set only from the node console (rb-node approve-key set); keep it
@@ -125,4 +127,6 @@ def load_config(path: Optional[Path] = None) -> NodeConfig:
     if not isinstance(data, dict):
         raise ValueError("node config must be a JSON object: %s" % p)
     kept, _wrong = coerce(data)
+    if kept.get("max_file", 0) > MAX_FILE:
+        kept["max_file"] = MAX_FILE  # hard rule 5; rb-node doctor reports the stored value
     return NodeConfig(**expand_paths(kept))

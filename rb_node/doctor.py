@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import __version__, approval, gitinfo, spawn
 from .config import NodeConfig, coerce, config_path, expand_paths
 from .jobs import allowed_set
+from .protocol import MAX_FILE
 from .withheld import Withheld
 
 Check = namedtuple("Check", "id level message fix")  # level in ("ok", "warn", "fail")
@@ -98,6 +99,12 @@ def config_checks(data: Optional[dict], path: Optional[Path] = None) -> List[Che
     bad += ["key %r has the wrong type and is ignored" % k for k in wrong]
     out.append(Check("config_keys", "warn", "; ".join(bad), "rb-node config show") if bad
                else _ok("config_keys", "no unknown keys"))
+    if "max_file" not in wrong and data.get("max_file", 0) > MAX_FILE:  # raw value: load clamps it
+        out.append(Check("max_file", "fail",
+                         "max_file is above %d (hard rule 5); %d applies" % (MAX_FILE, MAX_FILE),
+                         "rb-node config set max_file %d" % MAX_FILE))
+    else:
+        out.append(_ok("max_file", "max_file is at most %d" % MAX_FILE))
     trm = Path(cfg.trm_root)
     if trm.is_dir():
         out.append(_ok("research_root", "research root exists"))
