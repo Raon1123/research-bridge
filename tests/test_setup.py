@@ -526,11 +526,16 @@ def test_ssh_config_write_failure_is_reported_not_raised(hub, capsys, monkeypatc
     assert "could not write" in capsys.readouterr().out
 
 
-def test_rb_agent_missing_harness_key_exits_1(hub, capsys):
+def test_rb_agent_missing_harness_key_is_a_note_and_exits_0(hub, capsys):
+    # D12: the harness key is optional; its missing file is a note and the bridge key still loads
     hubfake.linked(hub, port=2222)
     (hub.ssh_dir / KEYS / "node1_harness_ed25519").unlink()
     hub.add_agent("rb-ssh-agent", [])
-    assert cli.main(["agent"]) == 1
+    assert cli.main(["agent"]) == 0
+    out = capsys.readouterr().out
+    assert "note: key file missing" in out and "error" not in out
+    adds = [c[1][1] for c in hub.calls if c[0] == "interactive" and c[1][0] == "ssh-add"]
+    assert adds == [str(hub.ssh_dir / KEYS / "node1_ed25519")]
 
 
 def test_same_key_for_both_aliases_is_refused(hub, capsys):

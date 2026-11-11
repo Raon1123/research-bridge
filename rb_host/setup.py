@@ -685,7 +685,7 @@ def agent_main(node: Optional[str]) -> int:
                 continue
             if not key.is_file():
                 print("%s: key file missing: %s" % ("error" if required else "note", key))
-                code = 1
+                code = code or (1 if required else 0)
                 continue
             keys.append(key)
     if not keys:
