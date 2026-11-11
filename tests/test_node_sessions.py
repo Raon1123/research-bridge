@@ -188,7 +188,7 @@ def test_files_without_usable_time_are_unparsed(env):
 
 
 def test_file_not_named_like_a_session_is_ignored_and_never_opened(env, monkeypatch):
-    p = write(env["sdir"], "p", "commands.jsonl", [json.dumps({"cmd": "x", "ok": True})],
+    p = write(env["sdir"], "p", "not-a-session.jsonl", [json.dumps({"cmd": "x", "ok": True})],
               mtime=NOW)
     opens = Opens(monkeypatch)
     r = collect(env)
@@ -613,10 +613,10 @@ def _doctor(ncfg):
 def test_doctor_sessions_found_names_the_ignored_files(env, ncfg):
     now = time.time()
     session(env, SID[0], [now - 60, now - 30], mtime=now)
-    write(env["sdir"], "p", "commands.jsonl", ["{}"], mtime=now)
+    write(env["sdir"], "p", "not-a-session.jsonl", ["{}"], mtime=now)
     c = _doctor(ncfg)
     assert c.level == "ok" and "1 session(s)" in c.message and "1 ignored" in c.message, c
-    (env["sdir"] / "p" / "commands.jsonl").unlink()
+    (env["sdir"] / "p" / "not-a-session.jsonl").unlink()
     session(env, SID[0], [now - 60], cwd="/elsewhere", mtime=now)  # outside only: still ok
     c = _doctor(ncfg)
     assert c.level == "ok" and "1 outside" in c.message and "ignored" not in c.message, c
@@ -626,7 +626,7 @@ def test_doctor_sessions_dir_one_level_too_high(env, ncfg):
     now = time.time()
     write(env["sdir"], "projects/p", SID[0] + ".jsonl", [line(now - 60, str(env["trm"]))],
           mtime=now)
-    write(env["sdir"], "logs", "commands.jsonl", ["{}"], mtime=now)
+    write(env["sdir"], "logs", "not-a-session.jsonl", ["{}"], mtime=now)
     c = _doctor(ncfg)
     assert c.level == "warn", c
     assert c.message == ("sessions_dir looks one level too high: 1 session record file(s) are "
@@ -647,7 +647,7 @@ def test_doctor_sessions_dir_one_level_too_low(env, ncfg):
 
 def test_doctor_only_files_not_named_like_a_session(env, ncfg):
     now = time.time()
-    write(env["sdir"], "logs", "commands.jsonl", ['{"cmd": "x", "ok": true}'], mtime=now)
+    write(env["sdir"], "logs", "not-a-session.jsonl", ['{"cmd": "x", "ok": true}'], mtime=now)
     c = _doctor(ncfg)
     assert c.level == "warn", c
     assert c.message == ("1 .jsonl file(s) were found but none is named like a session record: "
@@ -658,7 +658,7 @@ def test_doctor_only_files_not_named_like_a_session(env, ncfg):
 def test_doctor_id_named_files_none_usable(env, ncfg):
     now = time.time()
     write(env["sdir"], "p", SID[0] + ".jsonl", ['{"type": "x"}'], mtime=now)
-    write(env["sdir"], "p", "commands.jsonl", ["{}"], mtime=now)
+    write(env["sdir"], "p", "not-a-session.jsonl", ["{}"], mtime=now)
     c = _doctor(ncfg)
     assert c.level == "warn" and "none could be read as a session" in c.message, c
     assert "the assumed record format may be wrong" in c.message and "deeper" not in c.message
