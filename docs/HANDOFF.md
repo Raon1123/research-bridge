@@ -13,7 +13,7 @@ A session read the whole repository (code, tests, documents) on 2026-11-11 and c
 
 What was fixed, and what is left for the user to decide: `docs/issues/2026-11-11-audit.md`.
 
-Nothing of this has run against node1. The node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
+What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (they ended with `Result=success`). The second PR has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
