@@ -126,14 +126,17 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
     def work() -> None:
         if not isinstance(items, list):
             raise ValueError("malformed poll result")
+        # one read for the seen-check; append still checks under the lock
+        known = {r["id"]: r for r in led.records()} if items else {}
         for it in items:
             iid = it.get("id") if isinstance(it, dict) else None
             if not isinstance(iid, str):  # D3: reject one malformed item, keep the others
                 reject("")
                 continue
-            seen = led.get(iid)
+            seen = known.get(iid)
             if seen is not None and seen.get("direction") == "in":
-                ack.append(iid)
+                if iid not in ack:
+                    ack.append(iid)
                 continue
             if seen is not None:  # the id belongs to an outgoing or job record: do not ack
                 reject(iid)
@@ -151,11 +154,13 @@ def fetch_node(cfg: Any, node: str, c: Any, delivered: bool,
                 rec["delivered_at"] = jobs.now()
             if led.append(rec):
                 new.append(stored)
+                known[iid] = rec
             else:
                 cur = led.get(iid)
                 if cur is None or cur.get("direction") != "in":
                     reject(iid)  # lost the race to a non-inbound record: leave it on the node
                     continue
+                known[iid] = cur
             ack.append(iid)
         if ack:
             c.call("ack", ids=ack)

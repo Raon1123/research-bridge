@@ -1005,6 +1005,30 @@ def test_malformed_node_items_are_rejected_and_the_rest_stored(env, delivered):
     assert sorted(p.name for p in inbox.iterdir()) == ["good1"]
 
 
+def test_fetch_reads_the_ledger_once_and_acks_a_repeated_id_once(env, monkeypatch):
+    # hostcore-16: the seen-check uses one read of the ledger, not one get() per item
+    acked = []
+    items = [{"id": "r%d" % i, "kind": "reply", "body": "b%d" % i, "reply_to": None,
+              "attachments": []} for i in range(3)]
+    items.append(dict(items[0]))  # the node repeats an id within one reply
+
+    class Fake:
+        def call(self, op, **kw):
+            if op == "poll":
+                return {"items": items}
+            acked.extend(kw.get("ids", []))
+            return {}
+    gets = []
+    real_get = Ledger.get
+    with monkeypatch.context() as m:
+        m.setattr(Ledger, "get", lambda self, i: gets.append(i) or real_get(self, i))
+        r = server.fetch_node(jobs.load_cfg(), "n1", Fake(), delivered=False)
+    assert gets == []
+    assert [i["msg_id"] for i in r["items"]] == ["r0", "r1", "r2"] and r["rejected"] == 0
+    assert acked == ["r0", "r1", "r2"]
+    assert len([x for x in (env["root"] / "ledger.jsonl").read_text().splitlines() if x]) == 3
+
+
 def test_node_answering_with_another_jobs_queue_file_returns_job_to_pending(env, monkeypatch):
     real = jobs.connect
 
