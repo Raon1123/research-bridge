@@ -7,7 +7,8 @@ import sys
 from typing import List, Optional
 
 SUBCOMMANDS = ("serve-remote", "serve-local", "run-job", "respond", "harness-receive",
-               "approve-key", "config", "git-status", "install-record", "doctor", "link")
+               "approve-key", "config", "git-status", "install-record", "doctor", "link",
+               "sessions")
 
 
 # keys a session driven by bridge messages must not move: the approval verifier path, the roots
@@ -202,6 +203,43 @@ def _git_status() -> int:
     return 0
 
 
+def _sessions(rest: List[str]) -> int:
+    """Print what the `sessions` operation would return (node console, read only: the cache is
+    not written). docs/design/2026-11-11-node-sessions.md."""
+    import json
+    from pathlib import Path
+    from . import sessions as node_sessions
+    from .config import load_config
+    from .protocol import ProtocolError
+    from .withheld import Withheld
+    ap = argparse.ArgumentParser(prog="rb-node sessions")
+    ap.add_argument("--days", type=int, default=node_sessions.DAYS_DEFAULT)
+    ns = ap.parse_args(rest)
+    if not 1 <= ns.days <= node_sessions.DAYS_MAX:
+        ap.error("--days must be from 1 to %d" % node_sessions.DAYS_MAX)
+    try:
+        cfg = load_config()
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("rb-node: %s\n" % exc)
+        return 1
+    wh = Withheld.load(Path(cfg.withheld_source) if cfg.withheld_source else None)
+    try:
+        res = node_sessions.run(cfg, wh, ns.days, write_cache=False)
+    except ProtocolError as exc:
+        if exc.code == "not_configured":
+            sys.stderr.write("rb-node sessions: sessions_dir is not set; run: rb-node config set "
+                             "sessions_dir DIR\n")
+        else:
+            sys.stderr.write("rb-node sessions: %s: %s\n" % (exc.code, exc))
+        return 1
+    except OSError as exc:
+        sys.stderr.write("rb-node sessions: cannot read the sessions directory (%s)\n"
+                         % type(exc).__name__)
+        return 1
+    print(json.dumps(res, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _install_record(rest: List[str]) -> int:
     """Write ~/.research-bridge/install.json from a research-bridge checkout (node-install.sh)."""
     from pathlib import Path
@@ -220,12 +258,16 @@ def _install_record(rest: List[str]) -> int:
 
 SUBHELP = {
     "doctor": "usage: rb-node doctor\n\nRun every node check (configuration, job settings, approval, withheld patterns,\n"
-              "authorized_keys, mailbox, responder, install record, wrapper) and print one line per check. Exit 1 when a check fails.\n",
+              "authorized_keys, mailbox, responder, install record, wrapper, sessions) and print one line per check. Exit 1 when a check fails.\n",
     "link": "usage: rb-node link [DIR] [--apply]\n\nPrint the .mcp.json entry that links a Claude session on the node to the local\n"
             "rb-node MCP server. DIR defaults to trm_root. With --apply, write DIR/.mcp.json\n"
             "(refused when it exists).\n",
     "approve-key": "usage: rb-node approve-key set|clear\n\nset: ask for the approval passphrase twice and store its verifier.\n"
                    "clear: remove the verifier. Both need an interactive terminal.\n",
+    "sessions": "usage: rb-node sessions [--days N]\n\nPrint, as JSON, what the sessions operation would send to the hub for the last N\n"
+                "days (1 to 31, default 8): per session in the research tree an id, start and end times,\n"
+                "active seconds per UTC day and the directory relative to trm_root. Read only.\n"
+                "Exit 1 when sessions_dir is not set or its directory is missing.\n",
     "git-status": "usage: rb-node git-status\n\nPrint, as JSON, the git state of trm_root and the install record. Read only.\n",
     "config": "usage: rb-node config path|init [--force]|show|set KEY VALUE|check [-h]\n\n"
               "path: print the node.json path. init: write the defaults (mode 600). show: print node.json.\n"
@@ -292,6 +334,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _config(_rest)
     if ns.command == "git-status":
         return _git_status()
+    if ns.command == "sessions":
+        return _sessions(_rest)
     if ns.command == "install-record":
         return _install_record(_rest)
     if ns.command == "doctor":

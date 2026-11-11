@@ -468,3 +468,66 @@ def test_config_key(tmp_path, monkeypatch):
     p.write_text(json.dumps({"sessions_dir": 5}), encoding="utf-8")
     assert load_config(p).sessions_dir == ""
     assert "sessions" in Node(load_config(p)).ops
+
+
+# -- node console ---------------------------------------------------------------------------
+@pytest.fixture
+def console(env, ncfg, tmp_path, monkeypatch):
+    from dataclasses import asdict
+    conf = tmp_path / "node.json"
+    conf.write_text(json.dumps(asdict(ncfg)), encoding="utf-8")
+    monkeypatch.setenv("RB_NODE_CONFIG", str(conf))
+    return conf
+
+
+def test_cli_sessions_prints_what_the_op_returns(env, ncfg, console, capsys):
+    from rb_node import cli
+    now = time.time()
+    session(env, SID[0], [now - 90, now - 30], mtime=now)
+    assert cli.main(["sessions", "--days", "3"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert not (env["tmp"] / "rb" / S.CACHE_NAME).exists()  # the console command writes nothing
+    (resp,) = call(ncfg, ("sessions", {"days": 3}))
+    printed.pop("now"), resp["result"].pop("now")
+    assert printed == resp["result"] and printed["sessions"][0]["id"] == SID[0]
+    assert cli.main(["sessions"]) == 0 and json.loads(capsys.readouterr().out)["days"] == 8
+    with pytest.raises(SystemExit) as ei:
+        cli.main(["sessions", "--days", "0"])
+    assert ei.value.code == 2
+    assert cli.main(["sessions", "-h"]) == 0
+    assert "usage: rb-node sessions" in capsys.readouterr().out
+
+
+def test_cli_sessions_not_configured(env, ncfg, console, capsys):
+    from dataclasses import asdict
+    from rb_node import cli
+    ncfg.sessions_dir = ""
+    console.write_text(json.dumps(asdict(ncfg)), encoding="utf-8")
+    assert cli.main(["sessions"]) == 1
+    out = capsys.readouterr()
+    assert out.out == "" and len(out.err.strip().splitlines()) == 1
+    assert "sessions_dir" in out.err
+
+
+def test_doctor_sessions_check(env, ncfg, tmp_path):
+    from rb_node import doctor
+    ncfg.sessions_dir = ""
+    c = doctor._sessions_check(ncfg)
+    assert c.id == "sessions" and c.level == "ok" and "not set" in c.message
+    ncfg.sessions_dir = str(tmp_path / "missing")
+    c = doctor._sessions_check(ncfg)
+    assert c.level == "warn" and "does not exist" in c.message and c.fix
+    ncfg.sessions_dir = str(env["sdir"])
+    c = doctor._sessions_check(ncfg)
+    assert c.level == "ok" and "0 record file(s)" in c.message
+    now = time.time()
+    write(env["sdir"], "p", SID[0] + ".jsonl", ["not json"], mtime=now)
+    c = doctor._sessions_check(ncfg)
+    assert c.level == "warn" and "none could be read" in c.message and c.fix
+    session(env, SID[1], [now - 60, now - 30], mtime=now)
+    session(env, SID[2], [now - 60], cwd="/elsewhere", mtime=now)
+    c = doctor._sessions_check(ncfg)
+    assert c.level == "ok", c
+    assert "1 session(s)" in c.message and "1 unparsed" in c.message and "1 outside" in c.message
+    assert not (env["tmp"] / "rb" / S.CACHE_NAME).exists()  # doctor writes nothing
+    assert "sessions" in {x.id for x in doctor.system_checks(ncfg)}
