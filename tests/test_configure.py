@@ -116,14 +116,6 @@ def test_node_config_flow(tmp_path, monkeypatch, capsys):
     assert "approval verifier missing" in out
 
 
-def test_node_check_template_placeholder():
-    probs = nc.node_check({"job_template": ["python", "train.py"]})
-    assert any("{config}" in p for p in probs)
-    for ph in ("{config}", "{config_dir}", "{config_stem}"):
-        probs = nc.node_check({"job_template": ["python", "train.py", ph]})
-        assert not any("placeholder" in p for p in probs), ph
-
-
 def test_node_set_allowed_gpus_validates_type():
     assert nc.node_set({}, "allowed_gpus", [4, 5])["allowed_gpus"] == [4, 5]
     assert nc.node_set({}, "allowed_gpus", [])["allowed_gpus"] == []
@@ -225,9 +217,6 @@ def test_add_node_refuses_unusable_names(name, tmp_path, monkeypatch):
 
 def test_node_name_message_states_the_real_rule():
     assert "'.'" not in hc.node_name_problem("a.b") and "32" in hc.node_name_problem("a.b")
-def test_node_check_reports_empty_allowed_gpus():
-    assert any("allowed_gpus is empty" in p for p in nc.node_check({}))
-    assert not any("allowed_gpus" in p for p in nc.node_check({"allowed_gpus": [4]}))
 
 
 def test_max_file_is_capped_at_the_protocol_limit(tmp_path):

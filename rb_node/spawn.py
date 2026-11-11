@@ -193,9 +193,6 @@ def launcher_argv() -> List[str]:
     return [sys.executable, "-m", "rb_node.cli"]
 
 
-_launcher = launcher_argv  # old name, same function object
-
-
 def _log_path(state: Path, msg_id: str) -> Path:
     return Path(state) / ("respond-%s.log" % _check_id(msg_id))
 

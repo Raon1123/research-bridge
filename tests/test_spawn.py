@@ -432,7 +432,6 @@ def test_launcher_argv_is_what_callers_use(env, monkeypatch):
     import json as _j
     conf = _j.loads(Path(spawn._mcp_config(str(env.trm_root))).read_text(encoding="utf-8"))
     assert conf["mcpServers"]["rb"]["command"] == "/abs/rb-node"
-    assert spawn._launcher is not None
 
 
 def test_release_keeps_a_lock_another_process_took_over(tmp_path):

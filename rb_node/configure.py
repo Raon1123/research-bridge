@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from dataclasses import asdict, fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class ConfigError(Exception):
@@ -140,9 +140,3 @@ def node_set(data: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
             if out.get("withheld_source") == od["old_withheld"]:
                 out["withheld_source"] = NodeConfig().withheld_source
     return out
-
-
-def node_check(data: Dict[str, Any]) -> List[str]:
-    """Problems that block a feature, one line each. Empty list = ready."""
-    from . import doctor
-    return [c.message for c in doctor.config_checks(data) if c.level != "ok"]
