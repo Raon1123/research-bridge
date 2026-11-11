@@ -415,7 +415,10 @@ def submit_job(node: str, config_path: str, gpus: List[int], gpu_hours: float,
     idempotency_key (the same key returns the same job); note (free text). Returns {"job_id",
     "status": "pending_approval"}. The user approves or rejects it with `rb approve <job_id>` in a
     hub terminal, where the approval passphrase is typed; no tool can approve. Raises ValueError
-    for bad input (unknown node, missing config, bad GPU list or budget).
+    for an unknown node, an empty idempotency_key, a missing config file, a gpus value that is not
+    a non-empty list of distinct non-negative integers, or a gpu_hours that is not a number with
+    0 < gpu_hours <= 168. Whether the GPUs exist and are allowed on the node is checked by the
+    node after approval; a refusal then returns the job to pending_approval.
     """
     cfg = load_cfg()
     rec = jobs.create_submit(ledger_for(cfg), cfg, node, config_path, gpus, gpu_hours,
@@ -426,10 +429,12 @@ def submit_job(node: str, config_path: str, gpus: List[int], gpu_hours: float,
 def cancel_job(node: str, job_id: str, idempotency_key: str) -> dict:
     """Request a job cancel. This only creates a pending_approval record; nothing is sent.
 
-    Arguments: node; job_id (a job of this ledger); idempotency_key (the same key returns the same
-    request). Returns {"job_id": the cancel request id, "status": "pending_approval"}. The user
-    approves with `rb approve <id>` in a hub terminal; no tool can approve. Raises ValueError for
-    an unknown node or job.
+    Arguments: node; job_id (the node's job id; a job started on the node console is not in the
+    hub ledger and can be named too); idempotency_key (the same key returns the same request).
+    Returns {"job_id": the cancel request id, "status": "pending_approval"}. The user approves
+    with `rb approve <id>` in a hub terminal; no tool can approve. Raises ValueError for an unknown
+    node or an empty idempotency_key. The job id is not checked on the hub: the node answers
+    not_found after approval when it has no pending or running job with that id.
     """
     cfg = load_cfg()
     rec = jobs.create_cancel(ledger_for(cfg), cfg, node, job_id, idempotency_key)

@@ -3,6 +3,7 @@ approve and reject are called only by the rb CLI and the 8765 page."""
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import time
 import unicodedata
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from rb_node import approval
+from rb_node.jobs import MAX_GPU_HOURS
 
 from .client import NodeClient, RemoteError
 from .config import HostConfig, load_host_config
@@ -80,37 +82,56 @@ def _existing(ledger: Ledger, op: str, key: str) -> Optional[dict]:
     return None
 
 
+def check_shape(gpus: object, gpu_hours: object) -> None:
+    """D10: the shape of a GPU list and budget, checked on the hub before a record is written.
+    Whether the GPUs exist and are in the node's allowed_gpus is the node's check after approval."""
+    if not isinstance(gpus, list) or not gpus or not all(
+            isinstance(g, int) and not isinstance(g, bool) and g >= 0 for g in gpus):
+        raise ValueError("gpus must be a non-empty list of non-negative integers")
+    if len(set(gpus)) != len(gpus):
+        raise ValueError("gpus must be distinct")
+    h = gpu_hours
+    if (isinstance(h, bool) or not isinstance(h, (int, float)) or not math.isfinite(h)
+            or not 0 < h <= MAX_GPU_HOURS):
+        raise ValueError("gpu_hours must be a number with 0 < gpu_hours <= %d" % MAX_GPU_HOURS)
+
+
 def create_submit(ledger: Ledger, cfg: HostConfig, node: str, config_path: str,
                   gpus: List[int], gpu_hours: float, idempotency_key: str, note: str = "") -> dict:
     cfg.alias(node)  # unknown node -> ValueError
     if not idempotency_key:
         raise ValueError("idempotency_key required")
-    prior = _existing(ledger, "submit", idempotency_key)
-    if prior is not None:
-        return prior
+    check_shape(gpus, gpu_hours)
     p = Path(config_path)
-    if not p.is_file():
-        raise ValueError("config file not found")
-    rec = {"kind": "job", "op": "submit", "id": uuid.uuid4().hex, "node": node,
-           "config_path": str(p.resolve()), "config_name": p.name, "config_sha256": _sha(p),
-           "gpus": list(gpus), "gpu_hours": gpu_hours, "idempotency_key": idempotency_key,
-           "note": note, "status": "pending_approval", "created": now()}
-    ledger.append(rec)
+    with ledger.locked():  # one record per key, also for two calls at once
+        prior = _existing(ledger, "submit", idempotency_key)
+        if prior is not None:
+            return prior
+        if not p.is_file():
+            raise ValueError("config file not found")
+        rec = {"kind": "job", "op": "submit", "id": uuid.uuid4().hex, "node": node,
+               "config_path": str(p.resolve()), "config_name": p.name, "config_sha256": _sha(p),
+               "gpus": list(gpus), "gpu_hours": gpu_hours, "idempotency_key": idempotency_key,
+               "note": note, "status": "pending_approval", "created": now()}
+        ledger.append(rec)
     return rec
 
 
 def create_cancel(ledger: Ledger, cfg: HostConfig, node: str, job_id: str,
                   idempotency_key: str) -> dict:
+    """The target is not checked: a job started on the node console is not in this ledger and
+    must stay cancellable. The node answers not_found after approval for an unknown job."""
     cfg.alias(node)
     if not idempotency_key:
         raise ValueError("idempotency_key required")
-    prior = _existing(ledger, "cancel", idempotency_key)
-    if prior is not None:
-        return prior
-    rec = {"kind": "job", "op": "cancel", "id": uuid.uuid4().hex, "node": node,
-           "target_job_id": job_id, "idempotency_key": idempotency_key,
-           "status": "pending_approval", "created": now()}
-    ledger.append(rec)
+    with ledger.locked():
+        prior = _existing(ledger, "cancel", idempotency_key)
+        if prior is not None:
+            return prior
+        rec = {"kind": "job", "op": "cancel", "id": uuid.uuid4().hex, "node": node,
+               "target_job_id": job_id, "idempotency_key": idempotency_key,
+               "status": "pending_approval", "created": now()}
+        ledger.append(rec)
     return rec
 
 

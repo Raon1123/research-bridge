@@ -103,6 +103,38 @@ def test_submit_rejects_bad_input(env):
         server.submit_job("n1", str(env["tmp"] / "missing.yaml"), [0], 1, "k")
 
 
+@pytest.mark.parametrize("gpus,hours", [
+    ([], 1), ([-1], 1), ([True], 1), ([0, 0], 1), ([0.0], 1), (["0"], 1), (0, 1), (None, 1),
+    ([0], 0), ([0], -1), ([0], float("nan")), ([0], float("inf")), ([0], True), ([0], "1"),
+    ([0], None), ([0], 169),
+])
+def test_submit_rejects_bad_gpu_list_or_budget_d10(env, monkeypatch, gpus, hours):
+    # D10: the hub checks the shape; nothing is written for a bad GPU list or budget
+    def boom(cfg, node):
+        raise AssertionError("ssh used")
+    monkeypatch.setattr(jobs, "connect", boom)
+    cfgf = env["tmp"] / "run.yaml"
+    cfgf.write_text("a: 1\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        server.submit_job("n1", str(cfgf), gpus, hours, "k-bad")
+    assert not (env["root"] / "ledger.jsonl").exists()
+
+
+def test_submit_accepts_shape_and_leaves_allowed_gpus_to_the_node(env, monkeypatch):
+    def boom(cfg, node):
+        raise AssertionError("ssh used")
+    monkeypatch.setattr(jobs, "connect", boom)
+    cfgf = env["tmp"] / "run.yaml"
+    cfgf.write_text("a: 1\n", encoding="utf-8")
+    for i, (gpus, hours) in enumerate((([7], 168), ([0, 3], 0.25), ([1], 1))):
+        r = server.submit_job("n1", str(cfgf), gpus, hours, "k-ok-%d" % i)
+        assert r["status"] == "pending_approval"
+    # a cancel names any job id: one started on the node console is not in this ledger
+    assert server.cancel_job("n1", "console-job-1", "kc")["status"] == "pending_approval"
+    from rb_node.jobs import MAX_GPU_HOURS
+    assert "gpu_hours <= %d" % MAX_GPU_HOURS in " ".join(server.submit_job.__doc__.split())
+
+
 def _submit(env, key="k1"):
     cfgf = env["tmp"] / "run.yaml"
     cfgf.write_text("a: 1\n", encoding="utf-8")
