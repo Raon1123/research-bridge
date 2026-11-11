@@ -1336,8 +1336,10 @@ def test_status_node_sessions_four_states_four_lines(cfg):
 
 
 def test_status_node_counts_lines(cfg):
-    _node_store(cfg, {}, outside=3, unparsed=5, files=5, truncated=True)
+    _node_store(cfg, {}, outside=3, unparsed=5, files=5, truncated=True, skipped=2)
     sess = _section(_status(cfg), "Sessions")
+    assert ('<p class="err">node n1: 2 session(s) of the last answer failed the checks on the '
+            "hub and were left out</p>") in sess
     assert "node n1: 3 session(s) outside the research tree (counted, not listed)" in sess
     assert ('<p class="err">node n1: 5 of 5 record file(s) the node could not read as '
             "sessions</p>") in sess

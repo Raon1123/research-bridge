@@ -518,15 +518,15 @@ def test_node_sessions_rows_from_the_store(env):
              "end": _iso(_days_ago(1), "09:00:00Z"), "days": {}},
         SC: {"label": "lab/not-on-the-allowlist", "start": _iso(_days_ago(1), "08:00:00Z"),
              "end": _iso(_days_ago(1), "08:30:00Z"), "days": {d1: 900}},
-        SD: {"label": "ARG", "start": _now_minus(3000), "end": _now_minus(400),
-             "days": {_now_minus(400)[:10]: 0}},
+        SD: {"label": "ARG", "start": _iso(TODAY, "00:00:00Z"), "end": _now_minus(400),
+             "days": {TODAY.isoformat(): 0}},
     }, outside=3, unparsed=2, truncated=True, skipped=1)
     snap = _snap(env)
     rows = {(r["date"], r["lane"], r["project"]): r for r in snap["sessions"]["per_day"]}
     assert rows[(d1, "n1", "ARG")]["count"] == 2 and rows[(d1, "n1", "ARG")]["active_h"] == 1.0
     assert rows[(d2, "n1", "ARG")]["count"] == 1 and rows[(d2, "n1", "ARG")]["active_h"] == 0.5
     assert rows[(d1, "n1", "other")]["count"] == 1 and rows[(d1, "n1", "other")]["active_h"] == 0.25
-    assert rows[(_now_minus(3000)[:10], "n1", "ARG")]["count"] >= 1  # counted on its start day
+    assert rows[(TODAY.isoformat(), "n1", "ARG")]["count"] == 1  # counted on its start day
     assert (d1, "laptop", "ARG") in rows  # the file source is still there
     info = _node_info(snap)
     assert info["state"] == "ok" and info["active_now"] == 1 and info["sessions"] == 4

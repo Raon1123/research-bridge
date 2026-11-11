@@ -31,6 +31,7 @@ from .protocol import ProtocolError
 from .withheld import Withheld
 
 GAP_S = 300  # a gap between two record times up to this long counts as active
+DAY_S = 86400  # a gap goes to the day of its earlier time, so a raw day can exceed this; capped
 DAYS_DEFAULT = 8
 DAYS_MAX = 31
 # Per-call bounds (design §7 "Bounds"). Module constants so that tests can lower them.
@@ -396,8 +397,8 @@ def collect(sessions_dir: str, trm_root: str, cache_file: Optional[Path], wh: Wi
     for sid, r in ordered:
         sessions.append({"id": sid, "label": shown(r["label"], wh), "start": iso(r["start"]),
                          "end": iso(r["end"]),
-                         "days": {d: int(round(s)) for d, s in sorted(r["days"].items())
-                                  if int(round(s)) > 0}})
+                         "days": {d: min(DAY_S, int(round(s)))
+                                  for d, s in sorted(r["days"].items()) if int(round(s)) > 0}})
     if write_cache and cache_file is not None and files != old:
         _write_cache(cache_file, fp, files)
     return {"days": days, "now": iso(now),

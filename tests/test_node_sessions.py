@@ -531,3 +531,15 @@ def test_doctor_sessions_check(env, ncfg, tmp_path):
     assert "1 session(s)" in c.message and "1 unparsed" in c.message and "1 outside" in c.message
     assert not (env["tmp"] / "rb" / S.CACHE_NAME).exists()  # doctor writes nothing
     assert "sessions" in {x.id for x in doctor.system_checks(ncfg)}
+
+
+def test_a_full_day_is_capped_at_86400_seconds_and_the_hub_keeps_it(env):
+    # gaps go to the day of the earlier time, so a day can collect up to 86400 + 299 s raw
+    from rb_host import sessions as hub_sessions
+    times = [T0 + 10 + 250 * i for i in range(int((86400 + 600) / 250))]
+    session(env, SID[0], times, mtime=times[-1])
+    r = collect(env, now=times[-1] + 60)
+    (s,) = r["sessions"]
+    assert s["days"][DAY] == 86400 and max(s["days"].values()) <= 86400
+    checked, skipped = hub_sessions.validate(r, env["wh"])
+    assert skipped == 0 and checked["sessions"][SID[0]]["days"][DAY] == 86400

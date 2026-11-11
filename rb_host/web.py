@@ -429,6 +429,9 @@ def _node_sessions_lines(wh: Withheld, n: dict) -> str:
     if n.get("unparsed"):
         out.append('<p class="err">node %s: %s of %s record file(s) the node could not read as '
                    "sessions</p>\n" % (name, _num(n.get("unparsed")), _num(n.get("files"))))
+    if n.get("skipped"):
+        out.append('<p class="err">node %s: %s session(s) of the last answer failed the checks '
+                   "on the hub and were left out</p>\n" % (name, _num(n.get("skipped"))))
     if n.get("truncated"):
         out.append("<p>node %s: the last fetch stopped at a per-call bound; the next passes "
                    "continue.</p>\n" % name)
