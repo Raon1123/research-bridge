@@ -32,12 +32,13 @@ A design built before the user approved it carries both parts: `draft, not user-
 | 2026-10-27 | [research-bridge design](../superpowers/specs/2026-10-27-research-bridge-design.md) | user-approved; built through Task 12 (hashes in the ledger predate the 2026-11-02 rewrite of `main`) |
 | 2026-11-02 | [Unified research board](2026-11-02-unified-board.md) | draft, not user-approved; built: steps 3–5 (board module, `rb board` CLI, `/board` page patch in `vault-export/`) merged in PR 23 (merge commit 2bd8841); the vault copy of the patch is a pending user step (`docs/issues/2026-11-10-triage.md`, issue N-16) |
 | 2026-11-03 | [Node-side job approval (SEC-01)](2026-11-03-node-side-approval.md) | draft, not user-approved; built: merged from branch `claude/sec-01-02-fixes` in PR 27 (merge commit 933edc3; `rb_node/approval.py`) |
-| 2026-11-06 | [Shared research status page](2026-11-06-shared-status-page.md) | built (steps 3–4, commits e68109a, 218d60a); steps 2, 5, 6 open |
+| 2026-11-06 | [Shared research status page](2026-11-06-shared-status-page.md) | superseded 2026-11-11 by the status page on the hub (its reducers stay in `rb_host/share.py`; `rb share build|serve` and `share_serve.py` archived in `docs/99_Archive/shared-status-page/`) |
 | 2026-11-10 | [Setup and diagnosis](2026-11-10-setup-and-diagnosis.md) | draft, not user-approved; built: merged from branch `claude/review-optimize-2026-11-10` in PR 48 (merge commit c503667) |
 | 2026-11-10 | [Unattended sync and the hub page](2026-11-10-sync-and-hub-page.md) | draft, not user-approved; built: merged from branch `claude/review-optimize-2026-11-10` in PR 48 (merge commit c503667); access key in PR 49 (merge commit d3db45a) |
 | 2026-11-10 | [Project profiles](2026-11-10-project-profiles.md) | draft (design only) |
 | 2026-11-10 | [Experiment requests and result records](2026-11-10-experiment-records.md) | draft (design only) |
 | 2026-11-10 | [Node GPU allowlist and worker-assigned GPU](2026-11-10-allowed-gpus.md) | draft, not user-approved; built: merged from branch `claude/node-allowed-gpus` in PR 47 (merge commit e95be9c) |
+| 2026-11-11 | [Status page on the hub](2026-11-11-hub-status-page.md) | draft, not user-approved; built on branch `claude/hub-status-page` (PR 58, not merged): `share.snapshot`, route `/status`, `rb share` archived |
 
 The first design stays at `docs/superpowers/specs/` because `AGENTS.md` and other documents refer to that path; its plan is in `docs/99_Archive/plans/`. New designs go in this directory.
 

@@ -1,11 +1,12 @@
 # Shared research status page (session calendar + experiment progress) — design
 
-Date: 2026-11-06 · Status: built (steps 3–4; steps 2, 5, 6 open) · Author: research-bridge session "대시보드 기획 및 제안" · Code (proposed): `rb_host/share.py`, `rb share build|serve` CLI, `vault-export/dashboard/` (one link on existing pages) · Data (proposed): `D:/raw/research-bridge/share/` (laptop snapshot)
+Date: 2026-11-06 · Status: superseded 2026-11-11 by [the status page on the hub](2026-11-11-hub-status-page.md) · Author: research-bridge session "대시보드 기획 및 제안" · Code (proposed): `rb_host/share.py`, `rb share build|serve` CLI, `vault-export/dashboard/` (one link on existing pages) · Data (proposed): `D:/raw/research-bridge/share/` (laptop snapshot)
 
 Status history:
 - 2026-11-06 draft (proposal; nothing built)
 - 2026-11-06 audience decided by the user: only the user's own devices (Open question 1). Outside-viewer tier removed.
 - 2026-11-06 built: rb_host/share.py, rb_host/share_serve.py, rb share build|serve, tests/test_share.py (commits e68109a, 218d60a; suite 315 passed). Steps 2, 5 and 6 of §9 still open.
+- 2026-11-11 superseded by [the status page on the hub](2026-11-11-hub-status-page.md) (user decision of 2026-11-11, audit row U3): the summary is the hub page route `/status`. The reducers stay in `rb_host/share.py` behind `share.snapshot`; `share.build`, the tiers, the audit line, `rb share build|serve` and `rb_host/share_serve.py` were removed, and the file and its tests moved to `docs/99_Archive/shared-status-page/`. The body below is the 2026-11-06 text.
 
 ## 1. Intent
 

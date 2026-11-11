@@ -2,6 +2,7 @@
 The server runs on an ephemeral loopback port; requests are raw sockets so targets are sent exactly."""
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -15,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from rb_host import cli, jobs, web, webaccess
+from rb_host import cli, jobs, share, web, webaccess
 from rb_host.client import NodeClient
 from rb_host.config import HostConfig
 from rb_host.ledger import Ledger
 
 REPO = Path(__file__).resolve().parents[1]
-ROUTES = ["/", "/threads", "/thread/msgid-7f3a", "/jobs", "/nodes", "/healthz"]
+ROUTES = ["/", "/threads", "/thread/msgid-7f3a", "/jobs", "/nodes", "/status", "/healthz"]
 Q_BODY = "question first line\nsecond line"
 
 
@@ -172,9 +173,10 @@ def test_route_of_and_allowed_hosts():
     assert web.route_of("/thread/abc.D-1_x?q=1") == ("thread", "abc.D-1_x")
     assert web.route_of("/jobs") == ("jobs", None)
     assert web.route_of("/nodes") == ("nodes", None)
+    assert web.route_of("/status") == ("status", None)
     assert web.route_of("/healthz") == ("healthz", None)
     for bad in ("/thread/", "/thread/%2e%2e", "/thread/a/b", "//x", "/x", "", "http://h/",
-                "/thread/" + "a" * 129, "/jobs/", "/threads\n"):
+                "/thread/" + "a" * 129, "/jobs/", "/threads\n", "/status/", "/status.json"):
         assert web.route_of(bad) == ("other", None), bad
     assert web.allowed_hosts(8767) == frozenset(
         ["127.0.0.1:8767", "localhost:8767", "[::1]:8767"])
@@ -408,7 +410,7 @@ def test_ids_that_do_not_fit_the_route_are_not_linked(cfg, srv):
     assert req(srv, "/thread/has%20space")[0] == 404
 
 
-FIXED_ROUTES = {"/", "/threads", "/jobs", "/nodes"}
+FIXED_ROUTES = {"/", "/threads", "/jobs", "/nodes", "/status"}
 THREAD_HREF = r"/thread/[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
 
 
@@ -426,7 +428,8 @@ def test_security_headers(srv):
             assert href in FIXED_ROUTES or re.fullmatch(THREAD_HREF, href), (route, href)
         assert body.lower().count("href=") == len(hrefs), route  # no single-quoted or bare href
         if route != "/healthz":
-            assert [h for h in hrefs if h in FIXED_ROUTES][:4] == ["/", "/threads", "/jobs", "/nodes"]
+            assert [h for h in hrefs if h in FIXED_ROUTES][:5] == ["/", "/threads", "/jobs", "/nodes",
+                                                                  "/status"]
             assert body.count("<nav>") == 1
 
 
@@ -1053,3 +1056,217 @@ def test_slot_is_returned_when_the_connection_thread_cannot_start(cfg, monkeypat
             b.close()
     finally:
         srv.server_close()
+
+
+# -- /status (design docs/design/2026-11-11-hub-status-page.md) ---------------------------------
+def _day_of(stamp):
+    return stamp[:10]
+
+
+def _with_share(cfg, tmp_path, sessions=None, runs=None, labels=None):
+    conf = {}
+    if sessions is not None:
+        p = tmp_path / "share-src" / "sessions.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"sessions": sessions}), encoding="utf-8")
+        conf["calendar_sessions"] = str(p)
+    if runs is not None:
+        p = tmp_path / "share-src" / "runs.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"runs": runs}), encoding="utf-8")
+        conf["runs"] = str(p)
+    if labels is not None:
+        conf["labels"] = labels
+    return dataclasses.replace(cfg, share=conf)
+
+
+def _board(cfg, name, items, ok=True, error=None):
+    (Path(cfg.data_root) / "board" / ("n1_%s.json" % name)).write_text(json.dumps({
+        "source": "n1:%s" % name, "fetched_at": _stamp(5), "ok": ok, "error": error,
+        "cadence_s": 600, "items": items}), encoding="utf-8")
+
+
+def _status(cfg):
+    code, ctype, body = web.render(cfg, "status", None)
+    assert code == 200 and ctype.startswith("text/html")
+    return body.decode("utf-8")
+
+
+def _section(page, title):
+    return page.split("<h2>%s</h2>" % title, 1)[1].split("<h2>", 1)[0]
+
+
+def test_status_page_content(cfg, tmp_path):
+    # G1: the numbers of a seeded data root
+    _board(cfg, "queue", [{"state": "jobs", "count": 3}, {"state": "processing", "count": 1},
+                          {"state": "done", "count": 4}, {"state": "held", "count": 2}])
+    _board(cfg, "gpu", [{"index": 0, "utilization": 30, "memory_used": 1},
+                        {"index": 1, "utilization": 0, "memory_used": 0}])
+    _board(cfg, "events", [{"ts": _stamp(60), "stage": "S5", "track": "trackA"}])
+    led = Ledger(Path(cfg.data_root) / "ledger.jsonl")
+    now = _stamp(0)
+    led.append({"kind": "job", "op": "submit", "id": "job-today", "node": "n1",
+                "gpu_hours": 2.5, "status": "queued", "created": now, "approved_at": now})
+    ev = {"kind": "message", "id": "ev-today", "direction": "in", "node": "n1",
+          "msg_kind": "event", "status": "received", "created": now}
+    led.append(ev)
+    put(cfg, ev, json.dumps({"event": "job_finished", "job_id": "job-today", "status": "failed"}))
+    c = _with_share(cfg, tmp_path, sessions=[
+        {"start": now, "lane": "hub", "project": "projA"},
+        {"start": now, "lane": "n1", "project": "projA"}],
+        runs=[{"project": "projA", "started": now, "status": "running"}])
+    page = _status(c)
+    assert 'http-equiv="refresh" content="60"' in page
+    assert '<a href="/status">status</a>' in page
+    now_sec = _section(page, "Now")
+    # the fixture's two jobs (4 + 1 GPU-hours) were created on 2026-11-10
+    fixture_in_period = _day_of(_stamp(7 * 86400)) <= "2026-11-10"
+    hours = 2.5 + (5 if fixture_in_period else 0)
+    for cells in (("queued", 3), ("running", 1), ("done", 4), ("failed", 0), ("other state", 2),
+                  ("GPUs in use", "1 of 2"), ("GPU-hours requested in the period", str(hours))):
+        assert "<td>%s</td><td>%s</td>" % cells in now_sec, cells
+    assert "<td>pending approvals</td><td>1" in now_sec and 'href="/jobs"' in now_sec
+    assert 'href="/nodes"' in now_sec
+    day = _section(page, "Per day")
+    assert day.count("<tr>") == 9  # heading row + 8 days
+    today_row = day.split("<tr>")[2]
+    assert today_row.startswith("<td>%s</td>" % _day_of(now))
+    # submitted, cancel requests, approved, finished, failed, sent, received
+    assert today_row.endswith("<td>1</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td>"
+                              "<td>0</td></tr>")
+    sess = _section(page, "Sessions")
+    assert "<td>hub</td><td>projA</td>" in sess and "<td>n1</td><td>projA</td>" in sess
+    assert "<td>projA</td><td>1</td>" in _section(page, "Runs")
+    assert "<td>trackA</td><td>S5</td>" in _section(page, "Stages")
+    src = _section(page, "Sources")
+    for sid in ("n1:queue", "n1:gpu", "n1:events", "rb:ledger", "calendar:sessions", "runs"):
+        assert "<td>%s</td>" % sid in src, sid
+    assert "dropped" not in page
+
+
+def test_status_link_on_every_page(srv):
+    for route in ROUTES[:-1]:
+        assert '<a href="/status">status</a>' in req(srv, route)[2], route
+
+
+def test_status_says_when_no_source_is_configured(cfg):
+    # G2: no share.* paths in host.json
+    page = _status(cfg)
+    assert "No session source is configured (host.json share.calendar_sessions)." in page
+    assert "No run source is configured (host.json share.runs)." in page
+    assert "<h2>Stages</h2>" not in page  # no track
+    src = _section(page, "Sources")
+    for sid in ("calendar:sessions", "calendar:status", "runs"):
+        assert "<td>%s</td><td>not configured</td><td></td><td></td><td></td>" % sid in src, sid
+
+
+def test_status_broken_board_files_show_error_codes(cfg):
+    # G3: a missing and an unparseable board file show an error code, not zeros alone
+    (Path(cfg.data_root) / "board" / "n1_queue.json").write_text("{not json", encoding="utf-8")
+    page = _status(cfg)
+    now_sec = _section(page, "Now")
+    assert '<p class="err">n1:queue: unparseable' in now_sec
+    assert '<p class="err">n1:gpu: never_fetched' in now_sec
+    src = _section(page, "Sources")
+    assert "error: unparseable" in src and "error: never_fetched" in src
+
+
+def test_status_source_without_a_path_on_the_node_says_so(cfg):
+    # the sync status file knows why a board cache is missing: the node has no path for it.
+    # /nodes says "no path configured" for that source; /status must not call it never fetched.
+    sp = Path(cfg.data_root) / "sync" / "n1.json"
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    sp.write_text(json.dumps({"schema": 1, "node": "n1", "ok": True,
+                              "board": {"events": "no_path", "queue": "ok"}}), encoding="utf-8")
+    (Path(cfg.data_root) / "board" / "n1_events.json").unlink(missing_ok=True)
+    (Path(cfg.data_root) / "board" / "n1_gpu.json").unlink(missing_ok=True)
+    src = _section(_status(cfg), "Sources")
+    row = [r for r in src.split("<tr>") if "n1:events" in r][0]
+    assert "no path configured" in row and "never_fetched" not in row and "stale" not in row
+    gpu = [r for r in src.split("<tr>") if "n1:gpu" in r][0]
+    assert "error: never_fetched" in gpu  # no reason recorded: still an error
+
+
+def test_status_escapes_and_masks(cfg, tmp_path):
+    # anti-goals: HTML-special, bidi and escape characters and withheld text in a label, a
+    # board error and an event status never reach the page raw
+    bad = "<b>x\u202e\x1b[1m"
+    _board(cfg, "gpu", [], ok=False, error="unrelatedfam_err")
+    _board(cfg, "events", [], ok=False, error="<script>alert(1)</script>")
+    led = Ledger(Path(cfg.data_root) / "ledger.jsonl")
+    now = _stamp(0)
+    for eid, status in (("ev-s1", "<b>\u202efailed\x1b"), ("ev-s2", "unrelatedfam_s")):
+        ev = {"kind": "message", "id": eid, "direction": "in", "node": "n1",
+              "msg_kind": "event", "status": "received", "created": now}
+        led.append(ev)
+        put(cfg, ev, json.dumps({"event": "job_finished", "job_id": "job-queued",
+                                 "status": status}))
+    c = _with_share(cfg, tmp_path, sessions=[
+        {"start": now, "lane": "hub", "project": bad},
+        {"start": now, "lane": "hub", "project": "unrelatedfam_proj"}],
+        runs=[{"project": bad, "started": now, "status": "unrelatedfam_st"}])
+    page = _status(c)
+    assert "&lt;b&gt;x[1m" in page  # the label, cleaned and escaped
+    for raw in ("<b>", "\u202e", "\x1b", "unrelatedfam_", "<script", "alert(1)"):
+        assert raw not in page, repr(raw)
+    src = _section(page, "Sources")
+    assert "error: withheld" in src and "error: bad_error_code" in src
+    assert "dropped by the withheld re-check" in page
+    # the event statuses are classified only: two finished today, neither failed
+    today_row = _section(page, "Per day").split("<tr>")[2]
+    assert "<td>2</td><td>0</td><td>0</td><td>0</td></tr>" in today_row
+
+
+def test_status_needs_a_session_like_jobs(srv):
+    jobs_refusal = req(srv, "/jobs", cookie=None)
+    status_refusal = req(srv, "/status", cookie=None)
+    assert status_refusal[0] == 401
+    assert status_refusal[2] == jobs_refusal[2] == NEED
+    assert status_refusal[1]["content-type"] == jobs_refusal[1]["content-type"]
+    assert req(srv, "/status")[0] == 200
+
+
+def test_status_writes_nothing(cfg, tmp_path):
+    # G4: the whole temporary tree (data root and sources) is identical after a request
+    c = _with_share(cfg, tmp_path, sessions=[{"start": _stamp(0), "project": "p"}], runs=[])
+    before = snapshot(tmp_path)
+    dirs = sorted(str(p) for p in tmp_path.rglob("*") if p.is_dir())
+    _status(c)
+    assert snapshot(tmp_path) == before
+    assert sorted(str(p) for p in tmp_path.rglob("*") if p.is_dir()) == dirs
+    assert not (Path(cfg.data_root) / "share").exists()
+
+
+def test_status_snapshot_failure_gives_one_error_line(cfg, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("SNAPSHOT-SECRET-TEXT")
+    with monkeypatch.context() as m:
+        m.setattr(share, "snapshot", boom)
+        page = _status(cfg)
+    assert page.count('class="err"') == 1
+    assert "SNAPSHOT-SECRET-TEXT" not in page and "RuntimeError" not in page
+    assert "Traceback" not in page
+
+
+def test_status_shows_cost_when_its_file_is_configured(cfg, tmp_path):
+    stat = tmp_path / "share-src" / "status.json"
+    stat.parent.mkdir(parents=True, exist_ok=True)
+    stat.write_text(json.dumps({"generated": _stamp(0), "cost_usd": 12.5}), encoding="utf-8")
+    c = dataclasses.replace(cfg, share={"calendar_status": str(stat)})
+    sess = _section(_status(c), "Sessions")
+    assert "No session source is configured" in sess and "<p>cost (USD) 12.5</p>" in sess
+    c = _with_share(cfg, tmp_path, sessions=[{"start": _stamp(0), "lane": "hub", "project": "p"}])
+    c = dataclasses.replace(c, share=dict(c.share, calendar_status=str(stat)))
+    assert "sessions 1, routines 0, active hours 0.0, cost (USD) 12.5" in _section(_status(c),
+                                                                                   "Sessions")
+
+
+def test_status_unreadable_ledger_shows_its_error_beside_the_numbers(cfg):
+    # anti-goal: a source that cannot be read is not shown as zeros with no error
+    with open(str(Path(cfg.data_root) / "ledger.jsonl"), "ab") as fh:
+        fh.write(b"\xff\xfe not utf8\n")
+    page = _status(cfg)
+    line = '<p class="err">rb:ledger: unreadable'
+    assert line in _section(page, "Now")
+    day = _section(page, "Per day")
+    assert line in day and "(no rows)" in day

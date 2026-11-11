@@ -1,6 +1,7 @@
 """rb web serve: the read-only hub page (docs/design/2026-11-10-sync-and-hub-page.md, section 6.6 and 7).
 
-Shows stored conversations, job records, pending approvals and the sync state. A request reads
+Shows stored conversations, job records, pending approvals, the sync state and a status summary
+(/status, docs/design/2026-11-11-hub-status-page.md). A request reads
 files (the ledger through `threads.load`, stored bodies, the sync status file, the board cache)
 and writes nothing (except `/enter`, which consumes an access key in `web/access.json`), opens no node connection and starts no process. Every route except /healthz needs a session
 cookie obtained with a one-time key (`rb_host.webaccess`). Stdlib HTTP server on
@@ -25,11 +26,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from rb_node.withheld import Withheld
 
-from . import configure, jobs, threads, webaccess
+from . import configure, jobs, share, threads, webaccess
 from .webaccess import AccessError
 
 DEFAULT_PORT = 8767
-ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|healthz|enter|thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
+ROUTE = re.compile(r"^/(?:|threads|jobs|nodes|status|healthz|enter|"
+                   r"thread/([A-Za-z0-9][A-Za-z0-9._-]{0,127}))$")
 CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; form-action 'none'; "
        "base-uri 'none'; frame-ancestors 'none'")
 LOOPBACK_BINDS = ("127.0.0.1",)
@@ -43,7 +45,7 @@ STYLE = ("body{font-family:system-ui,sans-serif;margin:16px;max-width:1200px}"
          ".banner{background:#fff3cd;padding:4px 8px;margin:4px 0}"
          ".rec{border-top:1px solid #bbb;margin-top:12px}")
 _NAMES = {"": "index", "threads": "threads", "jobs": "jobs", "nodes": "nodes",
-          "healthz": "healthz", "enter": "enter"}
+          "status": "status", "healthz": "healthz", "enter": "enter"}
 NEED_KEY = 'access key required: run "rb web key" in a hub terminal and open the address it prints'
 
 
@@ -114,7 +116,7 @@ def _age(seconds: Optional[float]) -> str:
 
 
 NAV = ('<nav><a href="/">overview</a> | <a href="/threads">threads</a> | '
-       '<a href="/jobs">jobs</a> | <a href="/nodes">nodes</a></nav>')
+       '<a href="/jobs">jobs</a> | <a href="/nodes">nodes</a> | <a href="/status">status</a></nav>')
 
 
 def _page(title: str, body: str, refresh: int) -> bytes:
@@ -359,6 +361,123 @@ def _nodes_page(cfg: Any, wh: Withheld) -> bytes:
     return _page("Nodes", "".join(parts), 60)
 
 
+# -- /status (docs/design/2026-11-11-hub-status-page.md §8) ----------------------------------
+def _num(v: Any) -> str:
+    return str(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else ""
+
+
+def _src_errors(wh: Withheld, srcs: List[dict]) -> str:
+    """One error line per failed source, beside the numbers it would have fed."""
+    return "".join('<p class="err">%s: %s; the numbers above leave this source out</p>\n'
+                   % (_e(_t(wh, s.get("id"), 80)), _e(_t(wh, s.get("error"), 40)))
+                   for s in srcs if not s.get("ok"))
+
+
+def _status_now(wh: Withheld, snap: dict, by_suffix: Dict[str, List[dict]]) -> str:
+    exp = snap["experiments"]
+    q, g = exp["queue"], exp["gpu"]
+    rows = [[k, _num(q.get(k))] for k in ("queued", "running", "done", "failed")]
+    rows += [["other state", _num(q.get("other"))],
+             ["GPUs in use", "%s of %s" % (_num(g.get("in_use")), _num(g.get("total")))],
+             ["pending approvals", Raw('%s (<a href="/jobs">jobs</a>)'
+                                       % _e(_num(q.get("pending_approvals"))))],
+             ["GPU-hours requested in the period", _num(g.get("gpu_hours_period"))]]
+    return (_table(["", "all nodes"], rows)
+            + _src_errors(wh, by_suffix.get("queue", []) + by_suffix.get("gpu", [])
+                          + by_suffix.get("ledger", []))
+            + '<p>Each node: <a href="/nodes">nodes</a>.</p>\n')
+
+
+def _status_activity(wh: Withheld, snap: dict, ledger: List[dict]) -> str:
+    keys = ("submits", "cancels", "approved", "finished", "failed", "sent", "received")
+    rows = [[_t(wh, r.get("date"), 10)] + [_num(r.get(k)) for k in keys]
+            for r in snap["activity"] if isinstance(r, dict)]
+    return (_table(["date (UTC)", "submitted", "cancels", "approved",
+                    "job_finished", "of these failed", "sent", "received"], rows, "(no rows)")
+            + _src_errors(wh, ledger))
+
+
+def _no_source(what: str, key: str, src: Optional[dict], wh: Withheld) -> Optional[str]:
+    if src is None or src.get("error") == "not_configured":
+        return "<p>No %s source is configured (host.json share.%s).</p>\n" % (what, key)
+    if not src.get("ok"):
+        return '<p class="err">%s source: %s</p>\n' % (what, _e(_t(wh, src.get("error"), 40)))
+    return None
+
+
+def _status_sessions(wh: Withheld, snap: dict, src: Optional[dict]) -> str:
+    sess = snap["sessions"]
+    tot = sess.get("totals", {})
+    cost = _num(tot.get("cost_usd"))
+    none = _no_source("session", "calendar_sessions", src, wh)
+    if none is not None:
+        return none + ("<p>cost (USD) %s</p>\n" % _e(cost) if cost else "")
+    line = "<p>sessions %s, routines %s, active hours %s%s</p>\n" % (
+        _num(tot.get("sessions")), _num(tot.get("routines")), _num(tot.get("active_h")),
+        _e(", cost (USD) %s" % cost) if cost else "")
+    rows = [[_t(wh, r.get("date"), 10), _t(wh, r.get("lane"), 40), _t(wh, r.get("project"), 60),
+             _num(r.get("count")), _num(r.get("active_h"))]
+            for r in sess.get("per_day", []) if isinstance(r, dict)]
+    return line + _table(["date (UTC)", "lane", "project", "sessions", "active hours"], rows,
+                         "(no sessions in the period)")
+
+
+def _status_runs(wh: Withheld, snap: dict, src: Optional[dict]) -> str:
+    none = _no_source("run", "runs", src, wh)
+    if none is not None:
+        return none
+    rows = [[_t(wh, r.get("date"), 10), _t(wh, r.get("project"), 60), _num(r.get("started")),
+             _num(r.get("finished")), _num(r.get("failed"))]
+            for r in snap["experiments"].get("runs_per_day", []) if isinstance(r, dict)]
+    return _table(["date (UTC)", "project", "started", "finished", "failed"], rows,
+                  "(no runs in the period)")
+
+
+def _status_sources(wh: Withheld, snap: dict) -> str:
+    rows = []
+    for s in snap["sources"]:
+        age = share.age_s(s.get("fetched_at"))
+        unset = s.get("error") in ("not_configured", "no_path")
+        rows.append([_t(wh, s.get("id"), 80),
+                     "ok" if s.get("ok") else "no path configured" if s.get("error") == "no_path"
+                     else "not configured" if unset
+                     else "error: %s" % _t(wh, s.get("error"), 40),
+                     _t(wh, s.get("fetched_at") or "", 40), _age(age) if age is not None else "",
+                     Raw('<span class="stale">stale</span>') if s.get("stale") and not unset
+                     else ""])
+    return _table(["source", "state", "fetched", "age", "stale"], rows)
+
+
+def _status_page(cfg: Any, wh: Withheld) -> bytes:
+    parts = [_banners(cfg, wh, _statuses(cfg))]
+    try:
+        snap = share.snapshot(cfg)
+    except Exception:  # no exception text on the page
+        parts.append('<p class="err">status summary unavailable</p>\n')
+        return _page("Status", "".join(parts), 60)
+    srcs = [s for s in snap["sources"] if isinstance(s, dict)]
+    by_id = {s.get("id"): s for s in srcs}
+    by_suffix = {}  # type: Dict[str, List[dict]]
+    for s in srcs:
+        by_suffix.setdefault(str(s.get("id")).rsplit(":", 1)[-1], []).append(s)
+    per = snap["period"]
+    parts.append("<p>Period: %s to %s (UTC days).</p>\n" % (_e(per["from"]), _e(per["to"])))
+    parts.append("<h2>Now</h2>\n" + _status_now(wh, snap, by_suffix))
+    parts.append("<h2>Per day</h2>\n" + _status_activity(wh, snap, by_suffix.get("ledger", [])))
+    parts.append("<h2>Sessions</h2>\n" + _status_sessions(wh, snap, by_id.get("calendar:sessions")))
+    parts.append("<h2>Runs</h2>\n" + _status_runs(wh, snap, by_id.get("runs")))
+    tracks = [t for t in snap["experiments"].get("tracks", []) if isinstance(t, dict)]
+    if tracks:
+        rows = [[_t(wh, t.get("track"), 60), _t(wh, t.get("stage"), 4),
+                 _age(t.get("last_event_age_s"))] for t in tracks]
+        parts.append("<h2>Stages</h2>\n" + _table(["track", "stage", "last event"], rows))
+    parts.append("<h2>Sources</h2>\n" + _status_sources(wh, snap))
+    if snap.get("dropped"):
+        parts.append("<p>%s item(s) dropped by the withheld re-check.</p>\n"
+                     % _e(_num(snap["dropped"])))
+    return _page("Status", "".join(parts), 60)
+
+
 def _attachment_section(cfg: Any, wh: Withheld, rec: dict) -> str:
     att = threads.attachments(cfg, rec, wh)
     rows = [[f["name"], f["bytes"], str(f["sha256"])[:12], f["status"]] for f in att["files"]]
@@ -430,6 +549,8 @@ def render(cfg: Any, route: str, arg: Optional[str]) -> Tuple[int, str, bytes]:
         return 200, html_type, _jobs_page(cfg, wh)
     if route == "nodes":
         return 200, html_type, _nodes_page(cfg, wh)
+    if route == "status":
+        return 200, html_type, _status_page(cfg, wh)
     if route == "thread" and arg is not None:
         return _thread_page(cfg, wh, arg)
     return 404, "text/plain; charset=utf-8", b"not found"

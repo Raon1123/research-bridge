@@ -230,37 +230,6 @@ def _sync(args: argparse.Namespace) -> int:
     return sync.run(args.node, args.watch)
 
 
-def _share(args: argparse.Namespace) -> int:
-    from . import share
-    if args.action == "serve":
-        from . import share_serve
-        cfg = _host_cfg()
-        if cfg is None:
-            return 1
-        try:
-            share_serve.serve(share.share_dir(cfg), args.bind, args.port)
-        except (ValueError, OSError) as exc:
-            print("error: %s" % exc)
-            return 1
-        return 0
-    cfg = _host_cfg()
-    if cfg is None:
-        return 1
-    if args.days < 0:
-        print("error: --days must be >= 0")
-        return 1
-    res = share.build(cfg, args.days, args.tier)
-    for p in res["paths"]:
-        print(p)
-    conf = cfg.share if isinstance(cfg.share, dict) else {}
-    if not isinstance(conf.get("labels"), list):
-        print('labels not configured: all project and track labels shown as "other"')
-    print("dropped %d" % res["dropped"])
-    if res["dropped"] > 0:
-        sys.stderr.write("dropped %d item(s) by the withheld re-check\n" % res["dropped"])
-    return 1 if res["dropped"] > 0 else 0
-
-
 def _config(args: argparse.Namespace) -> int:
     import json
     from . import configure as c
@@ -368,15 +337,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     sy.add_argument("--node")
     sy.add_argument("--watch", type=int, default=0, metavar="SECONDS", help="repeat (min 30)")
     sy.set_defaults(fn=_sync)
-    sh = sub.add_parser("share", help="shared status page snapshot (no node contact)")
-    ss = sh.add_subparsers(dest="action", required=True)
-    sb = ss.add_parser("build", help="write snapshot.json and index.html from the local caches")
-    sb.add_argument("--days", type=int, default=7)
-    sb.add_argument("--tier", choices=["shared", "owner"], default="shared")
-    sv = ss.add_parser("serve", help="serve the shared directory read-only")
-    sv.add_argument("--port", type=int, default=8766)
-    sv.add_argument("--bind", default="127.0.0.1")
-    sh.set_defaults(fn=_share)
     from . import web as _web  # rb web: read-only hub page (handler in web.py)
     wb = sub.add_parser("web", help="read-only hub page on loopback; opens no node connection")
     ws = wb.add_subparsers(dest="action", required=True)
