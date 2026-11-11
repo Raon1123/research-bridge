@@ -13,7 +13,7 @@ A session read the whole repository (code, tests, documents) on 2026-11-11 and c
 
 What was fixed, and what is left for the user to decide: `docs/issues/2026-11-11-audit.md`.
 
-What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (they ended with `Result=success`). PR 57 has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
+What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (the 16:17 pass and the last pass before PR 57 was opened both ended with `Result=success` in `rb service status`). PR 57 has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
@@ -81,7 +81,7 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 
 - Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
-- After PRs 56 and its follow-up are merged: the systemd units of the hub run the code of the main checkout, which was left on branch `claude/audit-2026-11-11`. In that checkout: `git switch main && git pull --ff-only`, `uv sync --extra host --python '>=3.10'`, then `systemctl --user restart rb-web.service` (the sync timer picks the code up by itself).
+- After PRs 56 and 57 are merged (56 first, each with a merge commit: 57 is stacked on 56): the systemd units of the hub run the code of the main checkout, which was left on branch `claude/audit-2026-11-11`. In that checkout: `git switch main && git pull --ff-only`, `uv sync --extra host --python '>=3.10'`, then `systemctl --user restart rb-web.service` (the sync timer picks the code up by itself). The MCP server of a Claude session is also started from the main checkout (`uv run --directory <main checkout> ... python -m rb_host.server`) and keeps the code it loaded: a session that was open before the update serves the old `rb_host` until it is restarted or its MCP server is reconnected.
 - Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).
 
 ## Pending decisions
