@@ -146,7 +146,7 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 
 | Goal / anti-goal | Check | Kind | Status |
 |---|---|---|---|
-| G1 | `tests/test_node_sessions.py`: reduction, window, label, outside count | unit test | passed: `test_plain_reduction`, `test_gap_rule_and_day_of_the_earlier_time`, `test_session_spanning_two_days`, `test_one_line_session_counts_with_no_active_seconds`, `test_days_window`, `test_label_rules`, `test_outside_and_missing_cwd_are_only_counted`, `test_hello_lists_sessions_and_a_subprocess_node_answers` |
+| G1 | `tests/test_node_sessions.py`: reduction, window, label, outside count | unit test | passed: `test_plain_reduction`, `test_gap_rule_and_day_of_the_earlier_time`, `test_session_spanning_two_days`, `test_a_full_day_is_capped_at_86400_seconds_and_the_hub_keeps_it`, `test_one_line_session_counts_with_no_active_seconds`, `test_days_window`, `test_label_rules`, `test_outside_and_missing_cwd_are_only_counted`, `test_hello_lists_sessions_and_a_subprocess_node_answers` |
 | G1 on real records | `rb-node sessions` on the node | live check (user) | not verified: no real record was read (§5) |
 | G2 | unset key gives `not_configured`; a path outside the directory or through a symlink is not read | unit test | passed: `test_op_unset_or_missing_directory`, `test_only_depth_two_jsonl_files_inside_the_directory_are_read`, `test_config_key` |
 | G3 | merge rule, failed fetch keeps data, atomic write | unit test | passed: `test_sessions_merge_by_id`, `test_sessions_failure_keeps_the_store`, `test_sessions_from_a_configured_node_are_stored` (one file, mode 600; the write is a temporary file and `os.replace`) |
@@ -210,6 +210,10 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 | 24 | An error code with a digit (allowed in the sync status file) shows as `bad_error_code` on the page, whose code pattern has no digits; asserted in a test. | A real code with a digit is hidden. | `share.ERROR_CODE` (unchanged) |
 | 25 | No version change of `rb_node` (`0.2.0`, pinned by tests): the operation is announced by `hello.ops`. `hello.state` gains no field. | `rb-node doctor` cannot tell an updated node from an old one by version. | `rb_node/__init__.py` (unchanged) |
 | 26 | The hub asks `days=8` on every pass; no hub command prints the store (§14, not added). | None known. | `rb_host/sessions.py` `DAYS` |
+| 27 | Seconds per day are capped at 86400 in the answer: a gap goes to the day of its earlier time, so a session active through a whole UTC day could report up to 86400 + 299 s, and the hub check (at most 86400 per day) would drop it on every pass. Found by review after the first build; fixed with a test. | A full day shows at most 24 h, which is right. | `rb_node/sessions.py` `DAY_S`, `test_a_full_day_is_capped_at_86400_seconds_and_the_hub_keeps_it` |
+| 28 | The hub also drops an entry whose `start` is after its `end`; `tree` is null when it fails the label check. `/status` shows a line when the hub left entries of the last answer out (`skipped` above 0). | None known. | `rb_host/sessions.py` `_entry`, `validate`; `web._node_sessions_lines` |
+| 29 | Listing stops after 20000 directory entries (`MAX_LISTED`) and says `truncated`; this bound is not in §7. A label that is empty after cleaning is sent as `(unnamed)`. A record file that cannot be opened, or vanished between the listing and the read, counts as `unparsed`. | A vanished file adds 1 to `unparsed` for one call. | `rb_node/sessions.py` |
+| 30 | Additions outside the design's list: the op error `not_found` (§6.1 names only `not_configured`, `denied`, `io_error`), the sync code `bad_answer`, the store field `files` (§8), the key `sessions` in the one-line output of `rb sync`, and `sessions_dir` with a note in `deploy/node.json.example`. | None known. | §6.1 and §8 above are not rewritten; this row records the difference |
 
 ## 14. Left to the builder
 
