@@ -15,9 +15,11 @@ def mb(tmp_path):
 
 
 def _put(mb, msg_id, box, name, data):
-    stored, fh = mb.open_part(msg_id, box, name)
-    fh.write(data)
-    fh.close()
+    """Write <stored>.part the way put_chunk leaves it (msg_begin chose the stored name)."""
+    att = mb.root / box / msg_id / "attachments"
+    att.mkdir(parents=True, exist_ok=True)
+    stored = Mailbox.sanitize(name, {p.name for p in att.iterdir()})
+    (att / (stored + ".part")).write_bytes(data)
     return stored
 
 
@@ -83,28 +85,6 @@ def test_checksum_mismatch_leaves_nothing(mb):
     assert ei.value.code == "checksum"
     att = mb.root / "in" / "m1" / "attachments"
     assert list(att.iterdir()) == []
-
-
-def test_same_name_twice_gets_suffix_and_original_kept(mb):
-    mb.new_message("m1", {})
-    data = b"d"
-    sha = hashlib.sha256(data).hexdigest()
-    s1 = _put(mb, "m1", "in", "결과 그림.png", data)
-    mb.commit_part("m1", "in", s1, sha)
-    s2 = _put(mb, "m1", "in", r"C:\q\결과 그림.png", data)
-    mb.commit_part("m1", "in", s2, sha)
-    assert (s1, s2) == ("결과 그림.png", "결과 그림-2.png")
-    names = mb.attachment_names("m1", "in")
-    assert names["결과 그림-2.png"] == r"C:\q\결과 그림.png"
-
-
-def test_two_open_parts_same_name_do_not_collide(mb):
-    mb.new_message("m1", {})
-    a, fa = mb.open_part("m1", "in", "f.txt")
-    b, fb = mb.open_part("m1", "in", "f.txt")
-    fa.close()
-    fb.close()
-    assert a != b
 
 
 def test_post_out_undelivered_until_ack(mb, tmp_path):

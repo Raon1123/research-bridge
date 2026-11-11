@@ -115,6 +115,21 @@ def test_truncated_upload_only_part_and_retry_safe(cfg):
     assert sorted(p.name for p in att.iterdir()) == ["a.bin"]
 
 
+def test_same_name_twice_gets_suffix_and_original_kept(cfg):
+    # moved from test_mailbox.py when Mailbox.open_part (test-only) was removed: msg_begin names
+    data = b"d"
+    sha = hashlib.sha256(data).hexdigest()
+    atts = [{"name": n, "bytes": 1, "sha256": sha} for n in ("결과 그림.png", r"C:\q\결과 그림.png")]
+    reqs = [("msg_begin", {"msg_id": "m2", "body": "b", "from_session": "s", "attachments": atts})]
+    reqs += [("put_chunk", {"msg_id": "m2", "name": n, "seq": 0, "data_b64": b64(data)})
+             for n in ("결과 그림.png", "결과 그림-2.png")]
+    resp = call(cfg, *(reqs + [("msg_commit", {"msg_id": "m2"})]))
+    assert all(r["ok"] for r in resp), resp
+    assert resp[0]["result"]["names"] == ["결과 그림.png", "결과 그림-2.png"]
+    rec = json.loads((Path(cfg.mailbox_root) / "in" / "m2" / "message.json").read_text("utf-8"))
+    assert rec["attachments"][1]["original"] == r"C:\q\결과 그림.png"
+
+
 def test_checksum_mismatch_fails_commit(cfg):
     resp = call(cfg, ("msg_begin", {"msg_id": "m4", "body": "b", "from_session": "s",
                                     "attachments": [{"name": "a", "bytes": 3, "sha256": "0" * 64}]}),
@@ -177,6 +192,33 @@ def test_get_file_doc_masked_with_sha(cfg):
     data = base64.b64decode(r["data_b64"])
     assert r["eof"] and b"pp_ltf_x" not in data
     assert r["sha256"] == hashlib.sha256(data).hexdigest()
+
+
+def test_get_file_masks_a_text_file_once_per_transfer(cfg, monkeypatch):
+    # node-06: chunks of one file reuse the masked bytes; a changed file is masked again
+    from rb_node.remote import Node
+    from rb_node.withheld import Withheld
+    calls = []
+    real = Withheld.mask_text
+    monkeypatch.setattr(Withheld, "mask_text", lambda self, t: calls.append(1) or real(self, t))
+    doc = Path(cfg.trm_root) / "lab" / "reports" / "long.md"
+    doc.write_text(("line\n" * (CHUNK // 5)) + "result pp_ltf_x here\n" + "tail\n" * 300000,
+                   encoding="utf-8")
+    node = Node(cfg)
+    args = {"kind": "doc", "ref": "lab/reports/long.md"}
+    got, seq = [], 0
+    while True:
+        res = node.get_file(dict(args, seq=seq))
+        got.append(base64.b64decode(res["data_b64"]))
+        if res["eof"]:
+            break
+        seq += 1
+    data = b"".join(got)
+    assert seq >= 2 and len(calls) == 1 and b"pp_ltf_x" not in data
+    assert res["sha256"] == hashlib.sha256(data).hexdigest()
+    doc.write_text("short\n", encoding="utf-8")
+    res = node.get_file(dict(args, seq=0))
+    assert len(calls) == 2 and base64.b64decode(res["data_b64"]) == b"short\n" and res["eof"]
 
 
 def test_get_file_out_chunks(cfg):

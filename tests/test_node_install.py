@@ -6,7 +6,6 @@ import os
 import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -427,7 +426,11 @@ def test_script_update_swap_is_symlink(sh_env):
     for _ in range(4):
         assert sh(env, "--research-root", str(tree)).returncode == 0
         targets.append(os.readlink(str(share / "rb_node")))
-        time.sleep(1.1)  # release names carry second-resolution stamps; pruning orders by mtime
+        # names are unique by the pid suffix; pruning orders by mtime, so push every existing
+        # release into the past (same shift for all) and the next run's release is the newest
+        for d in (share / "releases").iterdir():
+            t = d.stat().st_mtime - 10
+            os.utime(str(d), (t, t))
     assert len(set(targets)) == 4
     kept = sorted(d.name for d in (share / "releases").iterdir() if d.is_dir() and d.name != "legacy")
     assert len(kept) == 2 and targets[-1].split("/")[1] in kept
@@ -499,6 +502,25 @@ def test_script_refuses_hub_data_directory(sh_env):
     r = sh(env, "--research-root", str(tree))
     assert r.returncode == 1 and "hub" in r.stderr
     assert not (share / "releases").exists()
+
+
+@pytest.mark.parametrize("var,name", [("RB_HOST_ROOT", "host.json"),
+                                      ("RB_HOST_ROOT", "ledger.jsonl"),
+                                      ("RB_HOST_CONFIG", "host.json")])
+def test_script_refuses_hub_data_root_from_environment(sh_env, tmp_path, var, name):
+    # D5: a hub whose data root is set by RB_HOST_ROOT or RB_HOST_CONFIG is detected too
+    env, home, tree, _ = sh_env
+    hub = tmp_path / "hubdata"
+    hub.mkdir()
+    (hub / name).write_text("{}", encoding="utf-8")
+    value = str(hub / name) if var == "RB_HOST_CONFIG" else str(hub)
+    r = sh(dict(env, **{var: value}), "--research-root", str(tree))
+    assert r.returncode == 1 and "hub" in r.stderr
+    assert not (home / ".local").exists() and not (home / ".research-bridge").exists()
+    # an empty variable or one naming nothing does not count
+    r = sh(dict(env, RB_HOST_ROOT="", RB_HOST_CONFIG=str(tmp_path / "none.json")),
+           "--research-root", str(tree))
+    assert r.returncode == 0, r.stderr
 
 
 def test_script_refuses_python_path_with_space(sh_env, tmp_path):

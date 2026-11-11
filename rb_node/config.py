@@ -5,7 +5,9 @@ import json
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from .protocol import MAX_FILE
 
 DEFAULT_RB = "~/.research-bridge"
 
@@ -44,7 +46,7 @@ class NodeConfig:
     # GPU indices a bridge job may run on (the node owner's GPUs). Empty -> job_submit refused
     # (no_allowed_gpus) and run-job launches nothing. Set from the node console only.
     allowed_gpus: List[int] = field(default_factory=list)
-    max_file: int = 50 * 1024 * 1024
+    max_file: int = MAX_FILE  # size cap for attachments, fetched files, documents, harness files
     mailbox_root: str = field(default_factory=lambda: _rb("/mailbox"))
     audit_path: str = field(default_factory=lambda: _rb("/audit.jsonl"))
     # job approval verifier, set only from the node console (rb-node approve-key set); keep it
@@ -78,6 +80,37 @@ def expand_paths(data: dict) -> dict:
     return out
 
 
+def _type_ok(name: str, value: Any, default: Any) -> bool:
+    if name == "withheld_source":
+        return value is None or isinstance(value, str)
+    if name == "allowed_gpus":
+        return isinstance(value, list) and all(
+            isinstance(e, int) and not isinstance(e, bool) and e >= 0 for e in value)
+    if isinstance(default, list):
+        return isinstance(value, list) and all(isinstance(e, str) for e in value)
+    if isinstance(default, int):
+        return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, str)
+
+
+def coerce(data: dict) -> Tuple[Dict[str, Any], List[str]]:
+    """(known keys whose value has the right type, names of known keys with the wrong type).
+
+    The one type rule for node.json: load_config drops the wrong-typed values (the key keeps its
+    default) and rb-node doctor names them. Unknown keys are left out of both."""
+    default = NodeConfig()
+    kept = {}  # type: Dict[str, Any]
+    wrong = []  # type: List[str]
+    for f in fields(NodeConfig):
+        if f.name not in data:
+            continue
+        if _type_ok(f.name, data[f.name], getattr(default, f.name)):
+            kept[f.name] = data[f.name]
+        else:
+            wrong.append(f.name)
+    return kept, wrong
+
+
 def config_path() -> Path:
     env = os.environ.get("RB_NODE_CONFIG")
     return Path(env) if env else Path(_home(DEFAULT_RB + "/node.json"))
@@ -93,6 +126,7 @@ def load_config(path: Optional[Path] = None) -> NodeConfig:
         raise ValueError("node config is not valid JSON: %s (%s)" % (p, exc))
     if not isinstance(data, dict):
         raise ValueError("node config must be a JSON object: %s" % p)
-    known = {f.name for f in fields(NodeConfig)}
-    data = expand_paths(data)
-    return NodeConfig(**{k: v for k, v in data.items() if k in known})
+    kept, _wrong = coerce(data)
+    if kept.get("max_file", 0) > MAX_FILE:
+        kept["max_file"] = MAX_FILE  # hard rule 5; rb-node doctor reports the stored value
+    return NodeConfig(**expand_paths(kept))

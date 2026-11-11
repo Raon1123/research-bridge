@@ -432,7 +432,6 @@ def test_launcher_argv_is_what_callers_use(env, monkeypatch):
     import json as _j
     conf = _j.loads(Path(spawn._mcp_config(str(env.trm_root))).read_text(encoding="utf-8"))
     assert conf["mcpServers"]["rb"]["command"] == "/abs/rb-node"
-    assert spawn._launcher is not None
 
 
 def test_release_keeps_a_lock_another_process_took_over(tmp_path):
@@ -453,3 +452,13 @@ def test_discard_old_keeps_a_fresh_takeover_file(tmp_path):
     os.utime(str(tk), (old, old))
     assert spawn._discard_old(tk) is True and not tk.exists()
     assert not list(tmp_path.glob("*.discard.*"))
+
+
+def test_status_reads_only_the_one_message(env, monkeypatch):
+    # node-07: no scan of every in/*/message.json
+    mkmsg(env, "m1", status="answered")
+    mkmsg(env, "m2")
+    mb = Mailbox(Path(env.mailbox_root))
+    monkeypatch.setattr(mb, "inbox", lambda *a: pytest.fail("inbox scanned"))
+    assert spawn._status(mb, "m1") == "answered" and spawn._status(mb, "m2") == "new"
+    assert spawn._status(mb, "nope") is None and spawn._status(mb, "../x") is None

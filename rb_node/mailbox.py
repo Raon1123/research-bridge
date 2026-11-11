@@ -9,7 +9,7 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import BinaryIO, Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set
 
 from .protocol import CHUNK, MAX_FILE, ProtocolError
 
@@ -102,31 +102,7 @@ class Mailbox:
         _write_json(d / "message.json", record)
         return d
 
-    # -- attachments -------------------------------------------------------
-    def _names_path(self, box: str, msg_id: str) -> Path:
-        return self._item_dir(box, msg_id) / "attachment_names.json"
-
-    def attachment_names(self, msg_id: str, box: str) -> Dict[str, str]:
-        """Map stored (sanitized) name to the original name as sent."""
-        p = self._names_path(box, msg_id)
-        try:
-            return _read_json(p)
-        except (OSError, ValueError):
-            return {}
-
-    def open_part(self, msg_id: str, box: str, name: str) -> Tuple[str, BinaryIO]:
-        att = self._att_dir(box, msg_id)
-        _mkdir(att)
-        names = self.attachment_names(msg_id, box)
-        taken = set(names) | {p.name for p in att.iterdir()}
-        stored = self.sanitize(name, taken)
-        names[stored] = name
-        _write_json(self._names_path(box, msg_id), names)
-        part = att / (stored + ".part")
-        fh = open(str(part), "wb")
-        _chmod_file(part)
-        return stored, fh
-
+    # -- attachments (msg_begin names them, put_chunk writes <name>.part) ----
     def commit_part(self, msg_id: str, box: str, name: str, sha256: str) -> None:
         att = self._att_dir(box, msg_id)
         part = att / (name + ".part")
@@ -202,6 +178,14 @@ class Mailbox:
             if status is None or rec.get("status") == status:
                 items.append(rec)
         return items
+
+    def status(self, msg_id: str) -> Optional[str]:
+        """Status of one inbox message (reads only its message.json); None if unknown or bad."""
+        try:
+            rec = _read_json(self._item_dir("in", msg_id) / "message.json")
+        except (OSError, ValueError, ProtocolError):
+            return None
+        return rec.get("status") if isinstance(rec, dict) else None
 
     def set_status(self, msg_id: str, status: str) -> None:
         if status not in STATUSES:

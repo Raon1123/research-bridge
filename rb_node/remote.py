@@ -12,7 +12,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Dict, List
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple
 
 from . import PROTOCOL, __version__, approval, doctor, gitinfo, jobs, spawn
 from .audit import Audit
@@ -45,6 +45,7 @@ class Node:
         src = Path(cfg.withheld_source) if cfg.withheld_source else None
         self.withheld = Withheld.load(src)
         self.audit = Audit(Path(cfg.audit_path))
+        self._xfer = None  # type: Optional[Tuple[Tuple[str, int, int], bytes]]
         if src is not None and self.withheld.source_error:
             # Path and reason only, never pattern text. Fallback patterns stay active.
             self.audit.record(op="withheld_source", ok=False, source=str(src),
@@ -228,6 +229,20 @@ class Node:
             raise PolicyError("withheld")
         return p.read_bytes()
 
+    def _transfer_bytes(self, p: Path) -> bytes:
+        """_bytes_for(p), kept for the file being transferred so that each 1 MiB chunk does not
+        re-read, re-mask and re-scan the whole file. One entry, keyed by (path, mtime_ns, size);
+        a changed file is read again. Failures are not kept. The path and withheld-name checks
+        run in get_file on every call."""
+        st = p.stat()
+        key = (str(p), st.st_mtime_ns, st.st_size)
+        if self._xfer is not None and self._xfer[0] == key:
+            return self._xfer[1]
+        self._xfer = None
+        data = self._bytes_for(p)
+        self._xfer = (key, data)
+        return data
+
     def get_file(self, args: dict) -> dict:
         kind = _arg(args, "kind", str)
         ref = _arg(args, "ref", str)
@@ -246,7 +261,7 @@ class Node:
                 raise ProtocolError("not_found", "no such file")
         else:
             raise ProtocolError("bad_args", "kind must be out or doc")
-        data = self._bytes_for(p)
+        data = self._transfer_bytes(p)
         if seq < 0 or (seq > 0 and seq * CHUNK >= len(data)):
             raise ProtocolError("bad_seq", "seq out of range")
         chunk = data[seq * CHUNK:(seq + 1) * CHUNK]

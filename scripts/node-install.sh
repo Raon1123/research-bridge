@@ -74,8 +74,17 @@ BIN="$HOME/.local/bin"
 RB="$HOME/.research-bridge"
 NODEJSON=${RB_NODE_CONFIG:-$RB/node.json}
 RBN="$BIN/rb-node"
-if [ -e "$DEST/host.json" ] || [ -e "$DEST/ledger.jsonl" ]; then
-  echo "$DEST holds hub data (host.json or ledger.jsonl); this machine is a hub: not installing a node here" >&2
+# A hub keeps host.json and ledger.jsonl in its data root: the default one, or the one named by
+# RB_HOST_ROOT; RB_HOST_CONFIG names its host.json directly.
+for d in "$DEST" "${RB_HOST_ROOT:-}"; do
+  [ -n "$d" ] || continue
+  if [ -e "$d/host.json" ] || [ -e "$d/ledger.jsonl" ]; then
+    echo "$d holds hub data (host.json or ledger.jsonl); this machine is a hub: not installing a node here" >&2
+    exit 1
+  fi
+done
+if [ -n "${RB_HOST_CONFIG:-}" ] && [ -e "$RB_HOST_CONFIG" ]; then
+  echo "RB_HOST_CONFIG names an existing hub config ($RB_HOST_CONFIG); this machine is a hub: not installing a node here" >&2
   exit 1
 fi
 pyinst() { PYTHONPATH="$SRC" "$PY" -m rb_node.install "$@"; }
