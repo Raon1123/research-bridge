@@ -115,6 +115,21 @@ def test_truncated_upload_only_part_and_retry_safe(cfg):
     assert sorted(p.name for p in att.iterdir()) == ["a.bin"]
 
 
+def test_same_name_twice_gets_suffix_and_original_kept(cfg):
+    # moved from test_mailbox.py when Mailbox.open_part (test-only) was removed: msg_begin names
+    data = b"d"
+    sha = hashlib.sha256(data).hexdigest()
+    atts = [{"name": n, "bytes": 1, "sha256": sha} for n in ("결과 그림.png", r"C:\q\결과 그림.png")]
+    reqs = [("msg_begin", {"msg_id": "m2", "body": "b", "from_session": "s", "attachments": atts})]
+    reqs += [("put_chunk", {"msg_id": "m2", "name": n, "seq": 0, "data_b64": b64(data)})
+             for n in ("결과 그림.png", "결과 그림-2.png")]
+    resp = call(cfg, *(reqs + [("msg_commit", {"msg_id": "m2"})]))
+    assert all(r["ok"] for r in resp), resp
+    assert resp[0]["result"]["names"] == ["결과 그림.png", "결과 그림-2.png"]
+    rec = json.loads((Path(cfg.mailbox_root) / "in" / "m2" / "message.json").read_text("utf-8"))
+    assert rec["attachments"][1]["original"] == r"C:\q\결과 그림.png"
+
+
 def test_checksum_mismatch_fails_commit(cfg):
     resp = call(cfg, ("msg_begin", {"msg_id": "m4", "body": "b", "from_session": "s",
                                     "attachments": [{"name": "a", "bytes": 3, "sha256": "0" * 64}]}),
