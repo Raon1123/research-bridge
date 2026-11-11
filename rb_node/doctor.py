@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__, approval, gitinfo, spawn
-from .config import NodeConfig, config_path, expand_paths
+from .config import NodeConfig, coerce, config_path, expand_paths
 from .jobs import allowed_set
 from .withheld import Withheld
 
@@ -65,31 +65,9 @@ def _ok(cid: str, message: str) -> Check:
 
 # -- config checks (rows marked C in the design) ------------------------------------------------
 def _coerce(data: dict) -> Tuple[NodeConfig, List[str]]:
-    """NodeConfig from node.json data; values of the wrong type are dropped and named."""
-    default = NodeConfig()
-    kept = {}  # type: Dict[str, Any]
-    wrong = []  # type: List[str]
-    for f in fields(NodeConfig):
-        if f.name not in data:
-            continue
-        v, d = data[f.name], getattr(default, f.name)
-        if f.name == "withheld_source":
-            good = v is None or isinstance(v, str)
-        elif f.name == "allowed_gpus":
-            good = isinstance(v, list) and all(
-                isinstance(e, int) and not isinstance(e, bool) and e >= 0 for e in v)
-        elif isinstance(d, list):
-            good = isinstance(v, list) and all(isinstance(e, str) for e in v)
-        elif isinstance(d, bool):
-            good = isinstance(v, bool)
-        elif isinstance(d, int):
-            good = isinstance(v, int) and not isinstance(v, bool)
-        else:
-            good = isinstance(v, str)
-        if good:
-            kept[f.name] = v
-        else:
-            wrong.append(f.name)
+    """NodeConfig from node.json data; values of the wrong type are dropped and named
+    (the same rule as load_config, config.coerce)."""
+    kept, wrong = coerce(data)
     return NodeConfig(**expand_paths(kept)), wrong
 
 

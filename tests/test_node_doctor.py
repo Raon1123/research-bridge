@@ -415,3 +415,19 @@ def test_ak_harness_next_command_keeps_the_hub_key():
     fix = {c.id: c.fix for c in doctor._ak_checks()}["ak_harness"]
     assert "--hub-key" in fix and "--harness-key" in fix
 
+
+
+def test_load_config_replaces_wrong_typed_values_by_defaults(home):
+    # D2: doctor says "wrong type and is ignored"; load_config must do the same, so a string
+    # read_roots is never iterated by character (which made "/" a read root).
+    from rb_node.config import load_config
+    path, cfg = write_cfg(home, read_roots="lab/", allowed_gpus="4", max_file="big",
+                          withheld_source=5, job_template="python")
+    loaded = load_config(path)
+    dflt = NodeConfig()
+    assert loaded.read_roots == dflt.read_roots
+    assert loaded.allowed_gpus == [] and loaded.max_file == dflt.max_file
+    assert loaded.withheld_source == dflt.withheld_source and loaded.job_template == []
+    msg = by_id(doctor.config_checks(cfg))["config_keys"].message
+    for k in ("read_roots", "allowed_gpus", "max_file", "withheld_source", "job_template"):
+        assert "%r has the wrong type" % k in msg
