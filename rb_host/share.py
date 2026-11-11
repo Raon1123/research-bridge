@@ -1,11 +1,13 @@
 """Status snapshot of the hub page route /status (docs/design/2026-11-11-hub-status-page.md).
 
-`snapshot` reads local files only (the board cache, the ledger, stored event bodies, and the
-session and run files named in host.json `share.*`), reduces them to counts and labels, and
-writes nothing. It opens no connection. The formats of the session and run files are assumed
+`snapshot` reads local files only (the board cache, the ledger, stored event bodies, the node
+session stores `<data_root>/sessions/<node>.json` written by `rb sync`
+(docs/design/2026-11-11-node-sessions.md), and the session and run files named in host.json
+`share.*`), reduces them to counts and labels, and writes nothing. It opens no connection. The formats of the session and run files are assumed
 (docs/design/2026-11-06-shared-status-page.md §8). Stdlib plus rb_node.withheld only at module
-level: no client, server, jobs, threads or board import, so that importing this module loads
-neither `mcp` nor a node client (`threads` is imported inside `snapshot`).
+level, and `sessions` (stdlib, rb_node.withheld and util only): no client, server, jobs, threads
+or board import, so that importing this module loads neither `mcp` nor a node client
+(`threads` is imported inside `snapshot`).
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from rb_node.withheld import Withheld
 
+from . import sessions as hub_sessions
 from .config import HostConfig
 from .util import age_s, now, parse_utc
 
@@ -36,6 +39,8 @@ QUEUE_COUNTS = ("queued", "running", "done", "failed", "other")
 LANES = ("laptop", "hub", "server")
 LABEL_MAX = 60
 ACTIVITY_KEYS = ("submits", "cancels", "approved", "finished", "failed", "sent", "received")
+ACTIVE_NOW_S = 900  # "active now": last activity at most this long before the fetch
+SESSIONS_CADENCE_S = 900  # a node store older than this is marked stale (sync runs every 300 s)
 _WS = "\n\r\t"
 
 
@@ -264,13 +269,83 @@ def _node_cache(cfg: HostConfig, sid: str) -> dict:
     return rec
 
 
-def _board_states(cfg: HostConfig, node: str) -> dict:
-    """The `board` map of the node's sync status file: it says why a cache file is missing
-    (`no_path`: the node has no path configured for that source)."""
+def _sync_status(cfg: HostConfig, node: str) -> dict:
     from . import threads  # lazy: threads imports jobs, which imports the node client
     st = threads.read_status(cfg, node)
-    b = st.get("board") if isinstance(st, dict) else None
+    return st if isinstance(st, dict) else {}
+
+
+def _board_states(st: dict) -> dict:
+    """The `board` map of the node's sync status file: it says why a cache file is missing
+    (`no_path`: the node has no path configured for that source)."""
+    b = st.get("board")
     return b if isinstance(b, dict) else {}
+
+
+def _int(v: Any) -> int:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else 0
+
+
+def node_sessions(cfg: HostConfig, node: str, field: Any, wh: Withheld,
+                  labels: Optional[Set[str]], start: date,
+                  end: date) -> Optional[Tuple[dict, list, int]]:
+    """(info, per-day rows, dropped) of one node's session store, or None when the node was
+    never asked (no store and no `sessions` field in its sync status file).
+
+    State (design 2026-11-11-node-sessions §8, G5): `ok`, `unsupported`, `not_configured` or
+    `error`; taken from the store, or from the status field when there is no store. The rows
+    come from the stored sessions whatever the state of the last fetch."""
+    store, err = hub_sessions.load(cfg, node)
+    if store is None and err is None:
+        if field is None:
+            return None
+        raw = None if field == "ok" else field
+        err = "missing" if field == "ok" else None
+    else:
+        raw = None if store is not None and store.get("ok") is True else (
+            store.get("error") if store is not None else err) or "unavailable"
+    dropped = 0
+    code, hit = _error_code(err or raw, wh)
+    dropped += 1 if hit else 0
+    state = ("ok" if code is None else code if code in ("unsupported", "not_configured")
+             else "error")
+    store = store or {}
+    fa = parse_utc(store.get("fetched_at"))
+    acc = {}  # type: Dict[Tuple[str, str], List[float]]
+    active_now = in_period = 0
+    sessions = store.get("sessions") if isinstance(store.get("sessions"), dict) else {}
+    for rec in sessions.values():
+        if not isinstance(rec, dict):
+            continue
+        s, e, days = parse_utc(rec.get("start")), parse_utc(rec.get("end")), rec.get("days")
+        if s is None or e is None or not isinstance(days, dict):
+            continue
+        proj, hit = _label(rec.get("label"), wh, labels)
+        if hit:
+            dropped += 1
+            continue
+        active = {d: float(v) for d, v in days.items() if isinstance(d, str)
+                  and isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0}
+        if not active:
+            active = {s.date().isoformat(): 0.0}  # no gap-based activity: its start day
+        cells = [(d, v) for d, v in active.items()
+                 if start.isoformat() <= d <= end.isoformat()]
+        for d, v in cells:
+            cell = acc.setdefault((d, proj or "other"), [0, 0.0])
+            cell[0] += 1
+            cell[1] += v
+        in_period += 1 if cells else 0
+        if fa is not None and (fa - e).total_seconds() <= ACTIVE_NOW_S:
+            active_now += 1
+    rows = [{"date": d, "lane": node, "project": p, "count": int(c),
+             "active_h": round(v / 3600.0, 2)} for (d, p), (c, v) in sorted(acc.items())]
+    info = {"node": node, "state": state, "error": code,
+            "fetched_at": _iso(fa) if fa else None, "active_now": active_now,
+            "sessions": in_period, "active_h": round(sum(r["active_h"] for r in rows), 2),
+            "outside": _int(store.get("outside")), "unparsed": _int(store.get("unparsed")),
+            "files": _int(store.get("files")), "truncated": store.get("truncated") is True,
+            "skipped": _int(store.get("skipped"))}
+    return info, rows, dropped
 
 
 def reduce_jobs(job_recs: list, start: date, end: date) -> Tuple[int, float]:
@@ -432,8 +507,24 @@ def snapshot(cfg: HostConfig, days: int = 7, today: Optional[date] = None) -> di
 
     queue = dict.fromkeys(QUEUE_COUNTS, 0)
     in_use, total, tracks = 0, 0, []  # type: int, int, list
+    node_info = []  # type: List[dict]
     for node in nodes:
-        bmap = _board_states(cfg, node)
+        sync_st = _sync_status(cfg, node)
+        bmap = _board_states(sync_st)
+        try:
+            got = node_sessions(cfg, node, sync_st.get("sessions"), wh, labels, start, end)
+        except Exception:
+            got = ({"node": node, "state": "error", "error": "unparseable", "fetched_at": None,
+                    "active_now": 0, "sessions": 0, "active_h": 0.0, "outside": 0,
+                    "unparsed": 0, "files": 0, "truncated": False, "skipped": 0}, [], 0)
+        if got is not None:
+            info, rows, n = got
+            dropped += n
+            node_info.append(info)
+            per_day = sorted(per_day + rows,
+                             key=lambda r: (r["date"], r["lane"], r["project"]))
+            source("%s:sessions" % node, info["fetched_at"], info["state"] == "ok",
+                   info["error"], SESSIONS_CADENCE_S)
         for name in NODE_SOURCES:
             sid = "%s:%s" % (node, name)
             rec = _node_cache(cfg, sid)
@@ -473,7 +564,8 @@ def snapshot(cfg: HostConfig, days: int = 7, today: Optional[date] = None) -> di
         "schema_version": SCHEMA_VERSION, "built_at": now(),
         "period": {"from": start.isoformat(), "to": end.isoformat()},
         "sources": sources,
-        "sessions": {"per_day": per_day, "totals": totals},
+        "sessions": {"per_day": per_day, "totals": totals,
+                     "active_now": sum(i["active_now"] for i in node_info), "nodes": node_info},
         "experiments": {"queue": queue,
                         "gpu": {"in_use": in_use, "total": total, "gpu_hours_period": gpu_hours},
                         "runs_per_day": runs_per_day, "tracks": tracks},

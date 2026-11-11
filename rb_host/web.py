@@ -405,21 +405,62 @@ def _no_source(what: str, key: str, src: Optional[dict], wh: Withheld) -> Option
     return None
 
 
+def _node_sessions_lines(wh: Withheld, n: dict) -> str:
+    """The lines of one node in the Sessions section (docs/design/2026-11-11-node-sessions.md
+    §8 "Page"): one per state, and with numbers the counts that are above 0."""
+    name = _e(_t(wh, n.get("node"), 40))
+    state = n.get("state")
+    if state == "unsupported":
+        return ("<p>node %s does not offer the sessions operation (update rb_node on the "
+                "node).</p>\n" % name)
+    if state == "not_configured":
+        return ("<p>sessions directory is not configured on node %s (<code>rb-node config set "
+                "sessions_dir ...</code> on the node console).</p>\n" % name)
+    if state != "ok":
+        return '<p class="err">node %s sessions: error %s</p>\n' % (
+            name, _e(_t(wh, n.get("error"), 40)))
+    out = ["<p>node %s: %s session(s) in the period, %s active hours; %s active within 15 "
+           "minutes before the fetch at %s</p>\n"
+           % (name, _num(n.get("sessions")), _num(n.get("active_h")), _num(n.get("active_now")),
+              _e(_t(wh, n.get("fetched_at") or "an unknown time", 40)))]
+    if n.get("outside"):
+        out.append("<p>node %s: %s session(s) outside the research tree (counted, not "
+                   "listed).</p>\n" % (name, _num(n.get("outside"))))
+    if n.get("unparsed"):
+        out.append('<p class="err">node %s: %s of %s record file(s) the node could not read as '
+                   "sessions</p>\n" % (name, _num(n.get("unparsed")), _num(n.get("files"))))
+    if n.get("truncated"):
+        out.append("<p>node %s: the last fetch stopped at a per-call bound; the next passes "
+                   "continue.</p>\n" % name)
+    return "".join(out)
+
+
 def _status_sessions(wh: Withheld, snap: dict, src: Optional[dict]) -> str:
     sess = snap["sessions"]
     tot = sess.get("totals", {})
     cost = _num(tot.get("cost_usd"))
+    nodes = [n for n in sess.get("nodes", []) if isinstance(n, dict)]
     none = _no_source("session", "calendar_sessions", src, wh)
-    if none is not None:
+    if none is not None and not nodes:
         return none + ("<p>cost (USD) %s</p>\n" % _e(cost) if cost else "")
-    line = "<p>sessions %s, routines %s, active hours %s%s</p>\n" % (
-        _num(tot.get("sessions")), _num(tot.get("routines")), _num(tot.get("active_h")),
-        _e(", cost (USD) %s" % cost) if cost else "")
+    parts = []
+    if none is None:
+        parts.append("<p>sessions %s, routines %s, active hours %s%s</p>\n" % (
+            _num(tot.get("sessions")), _num(tot.get("routines")), _num(tot.get("active_h")),
+            _e(", cost (USD) %s" % cost) if cost else ""))
+    else:
+        if src is not None and src.get("error") != "not_configured":
+            parts.append(none)  # the file source failed: its error line
+        if cost:
+            parts.append("<p>cost (USD) %s</p>\n" % _e(cost))
+    parts.extend(_node_sessions_lines(wh, n) for n in nodes)
+    if any(n.get("state") == "ok" for n in nodes):
+        parts.append("<p>active now (all nodes): %s</p>\n" % _num(sess.get("active_now")))
     rows = [[_t(wh, r.get("date"), 10), _t(wh, r.get("lane"), 40), _t(wh, r.get("project"), 60),
              _num(r.get("count")), _num(r.get("active_h"))]
             for r in sess.get("per_day", []) if isinstance(r, dict)]
-    return line + _table(["date (UTC)", "lane", "project", "sessions", "active hours"], rows,
-                         "(no sessions in the period)")
+    return "".join(parts) + _table(["date (UTC)", "lane", "project", "sessions", "active hours"],
+                                   rows, "(no sessions in the period)")
 
 
 def _status_runs(wh: Withheld, snap: dict, src: Optional[dict]) -> str:
@@ -437,9 +478,10 @@ def _status_sources(wh: Withheld, snap: dict) -> str:
     rows = []
     for s in snap["sources"]:
         age = share.age_s(s.get("fetched_at"))
-        unset = s.get("error") in ("not_configured", "no_path")
+        unset = s.get("error") in ("not_configured", "no_path", "unsupported")
         rows.append([_t(wh, s.get("id"), 80),
                      "ok" if s.get("ok") else "no path configured" if s.get("error") == "no_path"
+                     else "not offered by the node" if s.get("error") == "unsupported"
                      else "not configured" if unset
                      else "error: %s" % _t(wh, s.get("error"), 40),
                      _t(wh, s.get("fetched_at") or "", 40), _age(age) if age is not None else "",

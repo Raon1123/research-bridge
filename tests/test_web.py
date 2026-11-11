@@ -1270,3 +1270,112 @@ def test_status_unreadable_ledger_shows_its_error_beside_the_numbers(cfg):
     assert line in _section(page, "Now")
     day = _section(page, "Per day")
     assert line in day and "(no rows)" in day
+
+
+# -- /status: sessions collected from the nodes (docs/design/2026-11-11-node-sessions.md) ----
+NS = ["0a1b2c3d-0000-4000-8000-%012d" % i for i in range(1, 5)]
+
+
+def _node_store(cfg, sessions, **kw):
+    rec = {"schema": 1, "node": "n1", "fetched_at": _stamp(30), "attempted_at": _stamp(30),
+           "ok": True, "error": None, "tree": "trm", "outside": 0, "unparsed": 0, "files": 2,
+           "truncated": False, "skipped": 0, "sessions": sessions}
+    rec.update(kw)
+    p = Path(cfg.data_root) / "sessions" / "n1.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rec), encoding="utf-8")
+
+
+def _sync_field(cfg, value):
+    p = Path(cfg.data_root) / "sync" / "n1.json"
+    st = json.loads(p.read_text(encoding="utf-8"))
+    st["sessions"] = value
+    p.write_text(json.dumps(st), encoding="utf-8")
+
+
+def test_status_node_sessions_content(cfg):
+    today = _day_of(_stamp(0))
+    _node_store(cfg, {
+        NS[0]: {"label": "lab/experiments", "start": _stamp(7200), "end": _stamp(100),
+                "days": {today: 5400}},
+        NS[1]: {"label": "lab/experiments", "start": _stamp(3000), "end": _stamp(2000),
+                "days": {today: 1800}}})
+    _sync_field(cfg, "ok")
+    page = _status(cfg)
+    sess = _section(page, "Sessions")
+    assert "No session source is configured" not in sess
+    assert "node n1: 2 session(s) in the period, 2.0 active hours" in sess
+    assert "active now (all nodes): 1" in sess
+    assert "<td>%s</td><td>n1</td><td>lab/experiments</td><td>2</td><td>2.0</td>" % today in sess
+    for word in ("outside the research tree", "could not read", "per-call bound"):
+        assert word not in sess
+    row = [r for r in _section(page, "Sources").split("<tr>") if "n1:sessions" in r][0]
+    assert "<td>ok</td>" in row and "stale" not in row
+
+
+def test_status_node_sessions_four_states_four_lines(cfg):
+    lines = {}
+    for field in ("unsupported", "not_configured", "io_error"):
+        _sync_field(cfg, field)
+        lines[field] = _section(_status(cfg), "Sessions")
+    _node_store(cfg, {})
+    lines["ok"] = _section(_status(cfg), "Sessions")
+    assert "does not offer the sessions operation (update rb_node on the node)" in lines["unsupported"]
+    assert ("sessions directory is not configured on node n1 (<code>rb-node config set "
+            "sessions_dir ...</code> on the node console)") in lines["not_configured"]
+    assert '<p class="err">node n1 sessions: error io_error</p>' in lines["io_error"]
+    assert "node n1: 0 session(s) in the period" in lines["ok"]
+    assert len(set(lines.values())) == 4
+    for v in lines.values():
+        assert "No session source is configured" not in v
+    src = _section(_status(cfg), "Sources")
+    _sync_field(cfg, "unsupported")
+    (Path(cfg.data_root) / "sessions" / "n1.json").unlink()
+    row = [r for r in _section(_status(cfg), "Sources").split("<tr>") if "n1:sessions" in r][0]
+    assert "not offered by the node" in row and "stale" not in row and "n1:sessions" in src
+
+
+def test_status_node_counts_lines(cfg):
+    _node_store(cfg, {}, outside=3, unparsed=5, files=5, truncated=True)
+    sess = _section(_status(cfg), "Sessions")
+    assert "node n1: 3 session(s) outside the research tree (counted, not listed)" in sess
+    assert ('<p class="err">node n1: 5 of 5 record file(s) the node could not read as '
+            "sessions</p>") in sess
+    assert "node n1: the last fetch stopped at a per-call bound" in sess
+
+
+def test_status_node_store_escapes_and_masks(cfg):
+    bad = "<b>x‮\x1b[1m"
+    _node_store(cfg, {
+        NS[0]: {"label": bad, "start": _stamp(100), "end": _stamp(50), "days": {}},
+        NS[1]: {"label": "unrelatedfam_run", "start": _stamp(100), "end": _stamp(50),
+                "days": {}}})
+    page = _status(cfg)
+    assert "&lt;b&gt;x[1m" in page
+    for raw in ("<b>", "‮", "\x1b", "unrelatedfam_"):
+        assert raw not in page, repr(raw)
+    assert "dropped by the withheld re-check" in page
+    for code, shown in (("<script>alert(1)</script>", "bad_error_code"),
+                        ("unrelatedfam_x", "withheld")):
+        _node_store(cfg, {}, ok=False, error=code)
+        page = _status(cfg)
+        assert "node n1 sessions: error %s" % shown in page
+        assert "<script" not in page and "unrelatedfam_" not in page
+
+
+def test_status_writes_nothing_with_a_node_store(cfg, tmp_path):
+    _node_store(cfg, {NS[0]: {"label": "lab", "start": _stamp(100), "end": _stamp(50),
+                              "days": {}}})
+    _sync_field(cfg, "ok")
+    before = _tree(cfg)
+    _status(cfg)
+    assert _tree(cfg) == before
+
+
+def test_status_file_source_and_node_source_together(cfg, tmp_path):
+    _node_store(cfg, {NS[0]: {"label": "lab", "start": _stamp(100), "end": _stamp(50),
+                              "days": {}}})
+    c = _with_share(cfg, tmp_path, sessions=[{"start": _stamp(0), "lane": "hub", "project": "p"}])
+    sess = _section(_status(c), "Sessions")
+    assert "sessions 1, routines 0, active hours 0.0" in sess
+    assert "<td>hub</td><td>p</td>" in sess and "<td>n1</td><td>lab</td>" in sess

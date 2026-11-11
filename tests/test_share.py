@@ -136,7 +136,7 @@ def test_all_sections_present(env):
         assert k in snap
     assert set(snap["period"]) == {"from", "to"}
     assert snap["period"]["to"] == TODAY.isoformat()
-    assert set(snap["sessions"]) == {"per_day", "totals"}
+    assert set(snap["sessions"]) == {"per_day", "totals", "active_now", "nodes"}
     assert {"sessions", "routines", "active_h"} <= set(snap["sessions"]["totals"])
     exp = snap["experiments"]
     assert set(exp) == {"queue", "gpu", "runs_per_day", "tracks"}
@@ -481,3 +481,148 @@ def test_share_is_no_longer_a_command(capsys):
     assert "invalid choice: 'share'" in capsys.readouterr().err
     assert not (REPO / "rb_host" / "share_serve.py").exists()
     assert not hasattr(share, "build") and not hasattr(share, "share_dir")
+
+
+# -- sessions collected from the nodes (docs/design/2026-11-11-node-sessions.md §8) ----------
+SA, SB, SC, SD = ("0a1b2c3d-0000-4000-8000-%012d" % i for i in range(1, 5))
+
+
+def _now_minus(seconds: int) -> str:
+    t = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=seconds)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _node_store(root: Path, sessions: dict, node="n1", **kw) -> Path:
+    rec = {"schema": 1, "node": node, "fetched_at": _now_minus(60), "attempted_at": _now_minus(60),
+           "ok": True, "error": None, "tree": "trm", "outside": 0, "unparsed": 0, "files": 1,
+           "truncated": False, "skipped": 0, "sessions": sessions}
+    rec.update(kw)
+    return _write(root / "sessions" / ("%s.json" % node), rec)
+
+
+def _sync_field(root: Path, value, node="n1") -> None:
+    _write(root / "sync" / ("%s.json" % node), {"schema": 1, "node": node, "ok": True,
+                                                  "board": {}, "sessions": value})
+
+
+def _node_info(snap: dict, node="n1") -> dict:
+    return {n["node"]: n for n in snap["sessions"]["nodes"]}[node]
+
+
+def test_node_sessions_rows_from_the_store(env):
+    d1, d2 = _days_ago(1).isoformat(), _days_ago(2).isoformat()
+    _node_store(env["root"], {
+        SA: {"label": "ARG", "start": _iso(_days_ago(2), "10:00:00Z"),
+             "end": _iso(_days_ago(1), "11:00:00Z"), "days": {d1: 3600, d2: 1800}},
+        SB: {"label": "ARG", "start": _iso(_days_ago(1), "09:00:00Z"),
+             "end": _iso(_days_ago(1), "09:00:00Z"), "days": {}},
+        SC: {"label": "lab/not-on-the-allowlist", "start": _iso(_days_ago(1), "08:00:00Z"),
+             "end": _iso(_days_ago(1), "08:30:00Z"), "days": {d1: 900}},
+        SD: {"label": "ARG", "start": _now_minus(3000), "end": _now_minus(400),
+             "days": {_now_minus(400)[:10]: 0}},
+    }, outside=3, unparsed=2, truncated=True, skipped=1)
+    snap = _snap(env)
+    rows = {(r["date"], r["lane"], r["project"]): r for r in snap["sessions"]["per_day"]}
+    assert rows[(d1, "n1", "ARG")]["count"] == 2 and rows[(d1, "n1", "ARG")]["active_h"] == 1.0
+    assert rows[(d2, "n1", "ARG")]["count"] == 1 and rows[(d2, "n1", "ARG")]["active_h"] == 0.5
+    assert rows[(d1, "n1", "other")]["count"] == 1 and rows[(d1, "n1", "other")]["active_h"] == 0.25
+    assert rows[(_now_minus(3000)[:10], "n1", "ARG")]["count"] >= 1  # counted on its start day
+    assert (d1, "laptop", "ARG") in rows  # the file source is still there
+    info = _node_info(snap)
+    assert info["state"] == "ok" and info["active_now"] == 1 and info["sessions"] == 4
+    assert (info["outside"], info["unparsed"], info["truncated"], info["skipped"]) == (3, 2, True, 1)
+    assert snap["sessions"]["active_now"] == 1
+    src = _src(snap)["n1:sessions"]
+    assert src["ok"] is True and src["error"] is None and src["fetched_at"]
+    assert snap["sessions"]["totals"]["sessions"] == sum(  # totals stay the file source's
+        r["count"] for r in snap["sessions"]["per_day"] if r["lane"] != "n1")
+
+
+def test_node_sessions_four_states(env):
+    states = {}
+    for field in ("unsupported", "not_configured", "io_error"):
+        _sync_field(env["root"], field)
+        snap = _snap(env)
+        info = _node_info(snap)
+        states[field] = (info["state"], info["error"])
+        assert info["fetched_at"] is None and snap["sessions"]["active_now"] == 0
+        assert _src(snap)["n1:sessions"]["ok"] is False
+    _node_store(env["root"], {})
+    info = _node_info(_snap(env))
+    states["ok"] = (info["state"], info["error"])
+    assert states == {"unsupported": ("unsupported", "unsupported"),
+                      "not_configured": ("not_configured", "not_configured"),
+                      "io_error": ("error", "io_error"), "ok": ("ok", None)}
+    assert info["sessions"] == 0
+
+
+def test_store_state_wins_over_the_status_field(env):
+    _sync_field(env["root"], "ok")
+    _node_store(env["root"], {SA: {"label": "ARG", "start": _now_minus(100),
+                                   "end": _now_minus(50), "days": {}}},
+                ok=False, error="not_configured")
+    snap = _snap(env)
+    info = _node_info(snap)
+    assert info["state"] == "not_configured"
+    assert any(r["lane"] == "n1" for r in snap["sessions"]["per_day"])  # history still shown
+
+
+def test_node_never_asked_has_no_sessions_row(env):
+    snap = _snap(env)
+    assert snap["sessions"]["nodes"] == [] and "n1:sessions" not in _src(snap)
+    _sync_field(env["root"], None)
+    assert _snap(env)["sessions"]["nodes"] == []
+
+
+def test_node_store_codes_and_labels_are_checked(env):
+    wp = Path(env["cfg"].withheld_patterns_file)
+    wp.write_text(json.dumps({"patterns": ["unrelatedfam_"]}), encoding="utf-8")
+    for code, shown in (("Bad Code!", "bad_error_code"), ("e2e_fail", "bad_error_code"),
+                        ("unrelatedfam_x", "withheld"), (7, "unavailable")):
+        _node_store(env["root"], {}, ok=False, error=code)
+        assert _node_info(_snap(env))["error"] == shown, code
+    _node_store(env["root"], {
+        SA: {"label": "unrelatedfam_run", "start": _now_minus(100), "end": _now_minus(50),
+             "days": {}},
+        SB: {"label": "<b>ARG</b>", "start": _now_minus(100), "end": _now_minus(50), "days": {}}})
+    c = config.load_host_config(env["host"])
+    c.share.pop("labels")
+    snap = share.snapshot(c, today=TODAY)
+    blob = json.dumps(snap)
+    assert "unrelatedfam_" not in blob and snap["dropped"] >= 1
+    assert "<b>ARG</b>" in blob  # cleaned text is kept; the page escapes it
+
+
+@pytest.mark.parametrize("content", [b"{not json", b"[]", b'{"sessions": []}', b"\xff\xfe",
+                                     json.dumps({"sessions": {SA: "x", SB: {"days": "x"},
+                                                              SC: {"start": 5}},
+                                                 "ok": True, "fetched_at": 9}).encode()])
+def test_bad_node_store_never_raises(env, content):
+    p = env["root"] / "sessions" / "n1.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(content)
+    snap = _snap(env)
+    info = _node_info(snap)
+    assert info["state"] in ("ok", "error")
+    assert not any(r["lane"] == "n1" for r in snap["sessions"]["per_day"])
+
+
+def test_unreadable_node_store(env):
+    p = _node_store(env["root"], {})
+    p.chmod(0)
+    try:
+        if os.access(str(p), os.R_OK):
+            pytest.skip("running as a user who can read mode 000 files")
+        info = _node_info(_snap(env))
+        assert (info["state"], info["error"]) == ("error", "unreadable")
+    finally:
+        p.chmod(0o600)
+
+
+def test_snapshot_writes_nothing_with_a_node_store(env):
+    _node_store(env["root"], {SA: {"label": "ARG", "start": _now_minus(100),
+                                   "end": _now_minus(50), "days": {}}})
+    _sync_field(env["root"], "ok")
+    before = _tree(env["tmp"])
+    _ssnap(env["cfg"])
+    assert _tree(env["tmp"]) == before
