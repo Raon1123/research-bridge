@@ -8,8 +8,10 @@ def test_append_dedupes(tmp_path):
     rec = {"kind": "message", "id": "m1", "body": "hi"}
     assert lg.append(rec) is True
     assert lg.append(dict(rec)) is False
-    assert lg.append({"kind": "job", "id": "m1"}) is True  # different kind, same id
-    assert len((tmp_path / "l" / "ledger.jsonl").read_text().splitlines()) == 2
+    # D11: readers keep one record per id, so a job may not take a message's id
+    assert lg.append({"kind": "job", "id": "m1"}) is False
+    assert lg.get("m1")["kind"] == "message"
+    assert len((tmp_path / "l" / "ledger.jsonl").read_text().splitlines()) == 1
 
 
 def test_update_last_line_wins(tmp_path):

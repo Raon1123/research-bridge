@@ -1,4 +1,5 @@
-"""Append-only JSONL ledger; readers take the last line per id."""
+"""Append-only JSONL ledger; readers take the last line per id, and `append` refuses an id that
+exists already (whatever the kind); `update` and `claim` add later lines for an id."""
 from __future__ import annotations
 
 import json
@@ -139,11 +140,12 @@ class Ledger:
         return latest
 
     def append(self, rec: dict) -> bool:
-        key = (rec.get("kind"), rec.get("id"))
+        """Write `rec` as a new record. False, and nothing written, when a record with its id
+        exists already, whatever its kind: readers keep one record per id. A record without an
+        id is written and ignored by every reader."""
         with self.locked():
-            for r in self._lines():
-                if (r.get("kind"), r.get("id")) == key:
-                    return False
+            if "id" in rec and any(r.get("id") == rec["id"] for r in self._lines() if "id" in r):
+                return False
             self._write(rec)
             return True
 
