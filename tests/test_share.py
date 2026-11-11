@@ -155,7 +155,7 @@ def _all_strings(o):
 
 def test_all_sections_present(env):
     snap = _snap(env)
-    assert snap["schema_version"] == share.SCHEMA_VERSION == 1
+    assert snap["schema_version"] == share.SCHEMA_VERSION == 2
     assert snap["tier"] == "shared"
     for k in ("built_at", "period", "sources", "sessions", "experiments", "dropped"):
         assert k in snap
@@ -170,12 +170,12 @@ def test_all_sections_present(env):
     assert set(_src(snap)) == {"calendar:sessions", "calendar:status", "runs", "n1:queue",
                                "n1:gpu", "n1:events", "rb:ledger",
                                "withheld:patterns"}
-    # sessions: ARG laptop 1.5 h + a record without end (0 h); ZZZ -> 'gpu-box' maps to server
+    # sessions: ARG laptop 1.5 h + a record without end (0 h); ZZZ -> 'gpu-box' is not a lane: other
     day = _days_ago(1).isoformat()
     row = [r for r in snap["sessions"]["per_day"]
            if r["date"] == day and r["lane"] == "laptop" and r["project"] == "ARG"]
     assert len(row) == 1 and row[0]["count"] == 2 and row[0]["active_h"] == 1.5
-    assert any(r["lane"] == "server" and r["project"] == "other"
+    assert any(r["lane"] == "other" and r["project"] == "other"
                for r in snap["sessions"]["per_day"])
     assert snap["sessions"]["totals"]["routines"] == 1
     runs = {(r["date"], r["project"]): r for r in snap["experiments"]["runs_per_day"]}
@@ -393,13 +393,13 @@ def test_labels_not_on_allowlist_become_other(env):
     projects |= {t["track"] for t in snap["experiments"]["tracks"]}
     assert "ARG" in projects and "other" in projects and "ZZZ" not in projects
     assert "ZZZ" not in json.dumps(snap)
-    # no labels configured: every label becomes 'other'
+    # no labels configured: labels are shown (design 2026-11-11 §8)
     raw = json.loads(env["host"].read_text(encoding="utf-8"))
     del raw["share"]["labels"]
     env["host"].write_text(json.dumps(raw), encoding="utf-8")
     cfg = config.load_host_config(env["host"])
     snap = share.build(cfg, today=TODAY)["snapshot"]
-    assert "ARG" not in json.dumps(snap)
+    assert "ARG" in json.dumps(snap) and "ZZZ" in json.dumps(snap)
 
 
 def test_html_has_no_script_or_external_url(env):
@@ -537,3 +537,184 @@ def test_put_has_plain_405_with_headers(env):
             assert st == 405 and h["cache-control"] == "no-store"
             assert h["x-content-type-options"] == "nosniff"
             assert h["content-type"].startswith("text/plain") and b"<" not in body
+
+
+# -- share.snapshot (design docs/design/2026-11-11-hub-status-page.md §8) --------------------
+def _tree(root: Path) -> dict:
+    out = {}
+    for p in sorted(root.rglob("*")):
+        st = p.lstat()
+        out[str(p)] = (p.is_dir(), st.st_size, st.st_mtime_ns,
+                       None if p.is_dir() else _sha(p))
+    return out
+
+
+def _with_share(env, **share_conf):
+    raw = json.loads(env["host"].read_text(encoding="utf-8"))
+    for k, v in share_conf.items():
+        if v is None:
+            raw["share"].pop(k, None)
+        else:
+            raw["share"][k] = v
+    env["host"].write_text(json.dumps(raw), encoding="utf-8")
+    return config.load_host_config(env["host"])
+
+
+def _ssnap(cfg, **kw):
+    kw.setdefault("today", TODAY)
+    return share.snapshot(cfg, **kw)
+
+
+def _put_in(root: Path, rec: dict, text: str) -> None:
+    d = root / "inbox" / rec["node"] / rec["id"]
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "body.txt").write_text(text, encoding="utf-8")
+
+
+def test_snapshot_writes_nothing(env):
+    # G4: no file under the temporary tree (data root and every source) is created or changed
+    before = _tree(env["tmp"])
+    snap = _ssnap(env["cfg"])
+    assert snap["schema_version"] == share.SCHEMA_VERSION == 2
+    assert _tree(env["tmp"]) == before
+    assert not (env["root"] / "share").exists()
+
+
+def test_snapshot_sections(env):
+    snap = _ssnap(env["cfg"])
+    assert "tier" not in snap and "waiting" not in snap
+    assert set(snap) == {"schema_version", "built_at", "period", "sources", "sessions",
+                         "experiments", "activity", "dropped"}
+    assert set(snap["experiments"]["queue"]) == {"queued", "running", "done", "failed", "other",
+                                                 "pending_approvals"}
+    assert snap["sessions"]["totals"]["cost_usd"] == 12.5
+    assert snap["experiments"]["queue"]["pending_approvals"] == 1
+    assert snap["experiments"]["gpu"]["gpu_hours_period"] == 3
+    blob = json.dumps(snap)
+    for needle in ("secretcfg", "config_name", "j1", TITLE, EXTRA, METRIC):
+        assert needle not in blob, needle
+
+
+def test_snapshot_counts_node_queue_states(env):
+    _board_file(env["root"], "queue", [{"state": "jobs", "count": 3},
+                                       {"state": "processing", "count": 1},
+                                       {"state": "done", "count": 7}, {"state": "failed", "count": 2},
+                                       {"state": "held", "count": 4}])
+    q = _ssnap(env["cfg"])["experiments"]["queue"]
+    assert (q["queued"], q["running"], q["done"], q["failed"], q["other"]) == (3, 1, 7, 2, 4)
+
+
+def test_snapshot_lane_rule(env):
+    d1 = _days_ago(1)
+    lanes = ["laptop", "hub", "server", "n1", "gpu-box", 5]
+    _write(env["sessions"], {"sessions": [
+        {"start": _iso(d1, "01:00:00Z"), "end": _iso(d1, "02:00:00Z"), "lane": ln,
+         "project": "ARG"} for ln in lanes]})
+    got = sorted(r["lane"] for r in _ssnap(env["cfg"])["sessions"]["per_day"])
+    assert got == sorted(["laptop", "hub", "server", "n1", "other"])
+    rows = {r["lane"]: r["count"] for r in _ssnap(env["cfg"])["sessions"]["per_day"]}
+    assert rows["other"] == 2
+
+
+def test_snapshot_label_rule_without_allowlist(env):
+    cfg = _with_share(env, labels=None)
+    d1 = _days_ago(1)
+    long = "L" * 80
+    _write(env["sessions"], {"sessions": [
+        {"start": _iso(d1, "01:00:00Z"), "lane": "hub", "project": p}
+        for p in ("ARG", "x‮<b>\x1b[1m", long, 7, "unrelated", "pp_ltf_z", "\x1b")]})
+    snap = _ssnap(cfg)
+    rows = {r["project"]: r["count"] for r in snap["sessions"]["per_day"]}
+    assert rows == {"ARG": 1, "x<b>[1m": 1, "L" * 60: 1, "unrelated": 1, "other": 2}
+    assert snap["dropped"] >= 1 and "pp_ltf_" not in json.dumps(snap)
+    # with an allowlist, a label outside it is other
+    cfg = _with_share(env, labels=["ARG"])
+    projects = {r["project"] for r in _ssnap(cfg)["sessions"]["per_day"]}
+    assert projects == {"ARG", "other"}
+
+
+def test_snapshot_activity_rows(env):
+    root = env["root"]
+    led = Ledger(root / "ledger.jsonl")
+    d0, d1, d2, d9 = (_iso(_days_ago(n), "06:00:00Z") for n in (0, 1, 2, 9))
+    led.append({"kind": "job", "op": "submit", "id": "j2", "node": "n1", "gpu_hours": 1,
+                "status": "queued", "created": d2, "approved_at": d1})
+    led.append({"kind": "job", "op": "cancel", "id": "j3", "node": "n1", "target_job_id": "j2",
+                "status": "queued", "created": d1, "approved_at": d1})
+    led.append({"kind": "job", "op": "submit", "id": "j4", "node": "n1", "gpu_hours": 1,
+                "status": "rejected", "created": d0, "rejected_at": d0})
+    led.append({"kind": "job", "op": "submit", "id": "j-old", "node": "n1", "status": "queued",
+                "created": d9, "approved_at": d9})
+    led.append({"kind": "message", "id": "m-out", "direction": "out", "node": "n1",
+                "status": "sent", "created": d0})
+    led.append({"kind": "message", "id": "m-in", "direction": "in", "node": "n1",
+                "msg_kind": "reply", "status": "received", "created": d0})
+    events = [("ev-done", d1, {"event": "job_finished", "job_id": "j2", "status": "done"}),
+              ("ev-fail", d1, {"event": "job_finished", "job_id": "j2", "status": "FAILED"}),
+              ("ev-crash", d0, {"event": "job_finished", "job_id": "jx", "status": "crashed"}),
+              ("ev-masked", d0, {"event": "job_finished", "job_id": "j2", "status": "failed",
+                                 "reason": "pp_ltf_q"}),
+              ("ev-other", d0, {"event": "responder_failed", "status": "failed"}),
+              ("ev-old", d9, {"event": "job_finished", "job_id": "j2", "status": "failed"})]
+    for eid, when, body in events:
+        rec = {"kind": "message", "id": eid, "direction": "in", "node": "n1",
+               "msg_kind": "event", "status": "received", "created": when}
+        led.append(rec)
+        _put_in(root, rec, json.dumps(body))
+    snap = _ssnap(env["cfg"])
+    rows = snap["activity"]
+    assert [r["date"] for r in rows] == [_days_ago(n).isoformat() for n in range(8)]
+    by = {r["date"]: r for r in rows}
+    t0, t1, t2 = (by[_days_ago(n).isoformat()] for n in (0, 1, 2))
+    assert (t2["submits"], t2["cancels"], t2["approved"]) == (1, 0, 0)
+    assert (t1["submits"], t1["cancels"], t1["approved"]) == (1, 1, 2)  # j1 is from fixture
+    assert (t0["submits"], t0["approved"]) == (1, 0)  # a refused approval has no approved_at
+    assert (t1["finished"], t1["failed"]) == (2, 1)
+    # ev-masked: its body line is blanked by the withheld mask, so it counts as finished only
+    assert (t0["finished"], t0["failed"]) == (2, 1)
+    assert (t0["sent"], t0["received"]) == (1, 1)
+    assert sum(r["sent"] + r["received"] for r in rows) == 2  # events are not messages
+    assert "pp_ltf_" not in json.dumps(snap)
+
+
+def test_snapshot_never_raises_for_broken_sources(env):
+    root = env["root"]
+    (root / "board" / "n1_gpu.json").unlink()
+    (root / "board" / "n1_queue.json").write_text("{not json", encoding="utf-8")
+    (root / "board" / "n1_events.json").write_text("[1, 2]", encoding="utf-8")
+    env["sessions"].write_text("{not json", encoding="utf-8")
+    with open(str(root / "ledger.jsonl"), "ab") as fh:
+        fh.write(b"\xff\xfe not utf8\n")  # the ledger cannot be decoded
+    cfg = _with_share(env, runs=str(env["tmp"] / "nope.json"), calendar_status=5)
+    snap = _ssnap(cfg)
+    src = _src(snap)
+    assert src["n1:gpu"]["error"] == "never_fetched"
+    assert src["n1:queue"]["error"] == "unparseable"
+    assert src["n1:events"]["error"] == "unparseable"
+    assert src["calendar:sessions"]["error"] == "unparseable"
+    assert src["runs"]["error"] == "missing"
+    assert src["calendar:status"]["error"] == "not_configured"
+    assert src["rb:ledger"]["ok"] is False and src["rb:ledger"]["error"] == "unreadable"
+    assert snap["activity"] == []
+    for s in snap["sources"]:
+        assert s["error"] is None or share.ERROR_CODE.match(s["error"]), s
+
+
+def test_snapshot_error_codes_are_filtered(env):
+    _board_file(env["root"], "gpu", [], ok=False, error="unrelated<b>")
+    _board_file(env["root"], "events", [], ok=False, error="pp_ltf_err")
+    snap = _ssnap(env["cfg"])
+    src = _src(snap)
+    assert src["n1:gpu"]["error"] == "bad_error_code"
+    assert src["n1:events"]["error"] == "withheld"
+    assert "pp_ltf_" not in json.dumps(snap) and "<b>" not in json.dumps(snap)
+    env["tmp"].joinpath("withheld.json").write_text("{not json", encoding="utf-8")
+    assert _src(_ssnap(env["cfg"]))["withheld:patterns"]["error"] == "unparseable"
+
+
+def test_snapshot_days(env):
+    snap = _ssnap(env["cfg"], days=3)
+    assert snap["period"] == {"from": _days_ago(3).isoformat(), "to": TODAY.isoformat()}
+    assert len(snap["activity"]) == 4
+    with pytest.raises(ValueError):
+        share.snapshot(env["cfg"], days=-1)
