@@ -6,6 +6,7 @@ Status history:
 - 2026-11-11 draft. The user gave the direction (§11) and had said to start without questions, so the design and the build go into one change.
 - 2026-11-11 built on branch `claude/node-sessions` (on top of `claude/hub-status-page`): steps 1–5 of §9. The two live rows of §10 are not verified: no real record was read. Rulings in §13.
 - 2026-11-11 merged in PR 59 (merge commit 1efd9c6). The hub runs the merged code since 10:36 UTC; node1 still runs rb_node 0.2.0, so the hub records `sessions: unsupported` until the user's steps of §9 step 6. The two live rows of §10 stay not verified.
+- 2026-11-11 first live answer on the real node. The user updated node1, set `sessions_dir` and ran the checks on the node console; the 10:58 UTC sync pass got an answer and wrote the hub store. The answer was `files: 1, unparsed: 1, sessions: 0, outside: 0`, and the doctor warned that the assumed record format may be wrong. The one file was not a session record: it was a command log whose name is not a session id and whose lines have other keys. No `.jsonl` file was at depth 1 or depth 3 in the last 8 days. So the directory that was set holds no session record two levels down, and the warning blamed the format for a wrong directory. The record format is still not verified: no session record was in reach of the directory that was set. Branch `claude/sessions-diagnosis` makes the answer, the doctor and `/status` tell these cases apart (§13 rows 32 to 36).
 
 Fills the "Sessions" section of [the status page on the hub](2026-11-11-hub-status-page.md), whose open question 1 asked where the session half comes from.
 
@@ -76,7 +77,7 @@ Connections are hub to node only. The page opens none.
 | node op `sessions` (`args`: `days`, integer 1 to 31, default 8) | read | Listed in `hello.ops`. Returns the object of §8. `not_configured` when `sessions_dir` is unset; `denied` or `io_error` as other ops. Protocol number unchanged: the operation is additive and announced by `hello`. |
 | `node.json` `sessions_dir` | config | Directory that holds one subdirectory per project with `<id>.jsonl` files. Unset by default. Set with `rb-node config set sessions_dir <path>` on the node console. |
 | `rb-node sessions [--days N]` | internal (node console) | Prints the JSON the operation would return. Reads only. |
-| `rb-node doctor` check `sessions` | internal | `ok` with counts when configured and readable; a note when unset; `warn` when the directory is missing or when files were found but none could be used. |
+| `rb-node doctor` check `sessions` | internal | `ok` with counts when configured and readable; a note when unset; `warn` when the directory is missing, or when no session is listed and the answer says why: id-named files that could not be read as sessions (the format may be wrong), session-named files one level deeper or shallower (the directory is one level off), or only files that are not named like a session record (§13 row 35). |
 | `rb sync` | internal | One more step in a pass (§9). Status file field `sessions`: `ok`, `unsupported`, `not_configured` or an error code. None of them fails the pass. |
 | `<data_root>/sessions/<node>.json` | file | §8. Written only by `rb sync`, atomically. |
 | `GET /status` | read | "Sessions" section fed by the store (§8). |
@@ -104,7 +105,8 @@ No ledger record kind or field changes.
 - `start`: the earliest; `end`: the latest.
 - Active seconds: the sum of the gaps between consecutive times that are at most 300 s, attributed to the UTC day of the earlier time. A session with one time has 0 active seconds and still counts.
 - Working directory: the first `cwd` found.
-- A file with no usable time is not a session; it adds to `unparsed`.
+- A file named like a session record (stem is a session id) with no usable time is not a session; it adds to `unparsed`.
+- A `.jsonl` file whose stem is not a session id is not opened; it adds to `ignored` (§13 row 32).
 
 **Operation result.**
 
@@ -112,8 +114,11 @@ No ledger record kind or field changes.
 {"days": 8, "now": "2026-11-11T09:00:00Z", "tree": "<last path component of trm_root>",
  "sessions": [{"id": "<file stem>", "label": "lab/experiments", "start": "...", "end": "...",
                "days": {"2026-11-10": 5400, "2026-11-11": 1200}}],
- "outside": 3, "unparsed": 0, "files": 41, "truncated": false}
+ "outside": 3, "unparsed": 0, "ignored": 0, "files": 41, "deeper": 0, "shallower": 0,
+ "truncated": false}
 ```
+
+`files` counts the `.jsonl` files of the window at the expected depth, `unparsed` and `ignored` included. `deeper` and `shallower` count session-named files one level below and above the expected depth, by name and modification time only, and only when no session is listed and none is outside (§13 rows 33 and 34). A node installed before 2026-11-11 sends neither `ignored`, `deeper` nor `shallower`.
 
 `sessions` holds only sessions whose `end` is within the last `days` days; `days` inside a session holds only days of that window. `tree` is cleaned and masked like a label.
 
@@ -123,15 +128,16 @@ No ledger record kind or field changes.
 
 ```json
 {"schema": 1, "node": "<node>", "fetched_at": "...", "attempted_at": "...", "ok": true, "error": null,
- "tree": "...", "outside": 3, "unparsed": 0, "truncated": false, "skipped": 0,
+ "tree": "...", "outside": 3, "unparsed": 0, "ignored": 0, "files": 41, "deeper": 0, "shallower": 0,
+ "truncated": false, "skipped": 0,
  "sessions": {"<id>": {"label": "...", "start": "...", "end": "...", "days": {"2026-11-10": 5400}}}}
 ```
 
 Merge rule: an id already in the store keeps its entry and takes the new `label`, the earlier `start`, the later `end`, and for each day the larger number of active seconds (the node's number for a day only grows). Ids not in the answer stay. A failed fetch keeps `sessions` and `fetched_at` and sets `ok`, `error` and `attempted_at`. Entries are not pruned (about 150 bytes each).
 
-**`share.snapshot`.** One source row per node, `<node>:sessions`, with the state of G5. `sessions.per_day` gains rows from the store: date, lane = the node name, project = the label, count = sessions with activity on that day (a session with no gap-based activity counts on the day of its `start`), active hours. A new field `sessions.active_now`: sessions whose `end` is at most 900 s before the store's `fetched_at`, over all nodes. `outside`, `unparsed` and `truncated` are passed through per node.
+**`share.snapshot`.** One source row per node, `<node>:sessions`, with the state of G5. `sessions.per_day` gains rows from the store: date, lane = the node name, project = the label, count = sessions with activity on that day (a session with no gap-based activity counts on the day of its `start`), active hours. A new field `sessions.active_now`: sessions whose `end` is at most 900 s before the store's `fetched_at`, over all nodes. `outside`, `unparsed`, `ignored`, `files`, `deeper`, `shallower` and `truncated` are passed through per node (a count missing from an older store is 0).
 
-**Page.** The "Sessions" section shows, per node, one of: "node `<name>` does not offer the sessions operation (update rb_node on the node)", "sessions directory is not configured on node `<name>` (`rb-node config set sessions_dir ...` on the node console)", an error line with the code, or the numbers. With numbers: active now, the per-day table, and when above 0 the outside count, the unparsed count ("record files the node could not read as sessions") and the truncated note. The "no source configured" line of the earlier design is shown only when no node and no file source exists.
+**Page.** The "Sessions" section shows, per node, one of: "node `<name>` does not offer the sessions operation (update rb_node on the node)", "sessions directory is not configured on node `<name>` (`rb-node config set sessions_dir ...` on the node console)", an error line with the code, or the numbers. With numbers: active now, the per-day table, and when above 0 the outside count, the unparsed count ("record files the node could not read as sessions"), the ignored count (files that are not session records), a line when `deeper` or `shallower` says the node's directory is one level off, and the truncated note. The "no source configured" line of the earlier design is shown only when no node and no file source exists.
 
 ## 9. Scope of this phase
 
@@ -141,14 +147,14 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 4. `share.snapshot` and the `/status` section with the four states; the no-write test with a store present.
 5. Documents: this design's index row; a dated line on the hub-status-page design (open question 1 answered); the sync design (pass steps, status field), `AGENTS.md` (layout, node and hub data lists, the node console command list is unchanged: `rb-node config set` and `rb-node sessions` need no terminal check but any command on node1 is ask-first), both node manuals and both hub manuals (English and Korean), `docs/session-dashboard.md`, `docs/HANDOFF.md` (the user's steps below).
 6. **User, after the merge:** the post-merge step on the hub (`docs/HANDOFF.md`); on the node console `scripts/node-install.sh --update`, then `rb-node config set sessions_dir <the Claude projects directory of the node account>`, then `rb-node sessions` to see what would be sent and `rb-node doctor`.
-7. **Verification on real data (open):** compare the output of `rb-node sessions` with what the user knows ran on the node; if `unparsed` equals `files`, the assumed format is wrong and §8 has to be corrected.
+7. **Verification on real data (open):** compare the output of `rb-node sessions` with what the user knows ran on the node; if id-named files are found and all of them are `unparsed`, the assumed format is wrong and §8 has to be corrected. A count in `ignored`, `deeper` or `shallower` with no session says the directory is wrong, not the format (first live answer, status history).
 
 ## 10. Verification
 
 | Goal / anti-goal | Check | Kind | Status |
 |---|---|---|---|
 | G1 | `tests/test_node_sessions.py`: reduction, window, label, outside count | unit test | passed: `test_plain_reduction`, `test_gap_rule_and_day_of_the_earlier_time`, `test_session_spanning_two_days`, `test_a_full_day_is_capped_at_86400_seconds_and_the_hub_keeps_it`, `test_one_line_session_counts_with_no_active_seconds`, `test_days_window`, `test_label_rules`, `test_outside_and_missing_cwd_are_only_counted`, `test_hello_lists_sessions_and_a_subprocess_node_answers` |
-| G1 on real records | `rb-node sessions` on the node | live check (user) | not verified: no real record was read (§5) |
+| G1 on real records | `rb-node sessions` on the node | live check (user) | not verified: no real record was read (§5); the first live answer (2026-11-11) reached no session record, because the directory that was set holds none two levels down (status history) |
 | G2 | unset key gives `not_configured`; a path outside the directory or through a symlink is not read | unit test | passed: `test_op_unset_or_missing_directory`, `test_only_depth_two_jsonl_files_inside_the_directory_are_read`, `test_config_key` |
 | G3 | merge rule, failed fetch keeps data, atomic write | unit test | passed: `test_sessions_merge_by_id`, `test_sessions_failure_keeps_the_store`, `test_sessions_from_a_configured_node_are_stored` (one file, mode 600; the write is a temporary file and `os.replace`) |
 | G4 | `/status` content from a seeded store | unit test | passed: `test_status_node_sessions_content`, `test_node_sessions_rows_from_the_store` |
@@ -158,9 +164,9 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 | Anti-goal: nothing else leaves the node | a record with marker strings in its message text, branch and paths: no marker in the op result, the audit line or the cache | unit test | passed: `test_nothing_else_leaves_the_node`; hub side `test_sessions_from_a_configured_node_are_stored` |
 | Anti-goal: withheld label | masked on the node; a hit injected into the answer is dropped on the hub | unit test | passed: `test_label_rules`, `test_malformed_sessions_answer_is_checked_entry_by_entry`, `test_node_store_codes_and_labels_are_checked`, `test_status_node_store_escapes_and_masks` |
 | Anti-goal: bounds | a file larger than the per-call budget is finished over several calls; the result says `truncated` | unit test | passed: `test_big_file_is_finished_over_several_calls`, `test_session_and_file_bounds`, `test_old_files_are_not_opened`, `test_very_long_line_is_handled` |
-| Anti-goal: silent zero | files that do not parse give `unparsed` above 0 and a line on the page | unit test | passed: `test_files_without_usable_time_are_unparsed`, `test_doctor_sessions_check`, `test_status_node_counts_lines` |
+| Anti-goal: silent zero | files that do not parse give `unparsed` above 0 and a line on the page | unit test | passed: `test_files_without_usable_time_are_unparsed`, `test_doctor_sessions_check`, `test_status_node_counts_lines`; for the cases of §13 rows 32 to 36: `test_file_not_named_like_a_session_is_ignored_and_never_opened`, `test_files_one_level_off_are_counted_by_name_and_time_only`, `test_level_counts_only_when_no_session_is_listed_and_none_is_outside`, `test_level_listing_shares_the_listing_bound`, the `test_doctor_*` tests of `tests/test_node_sessions.py` (one per message), `test_sessions_file_counts_are_stored`, `test_node_file_counts_are_passed_through`, `test_status_node_file_lines_only_when_above_zero` |
 | Anti-goal: page writes | the data root is identical before and after `/status` with a store present | unit test | passed: `test_status_writes_nothing_with_a_node_store`, `test_snapshot_writes_nothing_with_a_node_store` |
-| Whole path on node1 | after the user's steps of §9: the page shows node sessions | live check (user) | not verified: needs the user's steps of §9 step 6 |
+| Whole path on node1 | after the user's steps of §9: the page shows node sessions | live check (user) | not verified: needs the user's steps of §9 step 6; the first live answer (2026-11-11) was stored on the hub but listed no session (status history) |
 
 ## 11. Decided by the user
 
@@ -216,6 +222,11 @@ Merge rule: an id already in the store keeps its entry and takes the new `label`
 | 29 | Listing stops after 20000 directory entries (`MAX_LISTED`) and says `truncated`; this bound is not in §7. A label that is empty after cleaning is sent as `(unnamed)`. A record file that cannot be opened, or vanished between the listing and the read, counts as `unparsed`. | A vanished file adds 1 to `unparsed` for one call. | `rb_node/sessions.py` |
 | 30 | Additions outside the design's list: the op error `not_found` (§6.1 names only `not_configured`, `denied`, `io_error`), the sync code `bad_answer`, the store field `files` (§8), the key `sessions` in the one-line output of `rb sync`, and `sessions_dir` with a note in `deploy/node.json.example`. | None known. | §6.1 and §8 above are not rewritten; this row records the difference |
 | 31 | Review by the coordinating session (2026-11-11): the node module was read whole against §7 (what leaves the node, path confinement, bounds); ruling 13 was narrowed (see there); `/status` was rendered from the real data root with this code (no store yet: the section shows the no-source line, nothing written). | A missed leak or an unbounded read reaches node1 with the next node update. | this table |
+| 32 | After the first live answer (2026-11-11, status history), `unparsed` is split. A `.jsonl` file at depth 2 whose name is not a session id counts in a new field `ignored` and is not opened; `unparsed` counts only id-named files that gave no usable time or could not be opened; `files` still counts both. This replaces ruling 1, which put both in `unparsed`. §8 (reduction, "Operation result", "Hub store", "Page"), §6.1 (the doctor row) and §9 step 7 were rewritten to match on 2026-11-11. | A file-name assumption that is wrong shows as `ignored`, not `unparsed`; the doctor warns on `ignored` when nothing else is found. | `rb_node/sessions.py` `collect` |
+| 33 | New fields `deeper` and `shallower`: id-named regular `.jsonl` files modified inside the window at depth 3 and at depth 1, under the confinement of `_list` (resolved path inside the resolved `sessions_dir`, no symlink out). They are counted by name and modification time and never opened. A depth-2 directory that resolves to an ancestor of its depth-1 directory is not entered. | In a correct directory, id-named records of sub-sessions at depth 3 would count as `deeper`. The doctor puts the format warning first (row 35), so they cause no wrong "too high" while an id-named file is at depth 2 in the window; when none is, they do. | `rb_node/sessions.py` `_levels` |
+| 34 | The level counts are computed only when the answer lists no session, `outside` is 0 and the depth-2 listing did not hit `MAX_LISTED`; otherwise both are 0. The level listing shares `MAX_LISTED` with the depth-2 listing (counted together per call) and sets `truncated` when it hits the bound. It neither reads nor writes the cache. | One more listing of depths 1 and 3 on each call while nothing is listed. | `collect` |
+| 35 | Doctor order when no session is listed and none is outside: `unparsed` above 0 gives the format warning, with the `deeper` and `shallower` counts added when above 0 (id-named files at the expected depth show that the level is right); then `deeper` ("one level too high"), `shallower` ("one level too low"), `ignored` only ("probably not the Claude projects directory"); `files` 0 is `ok`, "no record file in the last N days"; otherwise `ok` with the counts (id-named files whose times are all before the window). With sessions or outside sessions the check is `ok` with the counts and the `ignored` count when above 0. The request for this change listed the level cases before the format case; the order was changed for the reason above. | When an id-named file that is not a session record sits at depth 2 of a directory one level too high, the doctor names the format first, and the deeper count with it. | `rb_node/doctor.py` `_sessions_check` |
+| 36 | Hub: `ignored`, `deeper` and `shallower` go through `_count` (0 when missing or not a non-negative integer), are kept in the store and passed into the per-node entry of `share.snapshot`. Store `SCHEMA` 1 and `SCHEMA_VERSION` 2 stay (additions). `/status` shows `ignored` as a plain line and `deeper`, `shallower` as error lines that name the `sessions` check of `rb-node doctor`, each only when above 0. The fix text of the doctor check names the layout and `~/.claude/projects`. | None known. | `rb_host/sessions.py` `COUNTS`, `share.node_sessions`, `web._node_sessions_lines` |
 
 ## 14. Left to the builder
 

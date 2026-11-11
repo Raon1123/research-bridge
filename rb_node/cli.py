@@ -267,6 +267,11 @@ SUBHELP = {
     "sessions": "usage: rb-node sessions [--days N]\n\nPrint, as JSON, what the sessions operation would send to the hub for the last N\n"
                 "days (1 to 31, default 8): per session in the research tree an id, start and end times,\n"
                 "active seconds per UTC day and the directory relative to trm_root. Read only.\n"
+                "Counts in the answer: files (.jsonl files of the period at the expected depth,\n"
+                "sessions_dir/<project directory>/<session id>.jsonl), unparsed (named like a session\n"
+                "record but not readable as one), ignored (not named like a session record), outside\n"
+                "(sessions outside the research tree), and deeper, shallower (session-named files one\n"
+                "level below or above the expected depth, counted only when no session is found).\n"
                 "Exit 1 when sessions_dir is not set or its directory is missing.\n",
     "git-status": "usage: rb-node git-status\n\nPrint, as JSON, the git state of trm_root and the install record. Read only.\n",
     "config": "usage: rb-node config path|init [--force]|show|set KEY VALUE|check [-h]\n\n"

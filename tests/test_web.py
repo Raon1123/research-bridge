@@ -1307,7 +1307,8 @@ def test_status_node_sessions_content(cfg):
     assert "node n1: 2 session(s) in the period, 2.0 active hours" in sess
     assert "active now (all nodes): 1" in sess
     assert "<td>%s</td><td>n1</td><td>lab/experiments</td><td>2</td><td>2.0</td>" % today in sess
-    for word in ("outside the research tree", "could not read", "per-call bound"):
+    for word in ("outside the research tree", "could not read", "per-call bound",
+                 "not session records", "one level too high", "one level too low"):
         assert word not in sess
     row = [r for r in _section(page, "Sources").split("<tr>") if "n1:sessions" in r][0]
     assert "<td>ok</td>" in row and "stale" not in row
@@ -1346,6 +1347,27 @@ def test_status_node_counts_lines(cfg):
     assert "node n1: the last fetch stopped at a per-call bound" in sess
 
 
+def test_status_node_file_lines_only_when_above_zero(cfg):
+    _node_store(cfg, {}, ignored=4, deeper=2, shallower=3)
+    sess = _section(_status(cfg), "Sessions")
+    assert ("node n1: 4 file(s) in the node's sessions directory are not session records "
+            "(ignored)") in sess
+    assert ('<p class="err">node n1: the sessions directory on the node looks one level too '
+            "high: 2 session record file(s) are one level deeper (see the check "
+            "<code>sessions</code> of <code>rb-node doctor</code> on the node console)</p>") in sess
+    assert ('<p class="err">node n1: the sessions directory on the node looks one level too '
+            "low: 3 session record file(s) are one level shallower (see the check "
+            "<code>sessions</code> of <code>rb-node doctor</code> on the node console)</p>") in sess
+    assert "could not read" not in sess  # unparsed is 0: its line stays away
+    for kw, word in (({"ignored": 1}, "not session records"), ({"deeper": 1}, "too high"),
+                     ({"shallower": 1}, "too low")):
+        _node_store(cfg, {}, **kw)
+        sess = _section(_status(cfg), "Sessions")
+        assert word in sess
+        for other in ("not session records", "too high", "too low"):
+            assert (other in sess) == (other == word), (kw, other)
+
+
 def test_status_node_store_escapes_and_masks(cfg):
     bad = "<b>x‮\x1b[1m"
     _node_store(cfg, {
@@ -1367,7 +1389,7 @@ def test_status_node_store_escapes_and_masks(cfg):
 
 def test_status_writes_nothing_with_a_node_store(cfg, tmp_path):
     _node_store(cfg, {NS[0]: {"label": "lab", "start": _stamp(100), "end": _stamp(50),
-                              "days": {}}})
+                              "days": {}}}, ignored=1, deeper=1, shallower=1)
     _sync_field(cfg, "ok")
     before = _tree(cfg)
     _status(cfg)

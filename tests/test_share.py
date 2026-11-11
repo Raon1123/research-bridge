@@ -567,6 +567,26 @@ def test_store_state_wins_over_the_status_field(env):
     assert any(r["lane"] == "n1" for r in snap["sessions"]["per_day"])  # history still shown
 
 
+def test_node_file_counts_are_passed_through(env, monkeypatch):
+    _node_store(env["root"], {}, ignored=2, deeper=3, shallower=1)
+    info = _node_info(_snap(env))
+    assert (info["ignored"], info["deeper"], info["shallower"]) == (2, 3, 1)
+    _node_store(env["root"], {})  # a store written before these fields
+    info = _node_info(_snap(env))
+    assert (info["ignored"], info["deeper"], info["shallower"]) == (0, 0, 0)
+    _node_store(env["root"], {}, ignored="2", deeper=True, shallower=-1)
+    info = _node_info(_snap(env))
+    assert (info["ignored"], info["deeper"], info["shallower"]) == (0, 0, 0)
+
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    with monkeypatch.context() as m:
+        m.setattr(share, "node_sessions", boom)
+        info = _node_info(_snap(env))
+    assert info["state"] == "error"
+    assert (info["ignored"], info["deeper"], info["shallower"]) == (0, 0, 0)
+
+
 def test_node_never_asked_has_no_sessions_row(env):
     snap = _snap(env)
     assert snap["sessions"]["nodes"] == [] and "n1:sessions" not in _src(snap)
@@ -621,7 +641,8 @@ def test_unreadable_node_store(env):
 
 def test_snapshot_writes_nothing_with_a_node_store(env):
     _node_store(env["root"], {SA: {"label": "ARG", "start": _now_minus(100),
-                                   "end": _now_minus(50), "days": {}}})
+                                   "end": _now_minus(50), "days": {}}},
+                ignored=1, deeper=1, shallower=1)
     _sync_field(env["root"], "ok")
     before = _tree(env["tmp"])
     _ssnap(env["cfg"])
