@@ -109,7 +109,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 977 passed on 2026-11-11 (branch claude/hub-status-page; 975 on claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
+    rtk proxy uv run --extra host pytest -q        # 978 passed on 2026-11-11 (branch claude/hub-status-page; 975 on claude/audit-fixes-2026-11-11; 923 on PR 56; 921 on 2026-11-10 after PR 53)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.
