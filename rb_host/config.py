@@ -47,7 +47,7 @@ class HostConfig:
     data_root: str = field(default_factory=default_root)
     withheld_patterns_file: str = field(default_factory=default_withheld)
     board: Dict[str, str] = field(default_factory=dict)  # laptop source paths for rb board
-    share: Dict[str, Any] = field(default_factory=dict)  # rb share: calendar_sessions|calendar_status|runs paths, labels list
+    share: Dict[str, Any] = field(default_factory=dict)  # /status of the hub page: calendar_sessions|calendar_status|runs paths, labels list
 
     def alias(self, node: str) -> str:
         entry = self.nodes.get(node)

@@ -9,9 +9,7 @@ neither `mcp` nor a node client (`threads` is imported inside `snapshot`).
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import re
 import time
 import unicodedata
@@ -27,7 +25,6 @@ from .util import age_s, now, parse_utc
 SCHEMA_VERSION = 2
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 ERROR_CODE = re.compile(r"^[a-z_]{1,40}$")
-SHARED_FILES = ("index.html", "snapshot.json")
 LOCAL_CADENCE_S = 3600
 NODE_SOURCES = ("queue", "gpu", "events")
 STAGE = re.compile(r"^S[0-8]$")
@@ -40,14 +37,6 @@ LANES = ("laptop", "hub", "server")
 LABEL_MAX = 60
 ACTIVITY_KEYS = ("submits", "cancels", "approved", "finished", "failed", "sent", "received")
 _WS = "\n\r\t"
-
-
-def share_dir(cfg: HostConfig) -> Path:
-    return Path(cfg.data_root) / "share"
-
-
-def owner_dir(cfg: HostConfig) -> Path:
-    return share_dir(cfg) / "owner"
 
 
 def _iso(d: datetime) -> str:
@@ -479,59 +468,3 @@ def snapshot(cfg: HostConfig, days: int = 7, today: Optional[date] = None) -> di
         "dropped": dropped,
     }
 
-
-# -- build (the 2026-11-06 page; removed in the next change) -------------------------------
-def _write_atomic(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_suffix(path.suffix + ".part")
-    part.write_bytes(data)
-    os.replace(str(part), str(path))
-
-
-def build(cfg: HostConfig, days: int = 7, tier: str = "shared",
-          today: Optional[date] = None) -> dict:
-    """Write snapshot.json and index.html for the tier. Returns {"snapshot","paths","dropped"}."""
-    if tier not in ("shared", "owner"):
-        raise ValueError("tier must be shared or owner")
-    from . import share_serve  # lazy: rendering lives in its own module
-
-    snap = snapshot(cfg, days, today)
-    snap["tier"] = tier
-    del snap["activity"]
-    wh = Withheld.load(Path(cfg.withheld_patterns_file))
-    dropped = snap["dropped"]
-    if tier == "owner":
-        from . import board  # lazy: owner tier only
-        waiting = []
-        for w in board.load(cfg).get("waiting", []):
-            if not isinstance(w, dict):
-                continue
-            what, ref = w.get("what"), w.get("ref")
-            texts = [x for x in (what, ref, w.get("source")) if isinstance(x, str)]
-            if any(wh._hit(x) for x in texts):
-                dropped += 1
-                continue
-            waiting.append({"source": w.get("source"), "ref": ref, "what": what})
-        snap["waiting"] = waiting
-    else:
-        del snap["sessions"]["totals"]["cost_usd"]
-    snap["dropped"] = dropped
-
-    body = json.dumps(snap, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8")
-    out = share_dir(cfg) if tier == "shared" else owner_dir(cfg)
-    html_path, json_path = out / SHARED_FILES[0], out / SHARED_FILES[1]
-    page = share_serve.render_html(snap).encode("utf-8")  # render first: a failure keeps both files
-    _write_atomic(json_path, body)
-    _write_atomic(html_path, page)
-    counts = {"sessions.per_day": len(snap["sessions"]["per_day"]),
-              "experiments.runs_per_day": len(snap["experiments"]["runs_per_day"]),
-              "experiments.tracks": len(snap["experiments"]["tracks"])}
-    if tier == "owner":
-        counts["waiting"] = len(snap["waiting"])
-    rec = {"ts": now(), "tier": tier, "sources": [s["id"] for s in snap["sources"]],
-           "items": counts, "dropped": dropped, "sha256": hashlib.sha256(body).hexdigest()}
-    audit = share_dir(cfg) / "audit.jsonl"
-    audit.parent.mkdir(parents=True, exist_ok=True)
-    with open(str(audit), "ab") as fh:
-        fh.write((json.dumps(rec) + "\n").encode("utf-8"))
-    return {"snapshot": snap, "paths": [html_path, json_path], "dropped": dropped}

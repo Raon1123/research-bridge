@@ -530,8 +530,8 @@ def test_main_offline_only_never_connects(hub, monkeypatch, tmp_path, capsys):
 
 @pytest.mark.parametrize("argv", [["pending"], ["approve", "j"], ["reject", "j"],
                                   ["harness", "pull", "--node", "n"], ["git-status"], ["agent"],
-                                  ["service", "install"], ["share", "build"], ["share", "serve"],
-                                  ["board", "refresh"], ["sync"], ["web", "serve"]])
+                                  ["service", "install"], ["board", "refresh"], ["sync"],
+                                  ["web", "serve"]])
 def test_missing_host_json_one_line_error_for_every_command(argv, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_interactive", lambda: True)
     monkeypatch.setenv("RB_HOST_CONFIG", "/nonexistent-dir/host.json")
@@ -541,8 +541,8 @@ def test_missing_host_json_one_line_error_for_every_command(argv, monkeypatch, c
     assert len(out.strip().splitlines()) == 1 and "Traceback" not in out
 
 
-@pytest.mark.parametrize("argv", [["pending"], ["share", "build"], ["share", "serve"], ["board", "refresh"],
-                                  ["board", "show"], ["sync"], ["web", "serve"]])
+@pytest.mark.parametrize("argv", [["pending"], ["board", "refresh"], ["board", "show"], ["sync"],
+                                  ["web", "serve"]])
 def test_invalid_host_json_one_line_error(argv, monkeypatch, capsys, tmp_path):
     p = tmp_path / "host.json"
     p.write_text("{", encoding="utf-8")
@@ -554,8 +554,7 @@ def test_invalid_host_json_one_line_error(argv, monkeypatch, capsys, tmp_path):
 
 @pytest.mark.parametrize("text", ['{"data_root": 5}', '{"nodes": ["x"]}', '{"nodes": {"n1": "x"}}',
                                   '{"board": 3}'])
-@pytest.mark.parametrize("argv", [["pending"], ["sync"], ["web", "serve"], ["share", "build"],
-                                  ["board", "show"]])
+@pytest.mark.parametrize("argv", [["pending"], ["sync"], ["web", "serve"], ["board", "show"]])
 def test_wrong_type_host_json_one_line_error(argv, text, monkeypatch, capsys, tmp_path):
     p = tmp_path / "host.json"
     p.write_text(text, encoding="utf-8")

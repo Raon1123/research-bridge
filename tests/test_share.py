@@ -1,23 +1,23 @@
-"""Shared status page (design docs/design/2026-11-06-shared-status-page.md §10).
+"""Status snapshot of the hub page route /status (share.snapshot; designs
+docs/design/2026-11-06-shared-status-page.md §10 and docs/design/2026-11-11-hub-status-page.md §10).
 
 Fixtures are copies under tmp_path with placeholder labels only. The session-calendar and
-run-view shapes are ASSUMED (see the implementation plan, Global Constraints A).
+run-view shapes are ASSUMED (see the 2026-11-06 design §8). Tests of the removed share.build,
+the tiers and rb share serve are archived in docs/99_Archive/shared-status-page/.
 """
 from __future__ import annotations
 
 import datetime
 import hashlib
-import http.client
 import json
 import os
 import subprocess
 import sys
-import threading
 from pathlib import Path
 
 import pytest
 
-from rb_host import cli, config, share, share_serve
+from rb_host import cli, config, share
 from rb_host.ledger import Ledger
 
 REPO = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ TODAY = datetime.datetime.now(datetime.timezone.utc).date()
 TITLE = "TITLE-free-text-zq"
 EXTRA = "extra_field_zq"
 METRIC = "metric_value_zq"
-T_ARG = "03:17:41Z"  # unusual time of day: must never reach the audit file
+T_ARG = "03:17:41Z"  # unusual time of day
 
 
 def _iso(day: datetime.date, hms: str) -> str:
@@ -87,12 +87,6 @@ def env(tmp_path, monkeypatch):
     stat = _write(cal / "status.json", {"generated": "2026-11-06T00:00:00Z", "cost_usd": 12.5})
     runs = _write(tmp_path / "runs" / "runs.json", _runs())
     wp = _write(tmp_path / "withheld.json", {"patterns": []})
-    port = _write(tmp_path / "board-fixture" / "portfolio.json", {
-        "columns": ["ready"], "papers": [{"paper_id": "p0", "short": "P0", "column": "ready",
-                                          "tasks": []}]})
-    live = _write(tmp_path / "board-fixture" / "live.json", {
-        "meta": {"refreshed": "2026-11-03 11:02"}, "items": [],
-        "ranking": {"tiers": []}})
     # n1:queue is stale (old fetched_at, short cadence); n1:gpu fresh; n1:events fresh
     _board_file(root, "queue", [{"state": "queued", "count": 2}, {"state": "running", "count": 1},
                                 {"state": "done", "count": 5}, {"state": "failed", "count": 1}],
@@ -116,11 +110,9 @@ def env(tmp_path, monkeypatch):
         "nodes": {"n1": {"alias": "x"}}, "data_root": str(root),
         "withheld_patterns_file": str(wp),
         "share": {"calendar_sessions": str(sess), "calendar_status": str(stat),
-                  "runs": str(runs), "labels": ["ARG"]},
-        "board": {"portfolio": str(port), "priorities": str(live)}}), encoding="utf-8")
+                  "runs": str(runs), "labels": ["ARG"]}}), encoding="utf-8")
     monkeypatch.setenv("RB_HOST_CONFIG", str(host))
-    inputs = [sess, stat, runs, wp, port, live, root / "ledger.jsonl"] + sorted((root / "board").glob("*.json"))
-    return {"tmp": tmp_path, "root": root, "host": host, "inputs": inputs,
+    return {"tmp": tmp_path, "root": root, "host": host,
             "cfg": config.load_host_config(host), "sessions": sess}
 
 
@@ -128,36 +120,19 @@ def _sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def _build(env, **kw):
-    kw.setdefault("today", TODAY)
-    return share.build(env["cfg"], **kw)
-
-
 def _snap(env, **kw) -> dict:
-    return _build(env, **kw)["snapshot"]
+    kw.setdefault("today", TODAY)
+    return share.snapshot(env["cfg"], **kw)
 
 
 def _src(snap: dict) -> dict:
     return {s["id"]: s for s in snap["sources"]}
 
 
-def _all_strings(o):
-    if isinstance(o, dict):
-        for k, v in o.items():
-            yield str(k)
-            yield from _all_strings(v)
-    elif isinstance(o, list):
-        for v in o:
-            yield from _all_strings(v)
-    elif o is not None:
-        yield str(o)
-
-
 def test_all_sections_present(env):
     snap = _snap(env)
     assert snap["schema_version"] == share.SCHEMA_VERSION == 2
-    assert snap["tier"] == "shared"
-    for k in ("built_at", "period", "sources", "sessions", "experiments", "dropped"):
+    for k in ("built_at", "period", "sources", "sessions", "experiments", "activity", "dropped"):
         assert k in snap
     assert set(snap["period"]) == {"from", "to"}
     assert snap["period"]["to"] == TODAY.isoformat()
@@ -191,77 +166,9 @@ def test_all_sections_present(env):
 
 
 def test_unknown_source_field_not_copied(env):
-    res = _build(env)
-    blob = json.dumps(res["snapshot"])
-    html = share_serve.render_html(res["snapshot"])
-    on_disk = "".join(Path(p).read_text(encoding="utf-8") for p in res["paths"])
+    blob = json.dumps(_snap(env))
     for needle in (TITLE, EXTRA, METRIC, "metrics", "secretcfg", "gpu-a", "gpu-box"):
         assert needle not in blob, needle
-        assert needle not in on_disk, needle
-    for needle in (TITLE, EXTRA, METRIC, "secretcfg", "gpu-a", "gpu-box"):
-        assert needle not in html, needle
-
-
-def _get(srv, method, path):
-    c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=5)
-    try:
-        c.request(method, path)
-        r = c.getresponse()
-        return r.status, dict((k.lower(), v) for k, v in r.getheaders()), r.read()
-    finally:
-        c.close()
-
-
-class _Running:
-    def __init__(self, root: Path) -> None:
-        self.srv = share_serve.make_server(root, "127.0.0.1", 0)
-        self.t = threading.Thread(target=self.srv.serve_forever, args=(0.01,), daemon=True)
-
-    def __enter__(self):
-        self.t.start()
-        return self.srv
-
-    def __exit__(self, *a):
-        self.srv.shutdown()
-        self.srv.server_close()
-        self.t.join(5)
-
-
-def test_serve_only_two_files(env):
-    res = _build(env)
-    root = share.share_dir(env["cfg"])
-    outside = env["tmp"] / "outside.txt"
-    outside.write_text("outside-secret", encoding="utf-8")
-    os.symlink(str(outside), str(root / "link.txt"))
-    html = (root / "index.html").read_bytes()
-    snap = (root / "snapshot.json").read_bytes()
-    with _Running(root) as srv:
-        for path, body in (("/", html), ("/index.html", html), ("/snapshot.json", snap)):
-            st, hd, got = _get(srv, "GET", path)
-            assert st == 200 and got == body, path
-            assert hd["cache-control"] == "no-store"
-            assert hd["x-content-type-options"] == "nosniff"
-            assert "default-src 'none'" in hd["content-security-policy"]
-        st, _, got = _get(srv, "HEAD", "/snapshot.json")
-        assert st == 200 and got == b""
-        for path in ("/../snapshot.json", "/md?x=1", "/%2e%2e/snapshot.json",
-                     "/snapshot.json?x", "/snapshot.json#f", "/owner/snapshot.json",
-                     "/owner/", "/audit.jsonl", "/link.txt", "//snapshot.json", "/share/",
-                     "/index.html/", "/nope"):
-            st, _, got = _get(srv, "GET", path)
-            assert st == 404, path
-            assert b"outside-secret" not in got
-        st, _, _ = _get(srv, "POST", "/")
-        assert st == 405
-    assert res["paths"] and {p.name for p in res["paths"]} == set(share.SHARED_FILES)
-    # a served file that is itself a symlink is refused
-    root2 = env["tmp"] / "root2"
-    root2.mkdir()
-    (root2 / "index.html").write_bytes(html)
-    os.symlink(str(root / "snapshot.json"), str(root2 / "snapshot.json"))
-    with _Running(root2) as srv:
-        assert _get(srv, "GET", "/index.html")[0] == 200
-        assert _get(srv, "GET", "/snapshot.json")[0] == 404
 
 
 def test_stale_and_failed_sources_marked(env):
@@ -275,8 +182,6 @@ def test_stale_and_failed_sources_marked(env):
     s = _src(snap)
     assert s["n1:events"]["ok"] is False and s["n1:events"]["error"] == "denied"
     assert snap["experiments"]["tracks"] == []
-    html = share_serve.render_html(snap)
-    assert "unavailable (denied)" in html
     # missing and unparseable inputs are tolerated
     (env["root"] / "board" / "n1_gpu.json").unlink()
     env["sessions"].write_text("{not json", encoding="utf-8")
@@ -286,93 +191,11 @@ def test_stale_and_failed_sources_marked(env):
     assert s["calendar:sessions"]["error"] == "unparseable"
 
 
-def test_sources_unchanged(env):
-    before = {p: _sha(p) for p in env["inputs"]}
-    _build(env)
-    _build(env, tier="owner")
-    assert {p: _sha(p) for p in env["inputs"]} == before
-    assert set(env["inputs"]) == {p for p in env["inputs"] if p.exists()}
-
-
-def test_shared_tier_has_no_waiting_list_or_pending_details(env):
+def test_withheld_label_dropped(env):
     snap = _snap(env)
-    assert "waiting" not in snap
-    assert "cost_usd" not in snap["sessions"]["totals"]
-    assert snap["experiments"]["queue"]["pending_approvals"] == 1
-    blob = json.dumps(snap)
-    for needle in ("waiting", "cost_usd", "secretcfg", "config_name", "gpu_hours\": 3", "j1"):
-        assert needle not in blob, needle
-    assert "12.5" not in blob
-    shared = share.share_dir(env["cfg"])
-    owner = share.owner_dir(env["cfg"])
-    assert (shared / "snapshot.json").exists() and not (owner / "snapshot.json").exists()
-
-    res = _build(env, tier="owner")
-    osnap = res["snapshot"]
-    assert osnap["tier"] == "owner"
-    assert "waiting" in osnap and isinstance(osnap["waiting"], list)
-    assert osnap["waiting"]
-    assert osnap["sessions"]["totals"]["cost_usd"] == 12.5
-    assert all(Path(p).parent == owner for p in res["paths"])
-    assert json.loads((owner / "snapshot.json").read_text(encoding="utf-8"))["tier"] == "owner"
-    # the shared file written earlier is not overwritten by the owner build
-    assert json.loads((shared / "snapshot.json").read_text(encoding="utf-8"))["tier"] == "shared"
-    with pytest.raises(ValueError):
-        share_serve.make_server(owner, "127.0.0.1", 0)
-    with pytest.raises(ValueError):
-        share_serve.serve(owner, "127.0.0.1", 0)
-
-
-def test_withheld_label_dropped(env, capsys):
-    res = _build(env)
-    snap = res["snapshot"]
-    assert res["dropped"] >= 2 and snap["dropped"] == res["dropped"]
-    blob = json.dumps(snap) + share_serve.render_html(snap)
-    assert "pp_ltf_" not in blob
+    assert snap["dropped"] >= 2
+    assert "pp_ltf_" not in json.dumps(snap)
     assert all(t["track"] != "pp_ltf_y" for t in snap["experiments"]["tracks"])
-    capsys.readouterr()
-    rc = cli.main(["share", "build"])
-    cap = capsys.readouterr()
-    assert rc == 1
-    assert "pp_ltf" not in cap.out + cap.err
-    assert any(ch.isdigit() for ch in cap.err)
-
-
-def test_cli_build_variants(env, capsys):
-    # no withheld hit: remove the two offending records, exit 0, paths printed, days honoured
-    d1 = _days_ago(1)
-    _write(env["sessions"], {"sessions": [
-        {"start": _iso(d1, T_ARG), "end": _iso(d1, "04:00:00Z"), "machine": "laptop",
-         "project": "ARG"}]})
-    ev = env["root"] / "board" / "n1_events.json"
-    data = json.loads(ev.read_text(encoding="utf-8"))
-    data["items"] = [i for i in data["items"] if i["track"] != "pp_ltf_y"]
-    ev.write_text(json.dumps(data), encoding="utf-8")
-    assert cli.main(["share", "build", "--days", "3"]) == 0
-    out = capsys.readouterr().out
-    assert "snapshot.json" in out and "dropped 0" in out
-    snap = json.loads((share.share_dir(env["cfg"]) / "snapshot.json").read_text(encoding="utf-8"))
-    frm = datetime.date.fromisoformat(snap["period"]["from"])
-    to = datetime.date.fromisoformat(snap["period"]["to"])
-    assert 2 <= (to - frm).days <= 3
-    assert cli.main(["share", "build", "--tier", "owner"]) == 0
-    assert (share.owner_dir(env["cfg"]) / "snapshot.json").exists()
-
-
-def test_audit_has_no_payload(env):
-    res = _build(env)
-    audit = share.share_dir(env["cfg"]) / "audit.jsonl"
-    text = audit.read_text(encoding="utf-8")
-    lines = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
-    assert len(lines) == 1
-    assert {"ts", "tier", "sources", "items", "dropped", "sha256"} <= set(lines[0])
-    assert lines[0]["tier"] == "shared" and lines[0]["dropped"] == res["dropped"]
-    assert lines[0]["sha256"] == _sha(res["paths"][1] if res["paths"][1].name == "snapshot.json"
-                                      else res["paths"][0])
-    for needle in ("ARG", "ZZZ", "pp_ltf", TITLE, T_ARG, "S5"):
-        assert needle not in text, needle
-    _build(env)
-    assert len(audit.read_text(encoding="utf-8").splitlines()) == 2
 
 
 def test_no_network_client_imported():
@@ -393,50 +216,7 @@ def test_labels_not_on_allowlist_become_other(env):
     projects |= {t["track"] for t in snap["experiments"]["tracks"]}
     assert "ARG" in projects and "other" in projects and "ZZZ" not in projects
     assert "ZZZ" not in json.dumps(snap)
-    # no labels configured: labels are shown (design 2026-11-11 §8)
-    raw = json.loads(env["host"].read_text(encoding="utf-8"))
-    del raw["share"]["labels"]
-    env["host"].write_text(json.dumps(raw), encoding="utf-8")
-    cfg = config.load_host_config(env["host"])
-    snap = share.build(cfg, today=TODAY)["snapshot"]
-    assert "ARG" in json.dumps(snap) and "ZZZ" in json.dumps(snap)
-
-
-def test_html_has_no_script_or_external_url(env):
-    for tier in ("shared", "owner"):
-        snap = _snap(env, tier=tier)
-        html = share_serve.render_html(snap)
-        low = html.lower()
-        assert low.lstrip().startswith("<!doctype html")
-        for bad in ("<script", "http://", "https://", "src=", "href=", "//"):
-            assert bad not in low.replace("<!doctype html>", ""), bad
-    # every value is escaped
-    snap = _snap(env)
-    snap["sources"][0]["id"] = "<b>x</b>"
-    out = share_serve.render_html(snap)
-    assert "<b>x</b>" not in out and "&lt;b&gt;x&lt;/b&gt;" in out
-
-
-def test_snapshot_written_atomically(env, monkeypatch):
-    res = _build(env)
-    root = share.share_dir(env["cfg"])
-    assert not list(root.rglob("*.part"))
-    index = root / "index.html"
-    before = index.read_bytes()
-    snap_before = (root / "snapshot.json").read_bytes()
-
-    def boom(snapshot):
-        raise RuntimeError("render failed")
-
-    monkeypatch.setattr(share_serve, "render_html", boom)
-    if hasattr(share, "render_html"):
-        monkeypatch.setattr(share, "render_html", boom)
-    with pytest.raises(Exception):
-        _build(env)
-    assert index.read_bytes() == before
-    assert (root / "snapshot.json").read_bytes() == snap_before
-    assert not list(root.rglob("*.part"))
-    assert res["paths"]
+    # without share.labels the labels are shown: test_snapshot_label_rule_without_allowlist
 
 
 def test_bad_records_do_not_raise(env):
@@ -482,27 +262,15 @@ def test_bad_node_name_skipped(env):
     raw = json.loads(env["host"].read_text(encoding="utf-8"))
     raw["nodes"]["bad name/../x"] = {"alias": "y"}
     env["host"].write_text(json.dumps(raw), encoding="utf-8")
-    res = share.build(config.load_host_config(env["host"]), today=TODAY)
-    assert not any("bad" in k for k in _src(res["snapshot"]))
-    assert res["dropped"] >= 1
+    snap = share.snapshot(config.load_host_config(env["host"]), today=TODAY)
+    assert not any("bad" in k for k in _src(snap))
+    assert snap["dropped"] >= 1
 
 
 def test_withheld_source_error_reported(env):
     env["tmp"].joinpath("withheld.json").write_text("{not json", encoding="utf-8")
     src = _src(_snap(env))["withheld:patterns"]
     assert src["ok"] is False and src["error"]
-
-
-def test_idle_connection_does_not_block(env):
-    _build(env)
-    import socket
-    with _Running(share.share_dir(env["cfg"])) as srv:
-        idle = socket.create_connection(("127.0.0.1", srv.server_address[1]))
-        try:
-            st, _, _ = _get(srv, "GET", "/")
-            assert st == 200
-        finally:
-            idle.close()
 
 
 def test_tracks_order_independent(env):
@@ -524,22 +292,6 @@ def test_queue_states_of_the_node_are_counted():
     assert q == {"queued": 4, "running": 1, "done": 5, "failed": 2, "other": 4}
 
 
-def test_cli_negative_days_rejected(env, capsys):
-    assert cli.main(["share", "build", "--days", "-1"]) == 1
-    assert "--days must be >= 0" in capsys.readouterr().out
-
-
-def test_put_has_plain_405_with_headers(env):
-    _build(env)
-    with _Running(share.share_dir(env["cfg"])) as srv:
-        for method in ("PUT", "FOO"):
-            st, h, body = _get(srv, method, "/")
-            assert st == 405 and h["cache-control"] == "no-store"
-            assert h["x-content-type-options"] == "nosniff"
-            assert h["content-type"].startswith("text/plain") and b"<" not in body
-
-
-# -- share.snapshot (design docs/design/2026-11-11-hub-status-page.md §8) --------------------
 def _tree(root: Path) -> dict:
     out = {}
     for p in sorted(root.rglob("*")):
@@ -718,3 +470,14 @@ def test_snapshot_days(env):
     assert len(snap["activity"]) == 4
     with pytest.raises(ValueError):
         share.snapshot(env["cfg"], days=-1)
+
+
+def test_share_is_no_longer_a_command(capsys):
+    # G6 (design 2026-11-11): rb share build|serve and share_serve.py are archived
+    for argv in (["share", "build"], ["share", "serve"]):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(argv)
+        assert exc.value.code == 2
+    assert "invalid choice: 'share'" in capsys.readouterr().err
+    assert not (REPO / "rb_host" / "share_serve.py").exists()
+    assert not hasattr(share, "build") and not hasattr(share, "share_dir")
