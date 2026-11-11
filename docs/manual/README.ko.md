@@ -30,7 +30,7 @@ Claude session ──stdio MCP── hub (rb-host-mcp, rb CLI, ledger, rb sync t
 
 | 단계 | 위치 | 명령 또는 작업 | 매뉴얼 |
 |---|---|---|---|
-| 1 | 허브 | `uv sync --extra host`와 테스트 | 허브 §1, §2 |
+| 1 | 허브 | `uv sync --extra host --python '>=3.10'`와 테스트 | 허브 §1, §2 |
 | 2 | 허브 터미널 | `rb setup --node node1 --host <NODE_HOST> --port <NODE_PORT> --user <NODE_USER>` | 허브 §4 |
 | 3 | 노드 콘솔 | 출력된 `scripts/node-install.sh ...` 명령, 이어서 `rb-node approve-key set` | 노드 §2, §4.2 |
 | 4 | 허브 터미널 | `rb setup --node node1`을 다시 실행(호스트 키 비교) | 허브 §4.2 |

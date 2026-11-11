@@ -9,14 +9,14 @@ This repository is public. Read `AGENTS.md` first; its hard rules and "Ask the u
 | `main` | — | Integrated, tested state. |
 | `claude/<slug>` (a generated name may end in a hash) | the Claude desktop app or a Claude session, one per worktree session | Session work. Keep the name it was given. |
 | `rb/<topic>` | a person or a session working outside the app's worktrees | Hand-made topic branches, e.g. `rb/unified-board`. Lowercase, hyphens. |
-| `research-bridge/impl` | first build (2026-10-27) | Historical. Remove with its worktree when no longer needed (`docs/HANDOFF.md`). |
+| `research-bridge/impl` | first build (2026-10-27) | Historical. Remove with its worktree when no longer needed (issue #20; `docs/issues/2026-11-10-triage.md` §1). |
 
 Rules:
 
 1. One branch per issue or design. Put the issue number in the PR description, not in the branch name.
 2. Before merging, the branch must contain the current `main`. Check with `git fetch origin && git merge-base --is-ancestor origin/main HEAD`; if it does not, run `git merge origin/main` on the branch and push normally (no rebase, no force push). Then re-run the tests with `uv run --extra host pytest -q` (`AGENTS.md` §Environment and tests; a session prefixes it with `rtk proxy`). Use uv only, not `python -m venv` or `pip`.
 3. Merge to `main` with a merge commit (GitHub's "Create a merge commit", or `gh pr merge N --merge`), and only after the user approves (`AGENTS.md`). Do not use "Rebase and merge" or "Squash and merge": both give the branch's commits new hashes, so a hash recorded in a report or postmortem no longer names a commit on `main`, and `git branch -d` refuses the merged branch. User decision 2026-11-11, replacing the earlier rebase-only rule (#20); PRs 50 to 54 were rebase-merged and stay as they are. `main` is therefore not linear: `git log --first-parent main` shows one line per merged PR. Repository settings since 2026-11-11: only merge commits are enabled, the merge commit takes the PR title and body, and GitHub deletes a PR's branch after the merge (the user's standing go-ahead for that one deletion under rule 5).
-4. **No non-fast-forward push to `main`.** If history must be rewritten (for example to remove a real address from old commits), the user decides it, and the same change adds a table of old and new hashes to `docs/history/`. Background: on 2026-11-02 `main` was rewritten to anonymise paths, and every hash recorded in `docs/history/sdd-2026-10-27/ledger.md` stopped resolving (postmortem `docs/postmortems/2026-10-27-sdd-build.md`, "Afterwards").
+4. **No non-fast-forward push to `main`.** If history must be rewritten (for example to remove a real address from old commits), the user decides it, and the same change adds a table of old and new hashes to `docs/99_Archive/`. Background: on 2026-11-02 `main` was rewritten to anonymise paths, and every hash recorded in `docs/99_Archive/sdd-2026-10-27/ledger.md` stopped resolving (postmortem `docs/postmortems/2026-10-27-sdd-build.md`, "Afterwards").
 5. `git push`, tags and branch deletion on the remote need the user's go-ahead (`AGENTS.md`).
 6. Do not push `private/` or any file that holds a real address; `private/` is gitignored.
 

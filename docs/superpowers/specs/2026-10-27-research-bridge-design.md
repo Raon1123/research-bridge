@@ -1,6 +1,6 @@
 # research-bridge — design
 
-Date: 2026-10-27 · Status: draft for user approval · Code home: `D:/raw/Codes/research-bridge/` (user-approved) · Data home: `D:/raw/research-bridge/` (my call; outside vault and iCloud mirror)
+Date: 2026-10-27 · Status: user-approved 2026-10-27 (earlier: draft for user approval); built through Task 12; superseded in part (see the notes below) · Code home: `D:/raw/Codes/research-bridge/` (user-approved) · Data home: `D:/raw/research-bridge/` (my call; outside vault and iCloud mirror)
 
 > Note 2026-11-10: this document records the design as approved on 2026-10-27 and is not rewritten. Since 2026-11-05 the hub is a Linux server, not the laptop; read "laptop" in §1–§12 as "hub". Where a statement below is false today, a "Superseded" note follows it; current rules are in `AGENTS.md`, current setup in `README.md` and `docs/manual/`.
 

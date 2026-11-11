@@ -28,7 +28,7 @@ Two scripted commands do the work that used to be spread over both manuals: `rb 
 
 | Step | Where | Command or action | Manual |
 |---|---|---|---|
-| 1 | hub | `uv sync --extra host` and the tests | hub §1, §2 |
+| 1 | hub | `uv sync --extra host --python '>=3.10'` and the tests | hub §1, §2 |
 | 2 | hub terminal | `rb setup --node node1 --host <NODE_HOST> --port <NODE_PORT> --user <NODE_USER>` | hub §4 |
 | 3 | node console | The printed `scripts/node-install.sh ...` command, then `rb-node approve-key set` | node §2, §4.2 |
 | 4 | hub terminal | `rb setup --node node1` again (host key comparison) | hub §4.2 |

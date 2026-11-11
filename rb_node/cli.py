@@ -1,4 +1,4 @@
-"""rb-node command line: serve-remote and stubs for later tasks."""
+"""rb-node command line."""
 from __future__ import annotations
 
 import argparse
@@ -224,8 +224,8 @@ def _install_record(rest: List[str]) -> int:
 
 
 SUBHELP = {
-    "doctor": "usage: rb-node doctor\n\nRun every node check (configuration, approval, withheld patterns, authorized_keys,\n"
-              "responder, git exposure) and print one line per check. Exit 1 when a check fails.\n",
+    "doctor": "usage: rb-node doctor\n\nRun every node check (configuration, job settings, approval, withheld patterns,\n"
+              "authorized_keys, mailbox, responder, install record, wrapper) and print one line per check. Exit 1 when a check fails.\n",
     "link": "usage: rb-node link [DIR] [--apply]\n\nPrint the .mcp.json entry that links a Claude session on the node to the local\n"
             "rb-node MCP server. DIR defaults to trm_root. With --apply, write DIR/.mcp.json\n"
             "(refused when it exists).\n",
@@ -243,7 +243,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "run-job":
         return _run_job(args[1:])
-    if len(args) >= 2 and args[0] in SUBHELP and args[1] in ("-h", "--help"):
+    if args and args[0] in SUBHELP and any(x in ("-h", "--help") for x in args[1:]):
         sys.stdout.write(SUBHELP[args[0]])
         return 0
     parser = argparse.ArgumentParser(prog="rb-node")

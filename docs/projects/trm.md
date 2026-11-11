@@ -4,7 +4,7 @@ Abbreviations: JSON = JavaScript Object Notation; YAML = a text configuration fo
 
 Date: 2026-11-10 · Sheet owner: not recorded · Node: `node1` · Profile name: `default` (the node serves one project)
 
-This sheet follows `docs/projects/TEMPLATE.md`. It was moved from `docs/server-facts.md` on 2026-11-10 and filled from that file; its facts were read-only reads of the node on 2026-10-27, when the node was reached through the `trm-research` MCP server and `ssh node1`. Items the 2026-10-27 collection did not record say "not recorded". Values marked "code default" come from `rb_node/config.py` and `rb_node/jobs.py` of the branch `claude/review-optimize-2026-11-10`, not from the node. The node runs `rb_node` 0.1.0 (the code before that branch), so a code default may differ from what the node does today. The bridge design is `docs/superpowers/specs/2026-10-27-research-bridge-design.md`; the hub and node manuals are in `docs/manual/`.
+This sheet follows `docs/projects/TEMPLATE.md`. It was moved from `docs/server-facts.md` on 2026-11-10 and filled from that file; its facts were read-only reads of the node on 2026-10-27, when the node was reached through the `trm-research` MCP server and `ssh node1`. Items the 2026-10-27 collection did not record say "not recorded". Values marked "code default" come from `rb_node/config.py` and `rb_node/jobs.py` on `main`, not from the node. Since 2026-11-10 the node runs `rb_node` 0.2.0 (protocol 2) installed from `main`; its `node.json` values are recorded in `docs/HANDOFF.md` (Node state). The bridge design is `docs/superpowers/specs/2026-10-27-research-bridge-design.md`; the hub and node manuals are in `docs/manual/`.
 
 Server hostname reported by `hostname`: `<NODE_HOSTNAME>`.
 
@@ -49,7 +49,7 @@ Code defaults of `experiments_dir` and `hypotheses_path`. The identifier forms a
 | Short inline patterns kept in node.json instead of a file | none (not available before profiles) |
 | Copy on the hub | `<data root>/withheld_patterns.json` (code default on a Linux hub) |
 
-Status 2026-11-10: the node's `hello` reports `withheld_extra` = 0, so no pattern file is loaded on the node and only the five fallback patterns of AGENTS.md hard rule 3 are active there. Loading the file is open; `read_doc`, `send_message` and `poll` were not exercised for that reason.
+Status 2026-11-10 (first live run, `docs/provisioning.md` §Results): the pattern file is loaded on the node and on the hub, 4 patterns on each side besides the five fallback patterns of AGENTS.md hard rule 3. `read_doc`, `send_message` and `poll` ran with it.
 
 The five fallback patterns stay on for this project and cannot be switched off. This is the only project on the node, so the node's pattern file holds this project's patterns only.
 
@@ -57,7 +57,7 @@ The five fallback patterns stay on for this project and cannot be switched off. 
 
 | Item | Value |
 |---|---|
-| Job entry command (`job_template`) | not set on the node (2026-11-10). The queued jobs seen on 2026-10-27 were `uv run pretrain.py arch=... key=value ...` commands with Hydra overrides (`data_paths=`, `seed=`, `+k=`, `+project_name=`, `+run_name=`); the config-file argument form is not recorded |
+| Job entry command (`job_template`) | set on the node on 2026-11-10 to the Hydra by-name form (`--config-dir {config_dir} --config-name {config_stem}`, `.yaml` only; `docs/HANDOFF.md`, Node state). A submitted config is the whole primary config: it starts with `defaults: [cfg_pretrain, _self_]` and sets `project_name` and `run_name` itself. The queued jobs seen on 2026-10-27 were `uv run pretrain.py arch=... key=value ...` commands with Hydra overrides (`data_paths=`, `seed=`, `+k=`, `+project_name=`, `+run_name=`) |
 | Config file format and extensions accepted | code default `.yaml`, `.yml`, `.json` |
 | Queue directory | `/home/<NODE_USER>/project/trm/scripts/queue` (subdirectories `jobs/`, `processing/`, `done/`, `failed/`; a `stop` file when draining) |
 | Queue kind | `file-queue`: a job is a plain bash script named `NNNN_<run_name>.job` (zero-padded sequence number; first in, first out is lexicographic file-name order); the runner claims it from `jobs/` by atomic `mv` into `processing/` as `NNNN_<name>.job.gpu<N>` (`<N>` is the GPU id); success moves it to `done/`, a nonzero exit to `failed/` |
@@ -81,7 +81,7 @@ Counts seen on 2026-10-27: 7 jobs queued, 4 processing, 463 done, 10 failed; sto
 | Item | Value |
 |---|---|
 | Who approves jobs for this project | the user (types the approval passphrase in `rb approve` on the hub) |
-| Is the approval passphrase shared with other projects on the same node? | yes (one verifier per node). Whether the verifier is set on the node is not confirmed (2026-11-10) |
+| Is the approval passphrase shared with other projects on the same node? | yes (one verifier per node). The verifier is set on the node; `rb approve` passed on 2026-11-10 (`docs/provisioning.md` §Results, B3 row 6) |
 
 ## 8. Hub display (optional)
 
@@ -93,7 +93,7 @@ Counts seen on 2026-10-27: 7 jobs queued, 4 processing, 463 done, 10 failed; sto
 
 ## 9. Checks after setup
 
-Not run for this project on 2026-11-10; the node has not been updated to the branch code.
+Not run as a list for this project. The node runs the code of `main` since 2026-11-10; the security checks and the first live run of that day are in `docs/provisioning.md` §Results.
 
 - [ ] `rb-node config check` on the node console prints no `unknown key` line.
 - [ ] `rb-node doctor` on the node console reports no `fail` line.

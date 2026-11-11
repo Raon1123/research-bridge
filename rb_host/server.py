@@ -266,7 +266,7 @@ def poll(node: Optional[str] = None) -> dict:
         except TimeoutError:
             errors["ledger"] = "ledger_locked"
             continue
-        except Exception as exc:  # a malformed node result must not skip the claim below
+        except Exception:  # a malformed node result must not skip the claim below
             errors[n] = "internal"
             continue
         if not isinstance(r, dict):

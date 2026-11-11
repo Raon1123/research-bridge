@@ -1,4 +1,4 @@
-"""In-memory model of the hub's ssh environment, for the setup, doctor and service tests.
+"""In-memory model of the hub's ssh environment, for the setup, configure, doctor, service and host-defaults tests.
 
 `install(monkeypatch, tmp_path)` replaces every external call of rb_host.sshenv with a recorder
 driven by this model: an ssh config file (real, under tmp/home/.ssh), key files (real), known_hosts
@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import os
-import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -43,7 +42,6 @@ class Hub:
         self.keyscan_calls = []  # type: List[tuple]
         self.route_calls = []  # type: List[str]
         self.started = []  # type: List[str]
-        self.extra_hostnames = {}  # type: Dict[str, str]
 
     # -- files -------------------------------------------------------------
     @property
@@ -107,7 +105,7 @@ class Hub:
                     out.setdefault(key, []).extend(vals)
                 elif key not in out:
                     out[key] = list(vals)
-        out.setdefault("hostname", [self.extra_hostnames.get(alias, alias)])
+        out.setdefault("hostname", [alias])
         out.setdefault("port", ["22"])
         out.setdefault("user", ["hubuser"])
         out.setdefault("identityfile", ["~/.ssh/id_ed25519"])
@@ -268,8 +266,8 @@ Host rb-node1-harness
 """
 
 
-def linked(hub: Hub, port: int = 22, keydir: Optional[Path] = None, keepalive: bool = False) -> Path:
-    """Model a hub already linked (by the old scripts or by rb setup): config blocks, keys,
+def linked(hub: Hub, port: int = 22, keydir: Optional[Path] = None) -> Path:
+    """Model a hub already linked (by rb setup): config blocks, keys,
     known_hosts entry, host.json."""
     import json
 
@@ -278,9 +276,6 @@ def linked(hub: Hub, port: int = 22, keydir: Optional[Path] = None, keepalive: b
     hub.make_key(key, "research-bridge-hub")
     hub.make_key(hkey, "research-bridge-harness")
     text = NODE_BLOCKS.format(port=port, key=key, hkey=hkey)
-    if keepalive:
-        text = text.replace("StrictHostKeyChecking yes\n",
-                            "StrictHostKeyChecking yes\n    ServerAliveInterval 15\n    ServerAliveCountMax 3\n")
     hub.write_config(text)
     name = "<NODE_HOST>" if port == 22 else "[<NODE_HOST>]:%d" % port
     hub.write_known_hosts(("%s ssh-ed25519 AAAAhostkey\n" % name).encode())

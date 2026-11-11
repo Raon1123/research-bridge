@@ -4,6 +4,10 @@ Read `AGENTS.md` first. The previous text of this file (the 2026-11-05 plan with
 
 Commands: `rb` below means `uv run --extra host rb`, run in the repository's main checkout with the same `RB_HOST_ROOT` (hub data root, `<data_root>`) as before. Abbreviations: SSH = Secure Shell; MCP = Model Context Protocol (the tool interface of Claude sessions); B2, B3 = the security checks and the first live run in `docs/provisioning.md`. People type the commands as shown; a session prefixes them with `rtk proxy` (plain `rtk` hides the `next:` lines of `rb doctor`).
 
+## Audit of 2026-11-11
+
+A session read the whole repository (code, tests, documents) on 2026-11-11, on branch `claude/audit-2026-11-11`. Fixed in that change: status lines and index rows that named merged branches, broken references, places where a manual or `AGENTS.md` disagreed with the code, a few small code defects, unused imports and helpers. The records of the first build and the two finished plans moved to `docs/99_Archive/` (index: `docs/99_Archive/README.md`). What the audit found and did not fix, code defects first: `docs/issues/2026-11-11-audit.md`.
+
 ## Node state and node-local tests (2026-11-10, session on node1)
 
 Superseded on the node's code (2026-11-10, later): node1 was reinstalled from `main` and runs rb_node 0.2.0 (protocol 2) with the `queue_status` fix of PR 53; `rb-node doctor` reports no warning. The observations below are from before that.
@@ -11,7 +15,7 @@ Superseded on the node's code (2026-11-10, later): node1 was reinstalled from `m
 Observed on node1:
 
 - `rb_node` is installed by `scripts/node-install.sh`; `install.json` records a clean commit of branch `claude/node-allowed-gpus` (`rb-node git-status` shows which; the installed code equals commit `db1d412`). The branch is not pushed. After it is merged, reinstall from `main` so the record names a `main` commit.
-- `node.json`: `job_template` is the Hydra by-name form (`--config-dir {config_dir} --config-name {config_stem}`), `allowed_gpus` is `[4, 5, 6, 7]`, the read roots exist, `withheld_source` is the JSON pattern file (mode 600), the approval verifier is set. `rb-node config check` reports one item: `harness_root` is empty (decision 4).
+- `node.json`: `job_template` is the Hydra by-name form (`--config-dir {config_dir} --config-name {config_stem}`), `allowed_gpus` is `[4, 5, 6, 7]`, the read roots exist, `withheld_source` is the JSON pattern file (mode 600), the approval verifier is set. `rb-node config check` reports one item: `harness_root` is empty (triage §5 item 15).
 - The node audit log has hub ops from 2026-11-06 on (`hello`, `git_status`, `queue_status`, `gpu_status`, `read_doc`). It has no `msg_*`, `respond` or `job_submit` entry: the message and job paths have not run from the hub.
 - The research queue is busy: four workers on GPUs 4–7 and about 50 queued jobs. A bridge job gets the highest number plus one, so it starts only after those.
 
@@ -29,9 +33,9 @@ Open after these tests:
 
 1. ~~Config name collision~~ — fixed 2026-11-10 (stored as `rbjob-<job_id>.yaml`).
 2. **Config content.** A submitted config is the whole primary config. It must start with `defaults: [cfg_pretrain, _self_]` to inherit the base; without it the job gets only the keys in the file. Queue jobs written by hand pass `+project_name` and `+run_name` as overrides; a submitted config has to set them itself.
-3. **Hub side, not yet run:** `hello` (expect `withheld_extra > 0`), `send_message` with a small pdf then `poll`, `poll` for the `job_finished` event of job `rbtest-20261110` (posted by the console test, status `budget_exceeded`), `cancel_job` + `rb approve` against a console `rb-node run-job ... -- sleep 600`, and a real `submit_job` once the queue has room.
+3. **Hub side:** run in B3 on 2026-11-10 (`docs/provisioning.md` §Results): the node's pattern file loaded (4 patterns, row 4), `send_message` with a pdf then `poll` (rows 1, 2), the `job_finished` event of job `rbtest-20261110` (`budget_exceeded`, row 2), and a real `submit_job` (rows 5, 6). Not run: `cancel_job` + `rb approve` against a console `rb-node run-job ... -- sleep 600`.
 4. **Multi-GPU jobs** are refused until the queue has a way to give one job several GPUs.
-5. The hub does not know the list itself: a wrong GPU in `submit_job` is refused only at approval. After the merge, `hello` carries the boolean `allowed_gpus_set` and `rb doctor --node` reports it (`node_allowed_gpus`, warn when unset); showing the list in `gpu_status` is a possible follow-up.
+5. The hub does not know the list itself: a wrong GPU in `submit_job` is refused only at approval. `hello` carries the boolean `allowed_gpus_set` and `rb doctor --node` reports it (`node_allowed_gpus`, warn when unset); showing the list in `gpu_status` is a possible follow-up.
 6. Not checked in this session (the user's to check): the options on the two bridge lines in node1's `authorized_keys`, and what `~/.ssh/research-bridge/` on node1 holds (hub private keys do not belong on the node).
 
 ## Resume snippet
@@ -49,7 +53,7 @@ State on 2026-11-10 (B2 and B3, `docs/provisioning.md` §Results "Live run"):
 
 ## On `main` since 2026-11-10 (PRs 48, 49, 50)
 
-Nothing below has run on the real node yet; on the hub only `rb doctor --offline` has.
+B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-node doctor` on the node, `rb doctor --node node1`, `rb sync`, `rb approve`, `rb service install` and the hub page through the forward (`docs/provisioning.md` §Results). The rest is covered by tests only.
 
 - Hub commands: `rb setup` (host.json, keys, ssh config blocks, host key comparison, agent, the node command, the MCP registration command, doctor), `rb agent` (load keys once per boot), `rb doctor [--offline]`, `rb service install|status` (systemd user units `rb-sync.timer`, `rb-sync.service`, `rb-web.service`), `rb web serve` (read-only page on `127.0.0.1:8767`; from the laptop: `ssh -N -L 8767:127.0.0.1:8767 <HUB_HOST>`).
 - SSH errors carry a code and the next command (`no_agent`, `agent_empty`, `key_not_loaded`, `node_refused_key`, `host_key_unknown`, `host_key_changed`, `unknown_alias`, `unreachable`, `timeout`, `closed`). The MCP server finds the agent itself: no `SSH_AUTH_SOCK` in its entry, no session restart when the agent changes.
@@ -63,18 +67,20 @@ Nothing below has run on the real node yet; on the hub only `rb doctor --offline
 ### A session
 
 - `poll` until the `job_finished` event of job `75b0b3a9df614fc4becb47f0c079b7a9` arrives; record its status in `docs/provisioning.md` §Results (row 7) and close the run's postmortem item.
-- Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md` after the user's go-ahead (none applied yet); #7 and #8 can be closed with the B2 and B3 results.
+- Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md` after the user's go-ahead (none applied yet); #7 can be closed with the B2 results; #8 after B3 row 7 is recorded.
 - Laptop-only items (8765 dashboard, session browser, shared status page) are listed there too (#13, #18, #19, #39).
 
 ### Only the user
 
 - Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
-- Node updates from now on: on the node console, `git pull --ff-only` and `scripts/node-install.sh --update` (the checkout is on `main`).
+- Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).
 
 ## Pending decisions
 
-All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. Decision 1 (push and merge) is done: PRs 48 and 49. The first open one: transport authentication (#25) before or after the first live run. Open work by workstream: the same file, §4.
+All open decisions, with the default now in force and what changes otherwise: `docs/issues/2026-11-10-triage.md` §5. Decision 1 (push and merge) is done: PRs 48 and 49. The first open one: transport authentication (#25), which was ordered after the first live run; that run has passed. Open work by workstream: the same file, §4.
+
+Decided by the user on 2026-11-11: PRs merge to `main` with merge commits only, and GitHub deletes a PR branch after the merge (`docs/CONTRIBUTING.md` §1 rule 3; PR 55).
 
 Decided by the user on 2026-11-10 (no longer waiting; items 3, 7, 8, 11, 13 and 20 of the triage list §5 are closed except where noted):
 
@@ -93,7 +99,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 921 passed on 2026-11-10 (after PR 53, with the node-install re-exec test)
+    rtk proxy uv run --extra host pytest -q        # 923 passed on 2026-11-11 (audit branch; 921 on 2026-11-10 after PR 53)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.

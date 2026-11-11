@@ -69,12 +69,12 @@ Node-side rule: the node's pattern file (the flat `withheld_source`) holds the u
 
 | Item | Value |
 |---|---|
-| Job entry command (JSON list of words; `{config}` is replaced by the stored config file path) | `["<program>", "<arg>", "--config", "{config}"]` |
+| Job entry command (JSON list of words with one placeholder: `{config}` = the stored config file path, `{config_dir}` = its directory, `{config_stem}` = its file name without the extension, `.yaml` only; `docs/manual/node-setup.md` §4.1.1) | `["<program>", "<arg>", "--config", "{config}"]` |
 | Config file format and extensions accepted | <e.g. .yaml, .yml, .json> |
 | Queue directory (absolute path on the node) | `/home/<NODE_USER>/<path>/queue` |
 | Queue kind | `file-queue`: a runner claims `NNNN_<job_id>.job` from `jobs/` and moves it through `processing/`, `done/`, `failed/` |
 | Who runs the queue runner, and how it is started | <description> |
-| Does the runner set `CUDA_VISIBLE_DEVICES` (the environment variable that selects the GPUs a process may use) itself? (the bridge's `run-job` wrapper sets it to the approved GPUs) | yes / no / unknown |
+| Does the runner set `CUDA_VISIBLE_DEVICES` (the environment variable that selects the GPUs a process may use) itself? (since PR 47 the bridge's `run-job` wrapper keeps the worker's GPU for a one-GPU job and starts nothing outside `allowed_gpus`) | yes / no / unknown |
 | Largest GPU-hour budget one job may ask for | <number; the node limit today is 168> |
 | Result files a job writes (relative to the research root) and whether they lie in a readable directory | `<dir>/<pattern>` · readable: yes / no |
 
@@ -103,7 +103,7 @@ Node-side rule: the node's pattern file (the flat `withheld_source`) holds the u
 
 ## 9. Checks after setup
 
-Checks that work with the code in this branch:
+Checks that work with the code on `main`:
 
 - [ ] `rb-node config check` on the node console prints no `unknown key` line (other lines, such as an empty `job_template`, may be expected for this project).
 - [ ] `rb-node doctor` on the node console reports no `fail` line.

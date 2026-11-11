@@ -34,7 +34,7 @@ What it does, in order (the script and `python3 -m rb_node.install` do all of it
 5. **`node.json`:** `rb-node config init` if missing, then `rb-node config set trm_root <root>` (which also moves `queue_dir` and the queue entry of `write_roots` if they still have their defaults), then `claude_bin` as above.
 6. **Withheld file** (`--withheld-file`): validates it, copies it to `~/.research-bridge/withheld-patterns.json` and sets `withheld_source` (§4.3).
 7. **Mailbox:** creates `~/.research-bridge/mailbox/{in,out,state,state/acked}` with mode 700, then writes the install record `~/.research-bridge/install.json` (version, commit, dirty-file count of the checkout).
-8. **`authorized_keys`:** prints the two lines it would install and the planned change (add, replace the line of the same key, or unchanged; it never removes a line). With `--apply-authorized-keys` on a terminal it saves `authorized_keys.bak.<stamp>`, asks `Apply? [y/N]` and writes the file with mode 600. Without a terminal, or if the file is a symbolic link, it only prints; apply the lines by hand (§5). Without `--hub-key` and `--hub-from` it says what to give.
+8. **`authorized_keys`:** prints the two lines it would install and the planned change (add, replace the line of the same key, or unchanged; it never removes a line). With `--apply-authorized-keys` on a terminal it asks `Apply? [y/N]`, then saves `authorized_keys.bak.<stamp>` and writes the file with mode 600. Without a terminal, or if the file is a symbolic link, it only prints; apply the lines by hand (§5). Without `--hub-key` and `--hub-from` it says what to give.
 9. **Host key fingerprints:** prints the node's SSH host key fingerprints, to compare with what `rb setup --node node1` shows on the hub.
 10. **`rb-node doctor`** (§7.2), then the reminder `Next (you, on this console): rb-node approve-key set`.
 
@@ -70,7 +70,7 @@ Edit it on the node console only, with `rb-node config` (no bridge operation rea
     rb-node config set KEY VALUE         # one key; lists and numbers as JSON, e.g. '["a", "b"]'
     rb-node config check                 # non-ok doctor lines for the config only; ends with "ok", "N to fix", "all ok, M warning(s)" or "N to fix, M warning(s)"
 
-`init` refuses to overwrite an existing file without `--force`, and `--force` outside a terminal refuses if it would reset a customised `withheld_source`. `set withheld_source` needs a terminal (a session cannot weaken the masking), and `set` accepts only known keys of the right type. `config check` exits 1 only when a check is `fail`; its `--help` text says "exit 1 if anything" (§12.1).
+`init` refuses to overwrite an existing file without `--force`, and `--force` outside a terminal refuses if it would reset a customised `withheld_source`, `approval_path`, `read_roots` or `write_roots`. `set` of any of these four keys needs a terminal (a session cannot weaken the masking or move the roots or the verifier path), and `set` accepts only known keys of the right type. `config check` exits 1 only when a check is `fail`.
 
 ### 4.1 Keys
 
@@ -132,7 +132,7 @@ restrict,from="<HUB_ADDR>",command="/home/<NODE_USER>/.local/bin/rb-node harness
 - `restrict` turns off pty, port, agent and X11 forwarding.
 - `command=` ignores whatever command the client asks for. The message key can only run `serve-remote`; the harness key only `harness-receive`, which accepts `harness-push`, `harness-send` or nothing and exits 1 on anything else.
 - `from=` limits the source address; if a router translates addresses between hub and node, use the address the node sees.
-- Other keys in the file are not affected. A shared, unrestricted key keeps its shell; the "no unauthorized read or write" rule holds fully only after such keys are removed or restricted (pending decision in `docs/HANDOFF.md`).
+- Other keys in the file are not affected. A shared, unrestricted key keeps its shell; the "no unauthorized read or write" rule holds fully only after such keys are removed or restricted (pending decision 5 in `docs/issues/2026-11-10-triage.md` §5).
 
 <details>
 <summary>By hand: editing authorized_keys without the installer</summary>
@@ -188,7 +188,7 @@ Read-only: it creates no directory and writes no audit record. Output is `[ok|wa
 | `claude_bin` | warn | The responder cannot start; messages wait for a live session. | `rb-node config set claude_bin PATH` |
 | `pdftotext` | warn | pdf files are denied. | install `poppler-utils` |
 | `ak_bridge` | fail | `authorized_keys` has no `serve-remote` line, or it lacks `restrict` or `from=`, or its command path is not an absolute existing executable. The hub will be refused (`node_refused_key`). | `scripts/node-install.sh --hub-key '...' --hub-from ADDR --apply-authorized-keys` |
-| `ak_harness` | warn | Same for the `harness-receive` line; only the harness channel is affected. | same with `--harness-key` |
+| `ak_harness` | warn | Same for the `harness-receive` line; only the harness channel is affected. | the same command plus `--harness-key '...'` (it keeps `--hub-key`) |
 | `ak_duplicate` | fail | The bridge key also appears on another line, without the forced command or as the harness key (`AGENTS.md` hard rule 9). | remove that line from `~/.ssh/authorized_keys` |
 | `mailbox` | warn | `mailbox/{in,out,state}` is missing or does not have mode 700. | rerun `scripts/node-install.sh` |
 | `responder_lock` | warn | A responder lock is left by a process that no longer runs, or is older than timeout + 300 s. | `rm ~/.research-bridge/mailbox/state/responder.lock` |
@@ -207,8 +207,6 @@ Which GPU the job gets: the node's queue runner has one worker per GPU and expor
 ## 9. Updating and removing
 
 **Update:** in the checkout on the node, `scripts/node-install.sh --update` (pulls with `--ff-only` and, when the pull brought new commits, runs the updated script with the same options; copies a new release, swaps the symlink, rewrites the install record, runs the doctor). `node.json`, the mailbox and the approval verifier are kept. Needs the user's go-ahead for the session case. The hub shows the difference as `node_version` in `rb doctor`.
-
-**State on 2026-11-10:** the registered node runs `rb_node` 0.1.0 from pre-merge code of branch `claude/node-allowed-gpus` (before PR 48 on `main`). That code has no `doctor`, no `link`, and answers `hello` without a protocol field; the hub treats it as protocol 1 and reports its checks as `unknown`. The first run of `scripts/node-install.sh` from a checkout of `main` updates it (§2, step 3 describes the one-time move of the old directory).
 
 **Remove:** delete the two `authorized_keys` lines, then `~/.local/bin/rb-node`, `~/.local/share/research-bridge/` and, once its contents are no longer needed, `~/.research-bridge/`.
 
@@ -266,9 +264,7 @@ The hub sends `hello` first. A node of protocol 2 (`rb_node` 0.2.0 and later) an
 
 Recorded here so a reader is not surprised:
 
-- `rb-node config check --help` and `rb config check --help` say "exit 1 if anything"; the code exits 1 only when a check is `fail`, not on `warn`.
 - The git operation sends its tree under the key `trm`; the hub accepts `tree` first and falls back to `trm`.
-- The package version in `pyproject.toml` is 0.1.0; the version the node reports is `rb_node.__version__`, 0.2.0.
 
 ### 12.2 Removed scripts
 

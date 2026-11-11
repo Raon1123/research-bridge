@@ -220,7 +220,7 @@ class NodeClient:
             resp = read_message(self.proc.stdout)
         except (OSError, ValueError):
             raise self._transport_failure()
-        except ProtocolError as exc:
+        except ProtocolError:
             raise TransportError("bad response from %s" % self.alias, "closed", NODE_DOCTOR)
         if resp is None:
             raise self._transport_failure()

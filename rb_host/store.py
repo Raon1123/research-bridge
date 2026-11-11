@@ -1,4 +1,4 @@
-"""Store polled node items on the laptop, re-checking withheld patterns."""
+"""Store polled node items on the hub, re-checking withheld patterns."""
 from __future__ import annotations
 
 import hashlib
@@ -17,7 +17,7 @@ from .client import RemoteError
 from .config import HostConfig
 
 
-# Names a laptop Claude session may load as instructions (SEC-02). Node-supplied files with
+# Names a hub Claude session may load as instructions (SEC-02). Node-supplied files with
 # these names, or any dot-name, are stored with UNTRUSTED appended so nothing loads them.
 INSTRUCTION_NAMES = frozenset(["claude.md", "claude.local.md", "agents.md"])
 UNTRUSTED = ".untrusted"

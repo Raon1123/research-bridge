@@ -1,4 +1,4 @@
-"""`rb config`: write and check the laptop's config files from the command line.
+"""`rb config`: write and check the hub's config files from the command line.
 
 Files: host.json (<data root>/host.json, or RB_HOST_CONFIG; data root in rb_host.config) and private/local.json in the
 checkout (gitignored). Every write is refused if git would track the target
@@ -15,10 +15,10 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from rb_node.configure import ConfigError, git_exposure, read_json, write_json
+from rb_node.configure import ConfigError, read_json, write_json
 
 from . import config
-from .config import default_root, default_withheld
+from .config import default_root
 
 REPO = Path(__file__).resolve().parent.parent
 NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")

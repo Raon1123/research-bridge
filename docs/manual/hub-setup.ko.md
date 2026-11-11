@@ -6,7 +6,7 @@
 
 ## How to read this manual
 
-- **명령을 누가 실행하는가.** "허브 터미널"은 사용자가 허브에서 열어 둔 터미널을 뜻한다. 질문(`y/N`, passphrase)을 하는 명령은 터미널 없이는 실행을 거부하므로(stdin과 stdout이 모두 터미널이어야 한다) Claude 세션이 실행할 수 없다. 세션은 "session-safe"로 표시된 형태를 실행할 수 있다. `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config path`, `rb config show`, `rb config check`, `rb config mcp`, `rb board show`다. 그 밖의 `rb config` 형태(`init`, `add-node`, `remove-node`, `set`, `local`)는 묻지 않고 `host.json`이나 `private/local.json`을 쓰고, `rb web serve`는 프로세스를 시작하므로 세션은 사용자의 승인이 필요하다(`AGENTS.md`의 "Ask the user before"). 옵션 `--offline` 없는 `rb doctor`와 `rb sync`는 노드에 연결하므로 이것도 승인이 필요하다.
+- **명령을 누가 실행하는가.** "허브 터미널"은 사용자가 허브에서 열어 둔 터미널을 뜻한다. 질문(`y/N`, passphrase)을 하는 명령은 터미널 없이는 실행을 거부하므로(stdin과 stdout이 모두 터미널이어야 한다) Claude 세션이 실행할 수 없다. 세션은 "session-safe"로 표시된 형태를 실행할 수 있다. `rb setup --yes-print-only`, `rb doctor --offline`, `rb service install --print`, `rb config path`, `rb config show`, `rb config check`, `rb config mcp`, `rb board show`다. 그 밖의 `rb config` 형태(`init`, `add-node`, `remove-node`, `set`, `local`)는 묻지 않고 `host.json`이나 `private/local.json`을 쓰고, `rb web serve`는 프로세스를 시작하므로 세션은 사용자의 승인이 필요하다(`AGENTS.md`의 "Ask the user before"). 옵션 `--offline` 없는 `rb doctor`, `rb sync`, `rb git-status`, `rb board refresh`, `rb harness push`, `rb harness pull`은 노드에 연결하므로 이것도 승인이 필요하다.
 - **`rb`를 실행하는 방법.** 런타임은 uv가 관리한다. 이 매뉴얼에서 `rb ...`는 메인 체크아웃에서 실행하는 `uv run --extra host rb ...`(또는 `.venv/bin/rb ...`)를 뜻한다. 세션은 셸 명령 앞에 `rtk`를 붙이고, 사람은 평범한 명령을 입력한다.
 - **자리표시자.** `node1`은 예시에 쓰는 노드 이름이다. `<NODE_HOST>`, `<NODE_PORT>`, `<NODE_USER>`는 노드의 주소, SSH 포트, 로그인 이름이다. `<HUB_ADDR>`는 노드가 보는 허브의 주소이고, `<HUB_SUBNET>`은 허브의 네트워크 범위이며, `<HUB_HOST>`는 노트북에서 허브에 로그인할 때 쓰는 이름이다. 전체 목록은 `docs/manual/README.md`에 있다. 실제 값은 git이 무시하는 파일에만 둔다.
 - **약어.** SSH = Secure Shell. MCP = Model Context Protocol. TOFU = trust on first use(호스트 키를 처음 볼 때 받아들이는 방식). systemd = Linux 서비스 관리자이며, "user unit"은 사용자 계정으로 실행된다.
@@ -56,6 +56,7 @@
 | `board/` | 통합 board 캐시 | `rb board refresh`, `rb sync` |
 | `share/` | 공유 상태 페이지 스냅숏 | `rb share build` |
 | `harness-staging/<stamp>/` | harness pull 결과(§8) | `rb harness pull` |
+| `web/access.json` | 허브 페이지 접근 키와 세션의 해시(§14). 디렉터리 모드 700, 파일 모드 600 | `rb web key`, 허브 페이지의 `/enter` |
 | `withheld_patterns.json` | withheld 패턴의 허브 사본(§3.1) | 사용자가 복사한다 |
 
 데이터 루트의 위치: `RB_HOST_ROOT` 환경 변수가 설정돼 있으면 그 값이고, 아니면 `~/.local/share/research-bridge`다. `RB_HOST_CONFIG`는 `host.json`의 경로만 바꾼다. `host.json`의 `data_root` 키는 나머지 모든 것의 저장 위치를 정하며, `rb config init --data-root DIR`이 이를 쓴다. 디렉터리는 모드 700으로 만든다(`rb setup`이 한다).
@@ -209,7 +210,7 @@ Agent:
 
 그러면 새 Claude 세션은 정확히 도구 열 개를 가진다. `nodes`, `send_message`, `poll`, `thread`, `read_doc`, `fetch_file`, `queue_status`, `gpu_status`, `submit_job`, `cancel_job`이다. 테스트가 이 집합을 고정한다. 승인 도구는 없다. `submit_job`과 `cancel_job`은 `pending_approval` 레코드만 쓰고 SSH 호출은 하지 않는다.
 
-- `nodes`는 노드별로 마지막 동기화 결과도 돌려준다. `synced`, `ok`, `error`, `stage`, `last_attempt_at`, `last_ok_at`, `age_s`, `stale`(900초 동안 성공한 한 번이 없음), `node_seen_at`, `node_version`, `protocol`, `withheld_extra`, `undelivered`.
+- `nodes`는 노드별로 마지막 동기화 결과도 돌려준다. `synced`, `ok`, `error`, `stage`, `last_attempt_at`, `last_ok_at`, `age_s`, `stale`(900초 동안 성공한 한 번이 없음), `node_seen_at`, `node_version`, `protocol`, `withheld_extra`, `hub_withheld_extra`, `hub_withheld_rejected`, `undelivered`.
 - `poll`은 노드의 각 항목을 한 번씩 돌려준다. `rb sync`가 앞서 저장한 항목은 `stored: true`로 포함되며, 연결할 수 없는 노드도 저장된 항목은 돌려준다.
 - `send_message`는 본문의 마스킹된 사본을 `outbox/`에 보관한다(§3). `thread`는 세션이 저장된 본문을 읽을 수 있도록 각 레코드에 `has_body`와 `stored_dir`를 돌려준다.
 
@@ -244,7 +245,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
     rb doctor [--node NAME] [--offline]
 
-검사마다 한 줄을 노드별로 묶어 `<level> <id>  <message>` 형태로 출력하고, `warn`이나 `fail` 아래에는 `      next: <command>` 줄을 붙인다. 마지막은 `summary: N ok, N warn, N fail`이다. 어떤 검사가 `fail`일 때만 종료 코드 1이고, `warn`은 0이다. `--offline`은 로컬 파일을 읽고 로컬 명령(`ssh -G`, `ssh-add -l`, `ssh-keygen`, `systemctl`)만 실행한다. 이 옵션이 없으면 노드마다 SSH 연결 한 번으로 `hello`만 보낸다. 출력에는 키 자료나 패턴 텍스트가 들어가지 않는다. `rb config check`는 ok가 아닌 줄만 보여 주는 오프라인 보고서이며, `ok`, `N to fix`(fail 개수), `all ok, M warning(s)`, `N to fix, M warning(s)` 중 하나로 끝난다. (`rb config check`의 `--help` 문구는 "exit 1 if anything"이라고 하지만, 코드는 `fail`일 때만 종료 코드 1을 반환한다.)
+검사마다 한 줄을 노드별로 묶어 `<level> <id>  <message>` 형태로 출력하고, `warn`이나 `fail` 아래에는 `      next: <command>` 줄을 붙인다. 마지막은 `summary: N ok, N warn, N fail`이다. 어떤 검사가 `fail`일 때만 종료 코드 1이고, `warn`은 0이다. `--offline`은 로컬 파일을 읽고 로컬 명령(`ssh -G`, `ssh-add -l`, `ssh-keygen`, `systemctl`)만 실행한다. 이 옵션이 없으면 노드마다 SSH 연결 한 번으로 `hello`만 보낸다. 출력에는 키 자료나 패턴 텍스트가 들어가지 않는다. `rb config check`는 ok가 아닌 줄만 보여 주는 오프라인 보고서이며, `ok`, `N to fix`(fail 개수), `all ok, M warning(s)`, `N to fix, M warning(s)` 중 하나로 끝난다.
 
 ### 10.1 Offline checks
 
@@ -331,11 +332,11 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 
     rb sync [--node NAME] [--watch SECONDS]
 
-노드마다(모든 노드, 또는 `--node`) 한 번씩 실행하며 허브에서 노드로만 연결한다. 작업을 승인하지 않고 harness 채널도 건드리지 않는다. 한 번은 연결 하나를 열어 `hello`, `poll`, `git_status`를 보내고 닫은 다음, 기한이 된 board 소스(캐시가 없거나, 마지막 결과가 ok가 아니거나, 소스 주기의 절반보다 오래된 것. queue 600초, gpu 600초, state 3600초, events 1800초, kanban 3600초)를 갱신한다. 가져온 노드 메시지는 `inbox/`에 저장되고 노드에서 확인(acknowledge)되며, 전달되지 않은 것으로 표시되어 다음 MCP `poll`이 여전히 돌려준다(`stored: true`와 함께). 한 번이 끝나면 노드마다 JSON 한 줄을 출력한다. `node`, `ok`, `error`, `stage`, `new_items`, `rejected`, `board`, `tree_head`, `tree_dirty`. 한 번이라도 실패하면 종료 코드 1이다. `--watch SECONDS`는 반복하며(최소 30), Ctrl-C로 종료 코드 0으로 끝낸다. stderr에는 `sync: <stage> failed: <ExceptionName>`이 출력되며 메시지 텍스트는 출력되지 않는다.
+노드마다(모든 노드, 또는 `--node`) 한 번씩 실행하며 허브에서 노드로만 연결한다. 작업을 승인하지 않고 harness 채널도 건드리지 않는다. 한 번은 연결 하나를 열어 `hello`, `poll`, `git_status`를 보내고 닫은 다음, 기한이 된 board 소스(캐시가 없거나, 마지막 결과가 ok가 아니거나, 소스 주기의 절반보다 오래된 것. queue 600초, gpu 600초, state 3600초, events 1800초, kanban 3600초)를 갱신한다. 가져온 노드 메시지는 `inbox/`에 저장되고 노드에서 확인(acknowledge)되며, 전달되지 않은 것으로 표시되어 다음 MCP `poll`이 여전히 돌려준다(`stored: true`와 함께). 한 번이 끝나면 노드마다 JSON 한 줄을 출력한다. `node`, `ok`, `error`, `stage`, `new_items`, `rejected`, `rejected_ids`, `board`, `tree_head`, `tree_dirty`. 한 번이라도 실패하면 종료 코드 1이다. `--watch SECONDS`는 반복하며(최소 30), Ctrl-C로 종료 코드 0으로 끝낸다. stderr에는 `sync: <stage> failed: <ExceptionName>`이 출력되며 메시지 텍스트는 출력되지 않는다.
 
 ### 13.2 Status file
 
-`<data root>/sync/<node>.json`(모드 600, 원자적으로 교체)에는 다음이 들어 있다. `schema`, `node`, `last_attempt_at`, `last_ok_at`, `ok`, `error`(코드 또는 null), `stage`(마지막 실패가 일어난 곳: `connect`, `hello`, `poll`, `git`, `board`. 한 번이 진행 중이면 `running`), `new_items`, `rejected`, `board`(소스별: `ok`, `skipped`, `no_path`, `gpu_status_unavailable`, `no_gpus`, `source_error`, 또는 오류 코드), `node_version`, `protocol`, `withheld_extra`, `node_seen_at`, `tree_head`, `tree_dirty`, `git_error`, `duration_s`. 전송 오류, poll 오류, 또는 `no_path`, `gpu_status_unavailable`, `no_gpus`가 아닌 board 소스 오류가 있으면 한 번이 실패한 것이다. `last_ok_at`이 900초보다 오래되면 파일이 오래된 것으로 보며, `nodes` 도구, 페이지, `rb doctor`가 이 한 가지 규칙을 쓴다. 허브는 노드의 git 상태를 키 `tree`에서 읽고 없으면 `trm`으로 대체하는데, 현재 노드가 보내는 것이 `trm`이다.
+`<data root>/sync/<node>.json`(모드 600, 원자적으로 교체)에는 다음이 들어 있다. `schema`, `node`, `last_attempt_at`, `last_ok_at`, `ok`, `error`(코드 또는 null), `stage`(마지막 실패가 일어난 곳: `connect`, `hello`, `poll`, `git`, `board`. 한 번이 진행 중이면 `running`), `new_items`, `rejected`, `rejected_ids`(거부된 항목의 id, 최대 10개), `board`(소스별: `ok`, `skipped`, `no_path`, `gpu_status_unavailable`, `no_gpus`, `source_error`, 또는 오류 코드), `node_version`, `protocol`, `withheld_extra`, `hub_withheld_extra`, `hub_withheld_rejected`, `node_seen_at`, `tree_head`, `tree_dirty`, `git_error`, `duration_s`. 전송 오류, poll 오류, 또는 `no_path`, `gpu_status_unavailable`, `no_gpus`가 아닌 board 소스 오류가 있으면 한 번이 실패한 것이다. `last_ok_at`이 900초보다 오래되면 파일이 오래된 것으로 보며, `nodes` 도구, 페이지, `rb doctor`가 이 한 가지 규칙을 쓴다. 허브는 노드의 git 상태를 키 `tree`에서 읽고 없으면 `trm`으로 대체하는데, 현재 노드가 보내는 것이 `trm`이다.
 
 ### 13.3 `rb service`
 
@@ -351,7 +352,7 @@ passphrase는 노드에서 `rb-node approve-key set`으로 설정한 것이다(�
 |---|---|
 | `rb-sync.service` | `Type=oneshot`; `ExecStart=<.venv/bin/rb> sync`; `TimeoutStartSec=240`; `NoNewPrivileges=yes`; `Environment=RB_HOST_CONFIG=<absolute host.json>`, plus `Environment=RB_HOST_ROOT=...` only if `RB_HOST_ROOT` was set in the shell that ran `install`; `ConditionPathExists=<host.json>` |
 | `rb-sync.timer` | `OnActiveSec=60`, `OnUnitInactiveSec=<interval>` (default 300), `RandomizedDelaySec=20`, `AccuracySec=10s`; `WantedBy=timers.target` |
-| `rb-web.service` | `Type=simple`; `ExecStart=<.venv/bin/rb> web serve --port <port> --bind 127.0.0.1` (default port 8767); `Restart=on-failure`, `RestartSec=5`; same environment lines; `WantedBy=default.target` |
+| `rb-web.service` | `Type=simple`; `ExecStart=<.venv/bin/rb> web serve --port <port> --bind 127.0.0.1` (default port 8767); `Restart=on-failure`, `RestartSec=5`; `NoNewPrivileges=yes`; same environment lines; `ConditionPathExists=<host.json>`; `WantedBy=default.target` |
 
 어떤 unit도 `SSH_AUTH_SOCK`, 키 경로, passphrase를 담지 않는다. unit은 §4.3의 규칙으로 agent를 찾으므로 재부팅할 때마다 허브 터미널에서 `rb agent`를 실행해야 하며, 그때까지는 한 번마다 `agent_empty` 또는 `no_agent`로 실패한다. `install`은 공백이나 `%`가 있는 경로를 거부하고, worktree에서 실행하면 경고한다. `status`는 unit 세 개의 enabled와 active 상태, 마지막 sync 서비스 실행 결과, linger가 켜져 있는지를 출력한다. 로그: `journalctl --user -u rb-sync.service -n 20`.
 

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import re
 import stat
 from pathlib import Path
 
 import pytest
 
 import hubfake
-from rb_host import cli, configure, service, setup, sshenv
+from rb_host import cli, service, sshenv
 
 DESIGN = Path(__file__).resolve().parents[1] / "docs" / "design" / "2026-11-10-sync-and-hub-page.md"
 RB = Path("/opt/rb/.venv/bin/rb")

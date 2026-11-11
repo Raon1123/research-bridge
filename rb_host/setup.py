@@ -552,7 +552,7 @@ def mcp_step(a: Args) -> str:
 
 
 def step_doctor(a: Args) -> str:
-    code = doctor.main(a.node, offline_only=a.print_only)
+    doctor.main(a.node, offline_only=a.print_only)
     if not a.print_only:
         _say("the online part is expected to fail until the node command has been run; afterwards "
              "run: rb setup --node %s" % a.node)

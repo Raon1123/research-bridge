@@ -323,10 +323,12 @@ def _ak_checks() -> List[Check]:
     except OSError:
         text = ""
     entries = parse_authorized_keys(text)
-    fix = ("scripts/node-install.sh --hub-key '...' --hub-from ADDR --apply-authorized-keys")
+    fix = "scripts/node-install.sh --hub-key '...' --hub-from ADDR --apply-authorized-keys"
+    # node-install.sh skips the authorized_keys step without --hub-key, so the harness hint carries both
+    hfix = fix.replace("--hub-from", "--harness-key '...' --hub-from")
     out = [_ak_check("ak_bridge", "fail", entries, "serve-remote", "", fix),
            _ak_check("ak_harness", "warn", entries, "harness-receive", " (harness channel only)",
-                     fix.replace("--hub-key", "--harness-key"))]
+                     hfix)]
     dup = None
     dup_harness = False
     dup_serve = False

@@ -38,7 +38,6 @@ def test_install_record(tmp_path):
 
 
 def test_read_doc_ids_use_configured_paths(tmp_path):
-    import json
     from rb_node.config import NodeConfig
     from rb_node.remote import Node
     (tmp_path / "x" / "exp").mkdir(parents=True)

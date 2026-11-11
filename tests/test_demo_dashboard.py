@@ -9,7 +9,6 @@ import threading
 import urllib.parse
 from pathlib import Path
 
-import pytest
 
 from rb_host import jobs, threads
 
@@ -63,12 +62,12 @@ def test_host_and_origin_mapping():
 def test_demo_pages_200_and_seeded_thread(tmp_path, monkeypatch):
     monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "missing-host.json"))
     monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
-    monkeypatch.setattr(jobs, "connect", jobs.connect)
+    monkeypatch.setattr(jobs, "connect", jobs.connect)  # start() replaces it; this restores it afterwards
     monkeypatch.chdir(os.getcwd())
     demo = _load_demo()
     srv, web_srv = demo.start(tmp_path / "demo", 0, 0)
     for s in (srv, web_srv):
-        threading.Thread(target=s.serve_forever, daemon=True).start()
+        threading.Thread(target=s.serve_forever, args=(0.01,), daemon=True).start()
     try:
         port, wport = srv.server_address[1], web_srv.server_address[1]
         host, whost = "127.0.0.1:%d" % port, "127.0.0.1:%d" % wport
@@ -134,6 +133,7 @@ def test_hub_page_not_served_without_proc_net_tcp(tmp_path, monkeypatch):
     from rb_host import web
     monkeypatch.setenv("RB_HOST_CONFIG", str(tmp_path / "missing-host.json"))
     monkeypatch.setenv("RB_HOST_ROOT", str(tmp_path / "root"))
+    monkeypatch.setattr(jobs, "connect", jobs.connect)  # start() replaces it; this restores it afterwards
     monkeypatch.chdir(os.getcwd())
     demo = _load_demo()
     srv, web_srv = demo.start(tmp_path / "demo", 0, 0)

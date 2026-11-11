@@ -16,7 +16,7 @@
   "_withheld_source_note": "A JSON file (a list of strings, {\"patterns\": [...]}, or {\"families\": [{\"patterns\": [...]}]}); scripts/node-install.sh --withheld-file FILE validates it and copies it here. YAML is not parsed. Without a readable file the node runs on the five fallback patterns only (AGENTS.md hard rule 3); `hello` then reports withheld_extra 0.",
   "withheld_source": "/home/<NODE_USER>/.research-bridge/withheld-patterns.json",
   "claude_bin": "/home/<NODE_USER>/.local/bin/claude",
-  "_job_template_note": "argv of the job command, with {config} replaced by the stored config file path. An empty list means job_submit cannot queue a job.",
+  "_job_template_note": "argv of the job command; {config} (the stored config file path), {config_dir} (its directory) and {config_stem} (its file name without the extension, .yaml only) are replaced (docs/manual/node-setup.md 4.1.1). An empty list means job_submit is refused (no_job_template).",
   "job_template": [],
   "_allowed_gpus_note": "GPU indices that belong to the node owner, e.g. [4, 5, 6, 7]. Empty: job_submit is refused (no_allowed_gpus) and run-job launches nothing.",
   "allowed_gpus": [],

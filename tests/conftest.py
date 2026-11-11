@@ -20,7 +20,7 @@ for _name, _sub in (("HOME", "home"), ("XDG_RUNTIME_DIR", "run")):
 for _name in ("SSH_AUTH_SOCK", "RB_HOST_ROOT", "RB_HOST_CONFIG", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
     os.environ.pop(_name, None)
 
-# --- hub-setup: external command isolation ---
+# --- per-test isolation: HOME, runtime directory, external commands ---
 
 
 @pytest.fixture(autouse=True)
@@ -35,8 +35,7 @@ def _isolate_external(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(run_dir))
     monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
     monkeypatch.setenv("HOME", str(home))
-    # configure.claude_json_path is added by the configure change; tolerate its absence.
-    monkeypatch.setattr(configure, "claude_json_path", lambda: home / ".claude.json", raising=False)
+    monkeypatch.setattr(configure, "claude_json_path", lambda: home / ".claude.json")
 
     def forbidden(*a, **k):
         raise AssertionError("external command in a test: %r" % (a,))
