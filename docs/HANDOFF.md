@@ -9,11 +9,11 @@ Commands: `rb` below means `uv run --extra host rb`, run in the repository's mai
 A session read the whole repository (code, tests, documents) on 2026-11-11 and changed it in two steps.
 
 - PR 56 (branch `claude/audit-2026-11-11`): status lines and index rows that named merged branches, broken references, places where a manual or `AGENTS.md` disagreed with the code, three small code defects, unused code. The records of the first build and the two finished plans moved to `docs/99_Archive/` (index: `docs/99_Archive/README.md`).
-- The second PR (branch `claude/audit-fixes-2026-11-11`, on top of PR 56): the fifteen code defects the audit listed (a job stuck in `approved` after a node refusal, wrong-typed `node.json` values, a `poll` stopped by one malformed item, uncleaned board text, and others), duplicated code, code only tests used, and the documents that lagged (triage rows, designs, postmortems, manuals; Appendix A of the manuals is in the archive).
+- PR 57 (branch `claude/audit-fixes-2026-11-11`, on top of PR 56): the fifteen code defects the audit listed (a job stuck in `approved` after a node refusal, wrong-typed `node.json` values, a `poll` stopped by one malformed item, uncleaned board text, and others), duplicated code, code only tests used, and the documents that lagged (triage rows, designs, postmortems, manuals; Appendix A of the manuals is in the archive).
 
 What was fixed, and what is left for the user to decide: `docs/issues/2026-11-11-audit.md`.
 
-What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (they ended with `Result=success`). The second PR has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
+What has run against node1: the hub code of PR 56 only. The main checkout has been on the PR 56 branch since the audit, and the sync timer runs that checkout, so its passes from 2026-11-11 16:17 on used the PR 56 `rb_host` (they ended with `Result=success`). PR 57 has not run against node1, and no `rb_node` change of either PR is installed there: the node-side changes reach the node with its next `scripts/node-install.sh --update` after the merge.
 
 ## Node state and node-local tests (2026-11-10, session on node1)
 
