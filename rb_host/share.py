@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -185,9 +186,10 @@ def reduce_tracks(items: list, wh: Withheld, labels: Optional[Set[str]]) -> Tupl
     for ev in items:
         if not isinstance(ev, dict) or not isinstance(ev.get("track"), str):
             continue
-        age = age_s(ev.get("ts"))
-        if age is None:
+        d = parse_utc(ev.get("ts"))
+        if d is None:
             continue
+        age = time.time() - d.timestamp()  # not floored here: the most recent of future stamps wins
         raw = ev["track"]
         if raw not in newest or age < newest[raw][0]:
             newest[raw] = (age, ev)
