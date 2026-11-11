@@ -288,10 +288,20 @@ def test_node_clock_behind_hub_reply_still_sorts_after_its_message(cfg):
 def test_long_reply_chain_does_not_exhaust_the_stack(cfg):
     # the chain length is set by the node; one long thread must not break every page
     # stored newest first, so the walk from the first record passes through the whole chain
+    # the same records add() would write, in the same order, written at once (1500 appends,
+    # each re-reading the file under the lock, took about 3 s)
+    recs = []
     for i in range(1499, 0, -1):
-        add(cfg, "m%d" % i, "in" if i % 2 else "out", "2026-11-10T08:00:00Z",
-            reply_to="m%d" % (i - 1), msg_kind="reply", delivered=True)
-    add(cfg, "m0", "out", "2026-11-10T08:00:00Z")
+        d = "in" if i % 2 else "out"
+        recs.append({"kind": "message", "id": "m%d" % i, "direction": d, "node": "n1",
+                     "status": "received" if d == "in" else "sent",
+                     "created": "2026-11-10T08:00:00Z", "reply_to": "m%d" % (i - 1),
+                     "msg_kind": "reply", "delivered": True})
+    recs.append({"kind": "message", "id": "m0", "direction": "out", "node": "n1",
+                 "status": "sent", "created": "2026-11-10T08:00:00Z"})
+    Path(cfg.data_root).mkdir(parents=True, exist_ok=True)
+    (Path(cfg.data_root) / "ledger.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
     t = threads.load(cfg)["threads"][0]
     assert [r["id"] for r in t["records"]] == ["m%d" % i for i in range(1500)]
 
