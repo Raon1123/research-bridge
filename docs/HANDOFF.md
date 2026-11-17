@@ -6,7 +6,7 @@ Commands: `rb` below means `uv run --extra host rb`, run in the repository's mai
 
 ## 2026-11-17: node sessions live, issues on GitHub
 
-- **Node sessions work on the real node.** The user corrected `sessions_dir` on the node console; the 06:20 UTC sync pass stored 13 sessions with `unparsed: 0` (7 outside the tree, `files: 77`), so the assumed record format holds. The answer had `truncated: true` and does not say which bound was hit: #80. PR 61 (`claude/sessions-diagnosis`, the clearer doctor messages) is still open.
+- **Node sessions work on the real node.** The user corrected `sessions_dir` on the node console; the 06:20 UTC sync pass stored 13 sessions with `unparsed: 0` (7 outside the tree, `files: 77`), so the assumed record format holds; the 06:25 pass had 33 (13 outside). Both answers had `truncated: true`, which fits large files being finished over several calls; the answer does not say which bound was hit: #80. PR 61 (`claude/sessions-diagnosis`, the clearer doctor messages) is still open.
 - **Node-console steps of 2026-11-17** were done by the user: `sessions_dir`, and the check of the bridge lines in `authorized_keys` and of `~/.ssh/research-bridge/` on node1 (item 6 of "Open after these tests" below; no details recorded).
 - **Decided by the user on 2026-11-17:** the hub session transcript that holds withheld job names stays (`docs/postmortems/2026-11-10-queue-status-withheld.md`).
 - **GitHub:** the open work exists as issues now. 22 new issues (#62 to #83, from `docs/issues/2026-11-17-issue-drafts.md`); #3, #5, #6, #7, #12, #26, #39 closed; #4, #9, #15, #20, #21, #25, #41 rewritten. **#21 is the tracking issue** listing every open issue by workstream.
@@ -90,7 +90,7 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 
 ### Only the user
 
-- Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
+- ~~Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).~~ Decided 2026-11-17: keep it.
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
 - Open `/status` on the hub page (`rb web key` in a hub terminal prints the address; from the laptop through the SSH forward of `docs/session-dashboard.md`). The hub side of the post-merge step is done (see "Audit of 2026-11-11").
 - Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).

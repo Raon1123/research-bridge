@@ -10,7 +10,7 @@ Not drafted, with the reason:
 - B3 row 7 (the first job's `job_finished` event): already tracked by #8. On 2026-11-17 the hub ledger still shows the job as `queued`.
 - Node `sessions_dir` (first version of draft 17): the user corrected it on the node console on 2026-11-17; the 06:20 UTC sync pass listed sessions. Replaced by the truncation draft.
 - `authorized_keys` options and the key directory on node1 (first version of draft 19): checked by the user on the node console on 2026-11-17.
-- The two follow-ups of the 2026-11-10 incidents (first version of draft 20): the user decided on 2026-11-17 to keep the session transcript that holds withheld names; `~/.claude.json` on node1 was checked by the user on the node console on 2026-11-17.
+- The two follow-ups of the 2026-11-10 incidents (first version of draft 20): the user decided on 2026-11-17 to keep the session transcript that holds withheld names; whether `~/.claude.json` on node1 was checked is not recorded (the user reported the node-console steps done; see `docs/postmortems/2026-11-10-test-suite-overwrote-claude-json.md` §5).
 
 Changes to existing issues, applied on 2026-11-17 (`docs/issues/2026-11-10-triage.md` §1, with these updates): closed #3, #5, #6, #7, #12, #26 (SEC-05 and SEC-06 continue in #73) and #39 (superseded by the hub page `/status`, PRs 58 and 59); rewritten #4, #9, #15, #20, #21 (now lists every open issue by workstream), #25, #41; commented #2, #8, #11, #13 (label `user-action` added), #14, #16 to #19 (the non-existent "HANDOFF §Follow-ups" reference replaced in #16 to #19); label `host` now reads "Hub side (rb_host)".
 
