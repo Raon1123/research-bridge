@@ -8,6 +8,9 @@ building this): `<sessions_dir>/<project dir>/<session id>.jsonl`, one JSON obje
 most lines with a top-level `timestamp` (ISO 8601, UTC) and `cwd` (absolute path). From a line
 only those two top-level values are taken. Nothing else of a record is kept, cached, logged or
 returned; files that give no usable time are counted in `unparsed`, so a wrong assumption shows.
+A `.jsonl` file whose name is not a session id is counted in `ignored` and not opened. When no
+session is listed and none is outside, id-named files one level deeper or shallower than
+expected are counted (`deeper`, `shallower`), so a `sessions_dir` one level off shows.
 
 What leaves the node per session: the file stem as id, start and end times, active seconds per
 UTC day, and the working directory relative to `trm_root` (cleaned, cut, masked). Sessions whose
@@ -263,15 +266,16 @@ def _read(fh: Any, ent: dict, budget: _Budget, roots: List[str]) -> None:
         ent["offset"] += size
 
 
-def _list(base: str) -> Tuple[List[tuple], bool]:
+def _list(base: str) -> Tuple[List[tuple], bool, int]:
     """Regular `.jsonl` files at depth 2 under `base` (resolved), whose resolved path stays
-    inside it: (rel, real path, stem, size, mtime, mtime_ns). True when MAX_LISTED was hit."""
+    inside it: (rel, real path, stem, size, mtime, mtime_ns). Also True when MAX_LISTED was
+    hit, and the number of directory entries visited."""
     out = []  # type: List[tuple]
     seen = 0
     for top in sorted(os.scandir(base), key=lambda e: e.name):
         seen += 1
         if seen > MAX_LISTED:
-            return out, True
+            return out, True, seen
         real_dir = os.path.realpath(top.path)
         if not _inside(real_dir, base) or real_dir == base or not os.path.isdir(real_dir):
             continue
@@ -282,7 +286,7 @@ def _list(base: str) -> Tuple[List[tuple], bool]:
         for f in entries:
             seen += 1
             if seen > MAX_LISTED:
-                return out, True
+                return out, True, seen
             if not f.name.endswith(".jsonl"):
                 continue
             real = os.path.realpath(f.path)
@@ -296,7 +300,65 @@ def _list(base: str) -> Tuple[List[tuple], bool]:
                 continue
             out.append((top.name + "/" + f.name, real, f.name[:-len(".jsonl")], st.st_size,
                         st.st_mtime, st.st_mtime_ns))
-    return out, False
+    return out, False, seen
+
+
+def _subdir(entry: Any, base: str) -> Optional[str]:
+    """The resolved directory of a listing entry when it is a directory inside `base` other
+    than `base` itself; None otherwise."""
+    real = os.path.realpath(entry.path)
+    if not _inside(real, base) or real == base or not os.path.isdir(real):
+        return None
+    return real
+
+
+def _scan(path: str) -> list:
+    try:
+        return sorted(os.scandir(path), key=lambda e: e.name)
+    except OSError:
+        return []
+
+
+def _levels(base: str, cutoff: float, seen: int) -> Tuple[int, int, bool]:
+    """(deeper, shallower, truncated): id-named regular `.jsonl` files modified at or after
+    `cutoff`, one level deeper (depth 3) and one level shallower (depth 1) than record files,
+    under the confinement rules of `_list`. Counted by name and modification time, never
+    opened. `seen` entries were visited by `_list`; MAX_LISTED bounds both listings together."""
+    deeper = shallower = 0
+
+    def counted(f: Any) -> bool:
+        if not f.name.endswith(".jsonl") or not ID_RE.match(f.name[:-len(".jsonl")]):
+            return False
+        real = os.path.realpath(f.path)
+        if not _inside(real, base):
+            return False
+        try:
+            st = os.stat(real)
+        except OSError:
+            return False
+        return stat.S_ISREG(st.st_mode) and st.st_mtime >= cutoff
+
+    for top in _scan(base):
+        seen += 1
+        if seen > MAX_LISTED:
+            return deeper, shallower, True
+        real_dir = _subdir(top, base)
+        if real_dir is None:
+            shallower += 1 if counted(top) else 0
+            continue
+        for mid in _scan(real_dir):
+            seen += 1
+            if seen > MAX_LISTED:
+                return deeper, shallower, True
+            real_mid = _subdir(mid, base)
+            if real_mid is None or _inside(real_dir, real_mid):  # no loop back up the tree
+                continue
+            for f in _scan(real_mid):
+                seen += 1
+                if seen > MAX_LISTED:
+                    return deeper, shallower, True
+                deeper += 1 if counted(f) else 0
+    return deeper, shallower, False
 
 
 def _update(ent: Optional[dict], real: str, size: int, mtime_ns: int, budget: _Budget,
@@ -351,7 +413,8 @@ def collect(sessions_dir: str, trm_root: str, cache_file: Optional[Path], wh: Wi
     roots = tree_roots(trm_root)
     fp = _fingerprint(base, roots)
     old = _load_cache(cache_file, fp) if cache_file is not None else {}
-    listed, truncated = _list(base)
+    listed, list_cut, seen = _list(base)
+    truncated = list_cut
     files = {}  # type: Dict[str, dict]
     if truncated:
         files.update(old)  # not every file was seen: keep entries of the unseen ones
@@ -363,11 +426,11 @@ def collect(sessions_dir: str, trm_root: str, cache_file: Optional[Path], wh: Wi
     if len(window) > MAX_FILES:
         window, truncated = window[:MAX_FILES], True
     budget = _Budget()
-    unparsed = outside = 0
+    unparsed = outside = ignored = 0
     by_id = {}  # type: Dict[str, dict]
     for rel, real, stem, size, _mtime, ns in window:
         if not ID_RE.match(stem):
-            unparsed += 1  # a .jsonl file that cannot be a session record: counted, not read
+            ignored += 1  # a .jsonl file that cannot be a session record: counted, not read
             continue
         k = _key(rel)
         try:
@@ -401,10 +464,15 @@ def collect(sessions_dir: str, trm_root: str, cache_file: Optional[Path], wh: Wi
                                   for d, s in sorted(r["days"].items()) if int(round(s)) > 0}})
     if write_cache and cache_file is not None and files != old:
         _write_cache(cache_file, fp, files)
+    deeper = shallower = 0
+    if not sessions and not outside and not list_cut:  # say why nothing was listed
+        deeper, shallower, cut = _levels(base, cutoff, seen)
+        truncated = truncated or cut
     return {"days": days, "now": iso(now),
             "tree": shown(os.path.basename(os.path.normpath(trm_root)), wh),
-            "sessions": sessions, "outside": outside, "unparsed": unparsed,
-            "files": len(window), "truncated": truncated}
+            "sessions": sessions, "outside": outside, "unparsed": unparsed, "ignored": ignored,
+            "files": len(window), "deeper": deeper, "shallower": shallower,
+            "truncated": truncated}
 
 
 def run(cfg: Any, wh: Withheld, days: int = DAYS_DEFAULT, write_cache: bool = True) -> dict:

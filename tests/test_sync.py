@@ -662,6 +662,23 @@ def test_malformed_sessions_answer_is_checked_entry_by_entry(env):
         assert raw not in blob, raw
 
 
+def test_sessions_file_counts_are_stored(env):
+    env["hooks"]["sessions"] = lambda real: _answer([], ignored=2, deeper=3, shallower=1)
+    assert sync.run_pass(env["cfg"], "n1")["sessions"] == "ok"
+    s = _store(env)
+    assert (s["ignored"], s["deeper"], s["shallower"]) == (2, 3, 1)
+    env["hooks"]["sessions"] = lambda real: _answer([])  # a node without the fields
+    sync.run_pass(env["cfg"], "n1")
+    s = _store(env)
+    assert (s["ignored"], s["deeper"], s["shallower"]) == (0, 0, 0)
+    for bad in ("2", True, -1, 1.5, None, [3]):
+        env["hooks"]["sessions"] = lambda real: _answer([], ignored=bad, deeper=bad,
+                                                        shallower=bad)
+        sync.run_pass(env["cfg"], "n1")
+        s = _store(env)
+        assert (s["ignored"], s["deeper"], s["shallower"]) == (0, 0, 0), bad
+
+
 @pytest.mark.parametrize("answer", [None, [], "text", {"sessions": "x"}, {"days": 8}])
 def test_sessions_answer_of_the_wrong_shape(env, answer):
     env["hooks"]["sessions"] = lambda real: answer

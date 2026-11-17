@@ -184,7 +184,16 @@ def test_files_without_usable_time_are_unparsed(env):
     write(env["sdir"], "p", "NOT-AN-ID.jsonl", [line(T0 + 1, str(env["trm"]))], mtime=NOW)
     session(env, SID[3], [T0 + 4])
     r = collect(env)
-    assert r["files"] == 5 and r["unparsed"] == 4 and len(r["sessions"]) == 1
+    assert r["files"] == 5 and r["unparsed"] == 3 and r["ignored"] == 1 and len(r["sessions"]) == 1
+
+
+def test_file_not_named_like_a_session_is_ignored_and_never_opened(env, monkeypatch):
+    p = write(env["sdir"], "p", "not-a-session.jsonl", [json.dumps({"cmd": "x", "ok": True})],
+              mtime=NOW)
+    opens = Opens(monkeypatch)
+    r = collect(env)
+    assert str(p) not in opens.paths and opens.paths == []
+    assert r["files"] == 1 and r["ignored"] == 1 and r["unparsed"] == 0 and r["sessions"] == []
 
 
 def test_nested_timestamp_and_cwd_are_not_taken(env):
@@ -210,6 +219,67 @@ def test_only_depth_two_jsonl_files_inside_the_directory_are_read(env, tmp_path)
     (env["sdir"] / "p" / (SID[5] + ".jsonl")).mkdir()  # a directory with the suffix
     r = collect(env)
     assert r["sessions"] == [] and r["files"] == 0 and r["unparsed"] == 0
+    assert r["ignored"] == 0 and r["deeper"] == 1 and r["shallower"] == 1  # counted, not read
+
+
+# -- record files one level off (sessions_dir set one level too high or too low) -------------
+def test_files_one_level_off_are_counted_by_name_and_time_only(env, tmp_path, monkeypatch):
+    good = [line(T0 + 1, str(env["trm"]))]
+    old = T0 - 20 * 86400
+    outside = tmp_path / "outside-dir"
+    write(outside, "", SID[8] + ".jsonl", good, mtime=NOW)
+    write(outside, "q", SID[8] + ".jsonl", good, mtime=NOW)
+    # one level deeper: <sessions_dir>/<a>/<b>/<id>.jsonl
+    write(env["sdir"], "a/p1", SID[0] + ".jsonl", good, mtime=NOW)
+    write(env["sdir"], "a/p2", SID[1] + ".jsonl", good, mtime=NOW)
+    write(env["sdir"], "a/p2", "history.jsonl", good, mtime=NOW)  # not an id: not counted
+    write(env["sdir"], "a/p2", SID[2] + ".jsonl", good, mtime=old)  # outside the window
+    (env["sdir"] / "a" / "p2" / (SID[3] + ".jsonl")).symlink_to(outside / (SID[8] + ".jsonl"))
+    (env["sdir"] / "a" / "linked").symlink_to(outside / "q")  # a directory out of sessions_dir
+    (env["sdir"] / "a" / "p2" / (SID[4] + ".jsonl")).mkdir()  # not a regular file
+    # one level shallower: <sessions_dir>/<id>.jsonl
+    write(env["sdir"], "", SID[5] + ".jsonl", good, mtime=NOW)
+    write(env["sdir"], "", SID[6] + ".jsonl", good, mtime=old)
+    write(env["sdir"], "", "notes.jsonl", good, mtime=NOW)
+    (env["sdir"] / (SID[7] + ".jsonl")).symlink_to(outside / (SID[8] + ".jsonl"))
+    opens = Opens(monkeypatch)
+    r = collect(env)
+    assert opens.paths == []  # counted by name and modification time, never opened
+    assert r["deeper"] == 2 and r["shallower"] == 1
+    assert r["files"] == 0 and r["ignored"] == 0 and r["unparsed"] == 0 and r["sessions"] == []
+    assert r["truncated"] is False
+
+
+def test_level_counts_only_when_no_session_is_listed_and_none_is_outside(env, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("the level listing ran")
+    write(env["sdir"], "a/p", SID[0] + ".jsonl", [line(T0 + 1, str(env["trm"]))], mtime=NOW)
+    session(env, SID[1], [T0 + 2])
+    with monkeypatch.context() as m:
+        m.setattr(S, "_levels", boom)
+        r = collect(env)
+    assert len(r["sessions"]) == 1 and r["deeper"] == 0 and r["shallower"] == 0
+    session(env, SID[1], [T0 + 2], cwd="/elsewhere")
+    with monkeypatch.context() as m:
+        m.setattr(S, "_levels", boom)
+        r = collect(env)
+    assert r["sessions"] == [] and r["outside"] == 1 and r["deeper"] == r["shallower"] == 0
+    (env["sdir"] / "proj-a" / (SID[1] + ".jsonl")).unlink()
+    assert collect(env)["deeper"] == 1
+
+
+def test_level_listing_shares_the_listing_bound(env, monkeypatch):
+    write(env["sdir"], "a/p", SID[0] + ".jsonl", [line(T0 + 1, str(env["trm"]))], mtime=NOW)
+    r = collect(env, cache=False)
+    assert r["deeper"] == 1 and r["truncated"] is False
+    with monkeypatch.context() as m:
+        m.setattr(S, "MAX_LISTED", 3)  # the depth-2 listing sees 2 entries, the level listing 2 more
+        r = collect(env, cache=False)
+    assert r["truncated"] is True and r["deeper"] == 0
+    with monkeypatch.context() as m:
+        m.setattr(S, "MAX_LISTED", 1)  # bound hit by the depth-2 listing: no level listing
+        r = collect(env, cache=False)
+    assert r["truncated"] is True and r["deeper"] == 0 and r["shallower"] == 0
 
 
 def test_symlink_inside_the_directory_is_followed(env):
@@ -518,8 +588,6 @@ def test_doctor_sessions_check(env, ncfg, tmp_path):
     c = doctor._sessions_check(ncfg)
     assert c.level == "warn" and "does not exist" in c.message and c.fix
     ncfg.sessions_dir = str(env["sdir"])
-    c = doctor._sessions_check(ncfg)
-    assert c.level == "ok" and "0 record file(s)" in c.message
     now = time.time()
     write(env["sdir"], "p", SID[0] + ".jsonl", ["not json"], mtime=now)
     c = doctor._sessions_check(ncfg)
@@ -529,8 +597,94 @@ def test_doctor_sessions_check(env, ncfg, tmp_path):
     c = doctor._sessions_check(ncfg)
     assert c.level == "ok", c
     assert "1 session(s)" in c.message and "1 unparsed" in c.message and "1 outside" in c.message
+    assert "ignored" not in c.message
     assert not (env["tmp"] / "rb" / S.CACHE_NAME).exists()  # doctor writes nothing
     assert "sessions" in {x.id for x in doctor.system_checks(ncfg)}
+
+
+LAYOUT = "<project directory>/<session id>.jsonl"
+
+
+def _doctor(ncfg):
+    from rb_node import doctor
+    return doctor._sessions_check(ncfg)
+
+
+def test_doctor_sessions_found_names_the_ignored_files(env, ncfg):
+    now = time.time()
+    session(env, SID[0], [now - 60, now - 30], mtime=now)
+    write(env["sdir"], "p", "not-a-session.jsonl", ["{}"], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "ok" and "1 session(s)" in c.message and "1 ignored" in c.message, c
+    (env["sdir"] / "p" / "not-a-session.jsonl").unlink()
+    session(env, SID[0], [now - 60], cwd="/elsewhere", mtime=now)  # outside only: still ok
+    c = _doctor(ncfg)
+    assert c.level == "ok" and "1 outside" in c.message and "ignored" not in c.message, c
+
+
+def test_doctor_sessions_dir_one_level_too_high(env, ncfg):
+    now = time.time()
+    write(env["sdir"], "projects/p", SID[0] + ".jsonl", [line(now - 60, str(env["trm"]))],
+          mtime=now)
+    write(env["sdir"], "logs", "not-a-session.jsonl", ["{}"], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "warn", c
+    assert c.message == ("sessions_dir looks one level too high: 1 session record file(s) are "
+                         "one level deeper")
+    assert LAYOUT in c.fix and "~/.claude/projects" in c.fix
+
+
+def test_doctor_sessions_dir_one_level_too_low(env, ncfg):
+    now = time.time()
+    write(env["sdir"], "", SID[0] + ".jsonl", [line(now - 60, str(env["trm"]))], mtime=now)
+    write(env["sdir"], "", SID[1] + ".jsonl", [line(now - 60, str(env["trm"]))], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "warn", c
+    assert c.message == ("sessions_dir looks one level too low: 2 session record file(s) are "
+                         "one level shallower")
+    assert LAYOUT in c.fix and "~/.claude/projects" in c.fix
+
+
+def test_doctor_only_files_not_named_like_a_session(env, ncfg):
+    now = time.time()
+    write(env["sdir"], "logs", "not-a-session.jsonl", ['{"cmd": "x", "ok": true}'], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "warn", c
+    assert c.message == ("1 .jsonl file(s) were found but none is named like a session record: "
+                         "sessions_dir is probably not the Claude projects directory")
+    assert LAYOUT in c.fix and "~/.claude/projects" in c.fix
+
+
+def test_doctor_id_named_files_none_usable(env, ncfg):
+    now = time.time()
+    write(env["sdir"], "p", SID[0] + ".jsonl", ['{"type": "x"}'], mtime=now)
+    write(env["sdir"], "p", "not-a-session.jsonl", ["{}"], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "warn" and "none could be read as a session" in c.message, c
+    assert "the assumed record format may be wrong" in c.message and "deeper" not in c.message
+    assert "section 8" in c.fix
+    # id-named files at the expected depth say the level is right: the format warning wins,
+    # and a deeper count is only added to it
+    write(env["sdir"], "p/" + SID[0], SID[1] + ".jsonl", ['{"type": "x"}'], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "warn" and "the assumed record format may be wrong" in c.message, c
+    assert "1 more session record file(s) one level deeper" in c.message
+
+
+def test_doctor_nothing_in_the_window(env, ncfg):
+    c = _doctor(ncfg)
+    assert c.level == "ok" and c.message == "no record file in the last 8 days", c
+    old = time.time() - 20 * 86400
+    write(env["sdir"], "p", SID[0] + ".jsonl", [line(old, str(env["trm"]))], mtime=old)
+    assert _doctor(ncfg).message == "no record file in the last 8 days"
+
+
+def test_doctor_record_files_whose_times_are_older_than_the_window(env, ncfg):
+    # modified inside the window, every time inside it older: no session, nothing wrong
+    now, old = time.time(), time.time() - 20 * 86400
+    write(env["sdir"], "p", SID[0] + ".jsonl", [line(old, str(env["trm"]))], mtime=now)
+    c = _doctor(ncfg)
+    assert c.level == "ok" and "0 session(s)" in c.message and "1 record file(s)" in c.message, c
 
 
 def test_a_full_day_is_capped_at_86400_seconds_and_the_hub_keeps_it(env):
