@@ -4,7 +4,14 @@ Read `AGENTS.md` first. The previous text of this file (the 2026-11-05 plan with
 
 Commands: `rb` below means `uv run --extra host rb`, run in the repository's main checkout with the same `RB_HOST_ROOT` (hub data root, `<data_root>`) as before. Abbreviations: SSH = Secure Shell; MCP = Model Context Protocol (the tool interface of Claude sessions); B2, B3 = the security checks and the first live run in `docs/provisioning.md`. People type the commands as shown; a session prefixes them with `rtk proxy` (plain `rtk` hides the `next:` lines of `rb doctor`).
 
-## Audit of 2026-11-11
+## 2026-11-17: node sessions live, issues on GitHub
+
+- **Node sessions work on the real node.** The user corrected `sessions_dir` on the node console; the 06:20 UTC sync pass stored 13 sessions with `unparsed: 0` (7 outside the tree, `files: 77`), so the assumed record format holds; the 06:25 pass had 33 (13 outside). Both answers had `truncated: true`, which fits large files being finished over several calls; the answer does not say which bound was hit: #80. PR 61 (`claude/sessions-diagnosis`, the clearer doctor messages) is still open.
+- **Node-console steps of 2026-11-17** were done by the user: `sessions_dir`, and the check of the bridge lines in `authorized_keys` and of `~/.ssh/research-bridge/` on node1 (item 6 of "Open after these tests" below; no details recorded).
+- **Decided by the user on 2026-11-17:** the hub session transcript that holds withheld job names stays (`docs/postmortems/2026-11-10-queue-status-withheld.md`).
+- **GitHub:** the open work exists as issues now. 22 new issues (#62 to #83, from `docs/issues/2026-11-17-issue-drafts.md`); #3, #5, #6, #7, #12, #26, #39 closed; #4, #9, #15, #20, #21, #25, #41 rewritten. **#21 is the tracking issue** listing every open issue by workstream.
+- Still open from 2026-11-10: B3 row 7 (the first job is still `queued` in the hub ledger; #8) and the cancel path check (#62).
+
 
 A session read the whole repository (code, tests, documents) on 2026-11-11 and changed it in four steps. All four are merged into `main` (2026-11-11, merge commits a0543c7, 5177908, e8c4148, 1efd9c6 for PRs 56, 57, 58, 59).
 
@@ -78,12 +85,12 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 ### A session
 
 - `poll` until the `job_finished` event of job `75b0b3a9df614fc4becb47f0c079b7a9` arrives; record its status in `docs/provisioning.md` §Results (row 7) and close the run's postmortem item.
-- Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md` after the user's go-ahead (none applied yet); #7 can be closed with the B2 results; #8 after B3 row 7 is recorded.
+- ~~Apply the GitHub actions proposed in `docs/issues/2026-11-10-triage.md`~~ — applied on 2026-11-17 (see the section of that date above); #7 is closed; #8 stays open until B3 row 7 is recorded.
 - Laptop-only items (8765 dashboard, session browser, shared status page) are listed there too (#13, #18, #19, #39).
 
 ### Only the user
 
-- Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).
+- ~~Decide whether to keep or delete the hub session transcript that holds the leaked names (queue postmortem, open items).~~ Decided 2026-11-17: keep it.
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
 - Open `/status` on the hub page (`rb web key` in a hub terminal prints the address; from the laptop through the SSH forward of `docs/session-dashboard.md`). The hub side of the post-merge step is done (see "Audit of 2026-11-11").
 - Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).

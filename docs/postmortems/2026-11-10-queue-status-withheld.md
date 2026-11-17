@@ -51,5 +51,5 @@ None. The B3 run was stopped at row 5; `submit_job` was not called.
 
 ## 5. Open items
 
-- The session transcript above holds the names; whether to delete or keep it is the user's call.
+- The session transcript above holds the names; whether to delete or keep it is the user's call. Decided by the user on 2026-11-17: keep it as it is.
 - Done 2026-11-10: fix merged as PR 53, node reinstalled, hub sessions restarted; B3 continued from row 4.

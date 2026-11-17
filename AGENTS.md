@@ -96,4 +96,4 @@ A session may tell the user which command to type and what its last output line 
 
 ## Open items
 
-State, next action and pending decisions: `docs/HANDOFF.md` §Pending decisions. Open work, in order: `docs/issues/2026-11-10-triage.md`. Defects, stale text and unused code found by the 2026-11-11 audit and not yet fixed: `docs/issues/2026-11-11-audit.md`.
+State, next action and pending decisions: `docs/HANDOFF.md` §Pending decisions. Open work: GitHub issue #21 (every open issue by workstream, since 2026-11-17); its order and the decisions behind it: `docs/issues/2026-11-10-triage.md`. Defects, stale text and unused code found by the 2026-11-11 audit and not yet fixed: `docs/issues/2026-11-11-audit.md`.
