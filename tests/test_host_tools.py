@@ -756,7 +756,9 @@ def test_ledger_line_never_contains_body(synced):
     oid = _reply(synced, "MARKER-REPLY-91c2")
     sync.run_pass(synced["cfg"], "n1")
     r = server.poll("n1")
-    assert r["items"][0]["body"] == "MARKER-REPLY-91c2"
+    # The node may also post a responder_failed event for the sent message (no
+    # claude binary in the test environment), before or after the reply.
+    assert "MARKER-REPLY-91c2" in [i["body"] for i in r["items"]]
     text = (synced["root"] / "ledger.jsonl").read_text(encoding="utf-8")
     assert "MARKER-BODY-7f3a" not in text and "MARKER-REPLY-91c2" not in text
     assert all("body" not in json.loads(line) for line in text.splitlines())
