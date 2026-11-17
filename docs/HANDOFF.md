@@ -6,7 +6,7 @@ Commands: `rb` below means `uv run --extra host rb`, run in the repository's mai
 
 ## 2026-11-17: node sessions live, issues on GitHub
 
-- **Node sessions work on the real node.** The user corrected `sessions_dir` on the node console; the 06:20 UTC sync pass stored 13 sessions with `unparsed: 0` (7 outside the tree, `files: 77`), so the assumed record format holds; the 06:25 pass had 33 (13 outside). Both answers had `truncated: true`, which fits large files being finished over several calls; the answer does not say which bound was hit: #80. PR 61 (`claude/sessions-diagnosis`, the clearer doctor messages) is still open.
+- **Node sessions work on the real node.** The user corrected `sessions_dir` on the node console; the 06:20 UTC sync pass stored 13 sessions with `unparsed: 0` (7 outside the tree, `files: 77`), so the assumed record format holds; the 06:25 pass had 33 (13 outside). Both answers had `truncated: true`, which fits large files being finished over several calls; the answer does not say which bound was hit: #80. PR 61 (the clearer doctor messages) and PR 84 (this record) were merged on 2026-11-17 (merge commits 3e97af3, 123f8cc). Left after the merge: restart `rb-web.service` so the hub page runs the merged code (the sync timer starts a new process for each pass), and run `scripts/node-install.sh --update` on the node console.
 - **Node-console steps of 2026-11-17** were done by the user: `sessions_dir`, and the check of the bridge lines in `authorized_keys` and of `~/.ssh/research-bridge/` on node1 (item 6 of "Open after these tests" below; no details recorded).
 - **Decided by the user on 2026-11-17:** the hub session transcript that holds withheld job names stays (`docs/postmortems/2026-11-10-queue-status-withheld.md`).
 - **GitHub:** the open work exists as issues now. 22 new issues (#62 to #83, from `docs/issues/2026-11-17-issue-drafts.md`); #3, #5, #6, #7, #12, #26, #39 closed; #4, #9, #15, #20, #21, #25, #41 rewritten. **#21 is the tracking issue** listing every open issue by workstream.
@@ -94,7 +94,7 @@ B2 and B3 on 2026-11-10 ran these on the real link: `node-install.sh` and `rb-no
 - The open decisions below; the first is transport authentication (#25), which was ordered after the first live run.
 - Open `/status` on the hub page (`rb web key` in a hub terminal prints the address; from the laptop through the SSH forward of `docs/session-dashboard.md`). The hub side of the post-merge step is done (see "Audit of 2026-11-11").
 - Node updates from now on: on the node console, in the checkout (on `main`): `scripts/node-install.sh --update` (it runs `git pull --ff-only` itself).
-- Node sessions (PR 59; node1 was updated and `sessions_dir` set on 2026-11-11, but that directory holds no session record): on the node console `rb-node config set sessions_dir <the Claude projects directory of the node account>`, which is the `projects` directory inside the account's Claude configuration directory, `~/.claude/projects` unless the account uses another one (layout `<sessions_dir>/<project directory>/<session id>.jsonl`). After branch `claude/sessions-diagnosis` is merged: `scripts/node-install.sh --update`, then `rb-node doctor` (check `sessions`; it now says whether the directory looks one level off, holds no file named like a session record, or holds records it cannot read) and `rb-node sessions` to see exactly what would be sent. Compare the output with what you know ran on the node; if files named like a session record are found and none is listed (`unparsed` above 0, no session), the assumed record format is wrong and the design's §8 has to be corrected (`docs/design/2026-11-11-node-sessions.md` §9 step 7).
+- Node sessions: `sessions_dir` was corrected on 2026-11-17 and sessions arrive (section of that date). PR 61 is merged: on the hub `systemctl --user restart rb-web.service` (the hub page then shows the new counts); on the node console `scripts/node-install.sh --update`, then `rb-node doctor` (check `sessions`) and `rb-node sessions`. Comparing that list with what you know ran on the node is the part of row G1 in the design's §10 that is not recorded (`docs/design/2026-11-11-node-sessions.md`).
 
 ## Pending decisions
 
@@ -119,7 +119,7 @@ From PR 48 (`c503667`) until PR 50, every run of the test suite replaced the rea
 
 Session, in this checkout, no node contact:
 
-    rtk proxy uv run --extra host pytest -q        # 1067 passed on 2026-11-11 on branch claude/sessions-diagnosis (1053 on main after PR 59; 979 after PR 58; 975 after PR 57; 923 after PR 56; 921 on 2026-11-10 after PR 53)
+    rtk proxy uv run --extra host pytest -q        # 1067 passed on 2026-11-17 on main after PRs 61 and 84, with the fix of that day to test_ledger_line_never_contains_body (before it, that test failed in about 3 of 5 runs on its own, on the old main too: the responder_failed event of the spawned responder could come before the reply in poll); 1067 on 2026-11-11 on branch claude/sessions-diagnosis (1053 on main after PR 59; 979 after PR 58; 975 after PR 57; 923 after PR 56; 921 on 2026-11-10 after PR 53)
     rtk proxy uv run --extra host rb doctor --offline    # hub side only, no SSH
 
 User (or a session after a go-ahead, because these open an SSH connection): `rb doctor --node node1`, `rb sync --node node1`. Node console: `rb-node doctor`. Hub: `rb service status`.
